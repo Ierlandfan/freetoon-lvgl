@@ -297,8 +297,18 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
     if (waste_icon) {
-        if (show_waste) lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
-        else            lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+        if (show_waste) {
+            /* Pick the per-type icon (newspaper for Papier, milk carton
+             * for Plastic, leaf for GFT) instead of always rendering the
+             * generic trashcan. Same helper home.c uses. */
+            lv_img_set_src(waste_icon, waste_icon_for_label(wtype));
+            lv_obj_set_style_img_recolor(waste_icon,
+                lv_color_hex(waste_accent_for_label(wtype)), 0);
+            lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
+            lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+        }
     }
     if (lbl_waste) {
         if (show_waste) {
