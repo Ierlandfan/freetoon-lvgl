@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -38,6 +39,40 @@ const char * schedule_day_short(int day) {
     static const char * names[] = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
     if (day < 0 || day > 6) return "--";
     return names[day];
+}
+
+/* Which Comfort/Home/Sleep/Away program does the weekly schedule say is
+ * "active right now" — i.e. the one with the most-recent start time that
+ * is at or before this moment, wrapping around the week if every entry
+ * is in the future. Returns -1 if there are no entries at all.
+ *
+ * Used by the home pill + heater-detail "Scheduled" button to switch the
+ * Toon out of manual override and pick the right preset to resume from. */
+int schedule_program_now(void) {
+    if (schedule_count <= 0) return -1;
+    time_t t = time(NULL);
+    struct tm tm; localtime_r(&t, &tm);
+    /* tm_wday: 0=Sun..6=Sat. Toon convention: 0=Mon..6=Sun. */
+    int toon_day = (tm.tm_wday + 6) % 7;
+    int now_mow  = toon_day * 1440 + tm.tm_hour * 60 + tm.tm_min;
+
+    int best_state    = -1;
+    int best_mow      = -1;     /* most-recent ≤ now */
+    int latest_state  = -1;
+    int latest_mow    = -1;     /* fallback: largest in week (wraps) */
+    for (int i = 0; i < schedule_count; i++) {
+        const schedule_entry_t * e = &schedule_entries[i];
+        int mow = e->start_day * 1440 + e->start_hour * 60 + e->start_min;
+        if (mow <= now_mow && mow > best_mow) {
+            best_mow   = mow;
+            best_state = e->target_state;
+        }
+        if (mow > latest_mow) {
+            latest_mow   = mow;
+            latest_state = e->target_state;
+        }
+    }
+    return (best_state >= 0) ? best_state : latest_state;
 }
 
 /* ---- low-level HTTP for hcb_config + happ_thermstat ---- */

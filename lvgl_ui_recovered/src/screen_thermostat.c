@@ -29,11 +29,16 @@ static lv_obj_t * img_temp_flame;
 static lv_obj_t * lbl_clock;
 static lv_obj_t * lbl_date;
 static lv_timer_t * refresh_timer = NULL;
-/* Program preset buttons (Manual / Comfort / Home / Sleep / Away) just
- * below the indoor temp — same actions as the home-tile lacks. The active
- * one gets a white outline mirroring the vent-tile highlight pattern. */
-static lv_obj_t * btn_prog[5] = {0};
-static const int  prog_state[5] = {-1, 0, 1, 2, 3};   /* manual, C, H, S, A */
+/* Program preset buttons just below the indoor temp.
+ *   [0] Scheduled  → resume_schedule (whatever the schedule says now)
+ *   [1] Manual     → set_manual (hold current setpoint, activeState = -1)
+ *   [2..5] Comfort/Home/Sleep/Away → set_program(0..3)
+ * Sentinel -2 in prog_state[] means "resume schedule" — distinct from -1
+ * (manual). The active mode (Scheduled or Manual) AND the active preset
+ * both get a white outline; the two highlights live on different buttons
+ * so they don't clash. */
+static lv_obj_t * btn_prog[6] = {0};
+static const int  prog_state[6] = {-2, -1, 0, 1, 2, 3};
 
 static void on_open_advanced(lv_event_t * e) { (void)e; ui_push(screen_heater_advanced_create()); }
 static void on_setpoint_up(lv_event_t * e) { boxtalk_setpoint_increase(); }
@@ -43,8 +48,9 @@ static void on_open_schedule(lv_event_t * e) { (void)e; ui_push(screen_schedule_
 static void on_program_tap(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     int s = prog_state[idx];
-    if (s < 0) boxtalk_set_manual();
-    else       boxtalk_set_program(s);
+    if      (s == -2) boxtalk_resume_schedule();
+    else if (s == -1) boxtalk_set_manual();
+    else              boxtalk_set_program(s);
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -70,14 +76,18 @@ static void refresh_cb(lv_timer_t * t) {
     if (toon_state.indoor_temp > 0)
         lv_label_set_text_fmt(lbl_temp, "%.1f C", display_indoor_temp(toon_state.indoor_temp));
 
-    /* Program-preset highlight: white border on the active one. Manual
-     * wins when active_state < 0 regardless of program_state. */
-    int active_idx = (toon_state.active_state < 0) ? 0 : toon_state.program_state + 1;
-    if (active_idx < 0 || active_idx > 4) active_idx = 0;
-    for (int i = 0; i < 5; i++) {
-        if (btn_prog[i])
-            lv_obj_set_style_border_width(btn_prog[i],
-                                          (i == active_idx) ? 2 : 0, 0);
+    /* Highlight logic: the mode button (Scheduled[0] or Manual[1]) gets a
+     * white border based on active_state; the preset button (Comfort[2] /
+     * Home[3] / Sleep[4] / Away[5]) gets one based on program_state. Both
+     * fire at once so the user can see "Scheduled, currently Home" at a
+     * glance instead of trying to remember which one was last tapped. */
+    int mode_idx = (toon_state.active_state < 0) ? 1 : 0;
+    int preset_idx = (toon_state.program_state >= 0 && toon_state.program_state <= 3)
+                         ? toon_state.program_state + 2 : -1;
+    for (int i = 0; i < 6; i++) {
+        if (!btn_prog[i]) continue;
+        int active = (i == mode_idx) || (i == preset_idx);
+        lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
     }
     if (toon_state.humidity > 0)
         lv_label_set_text_fmt(lbl_humidity, "RH %.0f%%", toon_state.humidity);
@@ -225,16 +235,19 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_align(img_temp_flame, LV_ALIGN_CENTER, 145, -75);
     lv_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
 
-    /* Program preset row — five small buttons centered horizontally just
-     * below the indoor temp. Manual matches active_state < 0; the other
-     * four send boxtalk_set_program(0..3). Colours mirror the schedule
-     * editor pills for instant recognition. */
+    /* Program preset row — six small buttons centered horizontally just
+     * below the indoor temp.  Scheduled / Manual are the mode toggle;
+     * Comfort/Home/Sleep/Away pick a specific preset. Colours mirror the
+     * schedule editor pills for instant recognition; Scheduled uses a
+     * neutral teal so it doesn't fight any of the preset colours. */
     {
-        const char * names[5] = {"Manual", "Comfort", "Home", "Sleep", "Away"};
-        uint32_t     cols[5]  = {0x6a5424, 0xcc7733, 0x3377cc, 0x553388, 0x557788};
-        const int    bw = 130, bh = 44, gap = 8;
-        int total = 5 * bw + 4 * gap;
-        for (int i = 0; i < 5; i++) {
+        const char * names[6] = {"Scheduled", "Manual",
+                                 "Comfort", "Home", "Sleep", "Away"};
+        uint32_t     cols[6]  = {0x2f6b6b, 0x6a5424,
+                                 0xcc7733, 0x3377cc, 0x553388, 0x557788};
+        const int    bw = 130, bh = 44, gap = 6;
+        int total = 6 * bw + 5 * gap;
+        for (int i = 0; i < 6; i++) {
             lv_obj_t * b = lv_btn_create(scr_root);
             lv_obj_set_size(b, bw, bh);
             lv_obj_align(b, LV_ALIGN_CENTER,

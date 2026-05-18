@@ -74,6 +74,9 @@ void boxtalk_request_boiler_refresh(void);
    Pass -1 (or call boxtalk_set_manual) to force manual override. */
 int boxtalk_set_program(int state);
 int boxtalk_set_manual(void);
+/* Resume schedule = pick the preset the schedule says is active right
+ * now and call set_program(N). Used by the on-screen "Scheduled" toggle. */
+int boxtalk_resume_schedule(void);
 
 /* Request an RRD archive from hcb_rrd. Response arrives asynchronously
    and is stored in rrd_response_buf (NUL-terminated XML). Caller polls

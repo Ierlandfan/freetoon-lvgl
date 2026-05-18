@@ -196,6 +196,15 @@ static void picker_apply_cb(lv_event_t * e) {
     if (pe->modal) lv_obj_del(pe->modal);
 }
 
+/* Single tap on the home pill = toggle between Manual and Scheduled. The
+ * full picker (Comfort/Home/Sleep/Away/Manual) is still one tap away on
+ * the heater-detail page; the home pill stays one-tap-simple. */
+static void on_program_toggle(lv_event_t * e) {
+    (void)e;
+    if (toon_state.active_state < 0) boxtalk_resume_schedule();
+    else                             boxtalk_set_manual();
+}
+
 static void on_program_tap(lv_event_t * e) {
     (void)e;
     lv_obj_t * modal = lv_obj_create(lv_scr_act());
@@ -1142,10 +1151,13 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_up_lbl);
 
-    /* Active program (Comfort/Home/Sleep/Away/Manual). Wrapped in a clickable
-       pill so taps land on a generous hit area and open the picker. */
+    /* Active program (Manual / Scheduled: <preset>). Wrapped in a clickable
+       pill so taps land on a generous hit area. Single tap toggles between
+       Manual and Scheduled — the full Comfort/Home/Sleep/Away picker lives
+       on the heater-detail page. Width bumped to 320 so "Scheduled: Comfort"
+       fits at 22-pt without ellipsis. */
     lv_obj_t * prog_pill = lv_obj_create(th);
-    lv_obj_set_size(prog_pill, 240, 52);
+    lv_obj_set_size(prog_pill, 320, 52);
     lv_obj_align(prog_pill, LV_ALIGN_CENTER, 0, 70);
     lv_obj_set_style_bg_color(prog_pill, lv_color_hex(0x1a3a5a), 0);
     lv_obj_set_style_radius(prog_pill, 22, 0);
@@ -1154,7 +1166,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_pad_all(prog_pill, 0, 0);
     lv_obj_clear_flag(prog_pill, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_ext_click_area(prog_pill, 14);
-    lv_obj_add_event_cb(prog_pill, on_program_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(prog_pill, on_program_toggle, LV_EVENT_CLICKED, NULL);
 
     lbl_t_program = lv_label_create(prog_pill);
     lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(COL_TEXT_DIM), 0);

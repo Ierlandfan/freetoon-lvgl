@@ -37,4 +37,8 @@ unsigned schedule_state_color(int state);
 const char * schedule_state_name(int state);
 const char * schedule_day_short(int day);   /* "Mon", "Tue", ... */
 
+/* Returns 0..3 = the preset the schedule says is active right now (the
+ * most-recent past start_time, wrapping the week). -1 if no entries. */
+int schedule_program_now(void);
+
 #endif

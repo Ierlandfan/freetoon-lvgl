@@ -11,6 +11,7 @@
  */
 #include "boxtalk.h"
 #include "inbox.h"
+#include "schedule.h"
 #include "settings.h"
 
 #include <stdio.h>
@@ -75,17 +76,23 @@ unsigned int air_quality_color(int eco2, int tvoc) {
 }
 
 const char* program_label(void) {
-    /* activeState == -1 means no scheduled program is in effect; the
-       setpoint is being held manually. Make that explicit so the user
-       isn't left guessing why no preset name is showing. */
-    if (toon_state.active_state < 0) return "manual";
+    /* activeState == -1 → manual override. Anything else → schedule is in
+     * the driver's seat and program_state holds the currently-active preset.
+     * UI surfaces it as "Scheduled: Home" so the *mode* (manual vs. on the
+     * schedule) is one tap away from being obvious. Returns a pointer into
+     * a static buffer; safe because LVGL copies labels on set_text. */
+    static char buf[40];
+    if (toon_state.active_state < 0) return "Manual";
+    const char * preset;
     switch (toon_state.program_state) {
-        case 0: return "Comfort";
-        case 1: return "Home";
-        case 2: return "Sleep";
-        case 3: return "Away";
-        default: return "No preset";
+        case 0: preset = "Comfort"; break;
+        case 1: preset = "Home";    break;
+        case 2: preset = "Sleep";   break;
+        case 3: preset = "Away";    break;
+        default: return "Scheduled";
     }
+    snprintf(buf, sizeof(buf), "Scheduled: %s", preset);
+    return buf;
 }
 
 static int sock_fd = -1;
@@ -751,6 +758,16 @@ int boxtalk_set_manual(void) {
     int rc = boxtalk_set_setpoint(sp);
     if (rc == 0) toon_state.active_state = -1;
     return rc;
+}
+
+int boxtalk_resume_schedule(void) {
+    /* "Follow the schedule again." happ_thermstat doesn't have a verb
+     * for "resume schedule" — instead we ask for the preset the schedule
+     * says is currently active, which puts activeState back ≥0 and lets
+     * the schedule daemon progress normally from there. */
+    int now_state = schedule_program_now();
+    if (now_state < 0) now_state = 1;     /* fall back to Home if no schedule */
+    return boxtalk_set_program(now_state);
 }
 
 int boxtalk_setpoint_increase(void) {
