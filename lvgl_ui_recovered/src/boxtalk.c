@@ -808,14 +808,19 @@ int boxtalk_set_program(int state) {
 }
 
 int boxtalk_set_manual(void) {
-    /* "Manual" in the UI: leave the schedule and hold the current setpoint
-     * indefinitely. happ_thermstat treats roomSetpoint as a permanent
-     * override (active_state = -1) on its own; we mirror that locally so
-     * the UI updates instantly. Any temporary-override bookkeeping is
-     * blown away — the user explicitly asked for a permanent hold. */
+    /* "Manual" in the UI: leave the schedule and hold the setpoint
+     * indefinitely. happ_thermstat only flips activeState to -1 when
+     * roomSetpoint writes a *different* value than the current one — a
+     * same-value write returns "ok" and silently no-ops, so tapping
+     * Manual right after Program (which had already pinned the setpoint
+     * to the preset's stored value) used to leave the device on the
+     * schedule. Nudge by 1 centi-°C (0.01 °C, below display resolution)
+     * to guarantee the write engages manual. */
     temp_override_active = 0;
     float sp = toon_state.setpoint > 0 ? toon_state.setpoint : 18.0f;
-    int rc = boxtalk_set_setpoint(sp);
+    int centi = (int)(sp * 100.0f + 0.5f);
+    centi += (centi < 3000) ? 1 : -1;     /* +0.01 °C unless we're at the cap */
+    int rc = boxtalk_set_setpoint(centi / 100.0f);
     if (rc == 0) toon_state.active_state = -1;
     return rc;
 }

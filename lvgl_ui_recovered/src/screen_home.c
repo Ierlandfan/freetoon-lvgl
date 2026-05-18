@@ -1212,7 +1212,7 @@ lv_obj_t * screen_home_create(void) {
      * below, so the Program button doesn't need to carry it. An asterisk
      * appears on Program while a +/- temporary override is in flight. */
     {
-        const int manual_w = 110, prog_w = 140, btn_h = 52, gap = 6;
+        const int manual_w = 110, prog_w = 140, btn_h = 38, gap = 6;
         const int total   = manual_w + prog_w + gap;
         const int left_x  = -total / 2 + manual_w / 2;
         const int right_x = -total / 2 + manual_w + gap + prog_w / 2;
@@ -1221,7 +1221,7 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_size(tile_btn_mode_manual, manual_w, btn_h);
         lv_obj_align(tile_btn_mode_manual, LV_ALIGN_CENTER, left_x, 70);
         lv_obj_set_style_bg_color(tile_btn_mode_manual, lv_color_hex(0x6a5424), 0);
-        lv_obj_set_style_radius(tile_btn_mode_manual, 22, 0);
+        lv_obj_set_style_radius(tile_btn_mode_manual, 19, 0);
         lv_obj_set_style_border_color(tile_btn_mode_manual, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_border_width(tile_btn_mode_manual, 0, 0);
         lv_obj_set_ext_click_area(tile_btn_mode_manual, 8);
@@ -1237,7 +1237,7 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_size(tile_btn_mode_program, prog_w, btn_h);
         lv_obj_align(tile_btn_mode_program, LV_ALIGN_CENTER, right_x, 70);
         lv_obj_set_style_bg_color(tile_btn_mode_program, lv_color_hex(0x2f6b6b), 0);
-        lv_obj_set_style_radius(tile_btn_mode_program, 22, 0);
+        lv_obj_set_style_radius(tile_btn_mode_program, 19, 0);
         lv_obj_set_style_border_color(tile_btn_mode_program, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_border_width(tile_btn_mode_program, 0, 0);
         lv_obj_set_ext_click_area(tile_btn_mode_program, 8);
