@@ -87,33 +87,24 @@ const char* program_label(void) {
      * UI surfaces it as "Scheduled: Home" so the *mode* (manual vs. on the
      * schedule) is one tap away from being obvious. Returns a pointer into
      * a static buffer; safe because LVGL copies labels on set_text. */
-    static char buf[40];
-    /* happ_thermstat flips active_state to -1 the moment we write a
-     * roomSetpoint. For our +/- nudges that's not really "Manual" — it's
-     * a temporary override on top of the schedule. When temp_override is
-     * armed, paint the label as "Scheduled: <origin preset> (temp)" so
-     * the user sees that the schedule will reassert at the next switch.
-     * "Manual" is reserved for an explicit hold from the dedicated button. */
+    /* Short label suitable for ambient/dim use: just the active preset
+     * name, or "Manual" when off the schedule. The home tile renders
+     * the override-aware "(temp)" hint via its own logic next to the
+     * mode-toggle button instead of bolting it onto this label. */
     int origin = -1;
     if (temp_override_active && temp_override_origin >= 0 &&
                                 temp_override_origin <= 3)
         origin = temp_override_origin;
     int preset_idx = (toon_state.active_state >= 0)
                          ? toon_state.program_state : origin;
-    if (preset_idx < 0) return "Manual  -  tap to resume";
-    const char * preset;
+    if (preset_idx < 0) return "Manual";
     switch (preset_idx) {
-        case 0: preset = "Comfort"; break;
-        case 1: preset = "Home";    break;
-        case 2: preset = "Sleep";   break;
-        case 3: preset = "Away";    break;
+        case 0: return "Comfort";
+        case 1: return "Home";
+        case 2: return "Sleep";
+        case 3: return "Away";
         default: return "Scheduled";
     }
-    if (temp_override_active)
-        snprintf(buf, sizeof(buf), "Scheduled: %s (temp)", preset);
-    else
-        snprintf(buf, sizeof(buf), "Scheduled: %s", preset);
-    return buf;
 }
 
 static int sock_fd = -1;
