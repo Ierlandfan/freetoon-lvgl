@@ -95,6 +95,11 @@ int stats_fetch(const char * logger_name, const char * rra, stats_series_t * ser
             p = end;
         }
 
+        /* Filter clearly bogus samples — power can plausibly be a few kW,
+         * water flow tens of L/min, gas a few m3/h. Anything outside
+         * ±1e6 is RRD garbage (saw -2 029 354 in water_flow) and would
+         * skew the chart's Y range so badly the real data vanishes. */
+        if (!isnan(val) && (val < -1e6 || val > 1e6)) val = NAN;
         series->samples[series->n] = val;
         /* Short label: "DD-MM HH:MM" (positions 0-4 = "DD-MM", 11-15 = "HH:MM") */
         if (klen >= 16) {

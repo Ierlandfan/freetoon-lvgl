@@ -86,6 +86,7 @@ static lv_obj_t * fc_wind_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_icon[WEATHER_FORECAST_DAYS];
 static lv_obj_t * water_spinner;
 static lv_obj_t * forecast_box;
+static lv_obj_t * lbl_forecast_city = NULL;
 static lv_obj_t * lbl_outside_main;
 static lv_obj_t * lbl_outside_sub;
 static lv_obj_t * fc_day_lbl[WEATHER_FORECAST_DAYS];
@@ -810,6 +811,15 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text_fmt(lbl_outside_main, "%.1f C",
                               weather_state.current_temp);
     }
+    /* "Medemblik · 14.7 C" header above the forecast strip. */
+    if (lbl_forecast_city) {
+        const char * city = settings.weather_location[0] ? settings.weather_location : "Forecast";
+        if (weather_state.connected)
+            lv_label_set_text_fmt(lbl_forecast_city, "%s  -  %.1f C now",
+                                  city, weather_state.current_temp);
+        else
+            lv_label_set_text(lbl_forecast_city, city);
+    }
 
     /* Forecast band — splat-recovery left two more copies of this
        writer further down; gate them on the same hourly/daily decision so
@@ -1448,14 +1458,24 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_center(bl);
     }
 
+    /* City header above the forecast — labels the strip and shows the
+     * current outside temperature so the user immediately sees where the
+     * data is coming from. Refreshed from settings.weather_location and
+     * weather_state.current_temp by refresh_cb. */
+    lbl_forecast_city = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(lbl_forecast_city, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_forecast_city, &lv_font_montserrat_18, 0);
+    lv_label_set_text(lbl_forecast_city, settings.weather_location);
+    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 420);
+
     /* --- Forecast band — fills the area below the upper-row tiles.
            5 day columns; each shows day label + min/max temp + a big
-           weather icon. The wordy description is gone (was rendering
-           clipped/garbled on a narrow column) — full text still lives
-           on the forecast-detail screen. --- */
+           weather icon. Shifted down 14 px to make room for the city
+           header above; height shrunk to match so the bottom edge stays
+           flush with the screen. --- */
     forecast_box = lv_obj_create(scr_root);
-    lv_obj_set_size(forecast_box, 1004, 158);
-    lv_obj_set_pos(forecast_box, 10, 434);
+    lv_obj_set_size(forecast_box, 1004, 144);
+    lv_obj_set_pos(forecast_box, 10, 448);
     lv_obj_set_style_bg_color(forecast_box, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_radius(forecast_box, 12, 0);
     lv_obj_set_style_border_width(forecast_box, 0, 0);
@@ -1467,7 +1487,7 @@ lv_obj_t * screen_home_create(void) {
         int col_w = 1004 / WEATHER_FORECAST_DAYS;
         for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
             lv_obj_t * col = lv_obj_create(forecast_box);
-            lv_obj_set_size(col, col_w - 4, 148);
+            lv_obj_set_size(col, col_w - 4, 132);
             lv_obj_set_pos(col, i * col_w + 2, 0);
             lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(col, 0, 0);

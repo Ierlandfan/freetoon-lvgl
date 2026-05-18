@@ -139,18 +139,31 @@ static void render_chart(void) {
     if (hi - lo < 0.5) hi = lo + 1.0;
     double pad = (hi - lo) * 0.1;
 
-    lv_chart_set_point_count(chart, n);
-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y,
-                       (lv_coord_t)(lo - pad), (lv_coord_t)(hi + pad));
+    /* Compact non-NaN samples so the chart's X axis maps to "real data
+     * only". Without this, RRD's leading NaN gap (no data older than ~3 h
+     * for hour view) ate ~90 % of the chart width and the visible trace
+     * collapsed into the right edge. */
+    static double comp[STATS_MAX_SAMPLES];
+    int cn = 0;
     for (int i = 0; i < n; i++) {
         double v = series.samples[i];
-        cs->y_points[i] = isnan(v) ? LV_CHART_POINT_NONE : (lv_coord_t)v;
+        if (!isnan(v)) comp[cn++] = v;
+    }
+    if (cn < 2) cn = 2;
+
+    lv_chart_set_point_count(chart, cn);
+    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y,
+                       (lv_coord_t)(lo - pad), (lv_coord_t)(hi + pad));
+    for (int i = 0; i < cn; i++) {
+        cs->y_points[i] = (lv_coord_t)comp[i];
     }
     lv_chart_refresh(chart);
 
-    /* Headline value: live HW reading if Hour/Day, else last non-null. */
+    /* Caption above the value: "Current" for live periods, "Period total"
+     * for cumulative ones. Replaces the duplicated unit string. */
     const metric_t * m = &metrics[selected_metric];
     if (selected_period == PERIOD_HOUR || selected_period == PERIOD_DAY) {
+        lv_label_set_text(lbl_unit, "Current");
         double cur = NAN;
         if (selected_metric == 0)      cur = hw_state.power_w;
         else if (selected_metric == 1) cur = hw_state.water_lpm * 0;  /* gas flow not from HW */
@@ -161,14 +174,19 @@ static void render_chart(void) {
         }
         if (isnan(cur)) lv_label_set_text(lbl_value, "--");
         else lv_label_set_text_fmt(lbl_value, "%.1f %s", cur, m->unit_flow);
-        lv_label_set_text(lbl_unit, m->unit_flow);
     } else {
-        /* Sum of diffs across the window = total usage in period. */
-        double total = 0;
-        for (int i = 0; i < n; i++)
-            if (!isnan(series.samples[i])) total += series.samples[i];
-        lv_label_set_text_fmt(lbl_value, "%.1f %s", total, m->unit_cum);
-        lv_label_set_text(lbl_unit, m->unit_cum);
+        lv_label_set_text(lbl_unit, "Period total");
+        /* If every sample is NaN, the *_quantity_* loggers are wired but
+         * empty (only *_flow* is being written by p1bridge). Show that
+         * explicitly instead of "0.0 kWh". */
+        if (cn < 2) {
+            lv_label_set_text(lbl_value, "no data");
+        } else {
+            double total = 0;
+            for (int i = 0; i < n; i++)
+                if (!isnan(series.samples[i])) total += series.samples[i];
+            lv_label_set_text_fmt(lbl_value, "%.1f %s", total, m->unit_cum);
+        }
     }
 }
 
@@ -267,17 +285,19 @@ lv_obj_t * screen_stats_create(void) {
     lv_label_set_text(lbl_metric_name, "Electricity");
     lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, 30, 235);
 
+    /* Repurposed as the "Current" / "Period total" caption above the
+     * value. Was rendering a duplicated unit ("W" under "369.0 W"). */
+    lbl_unit = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lbl_unit, &lv_font_montserrat_18, 0);
+    lv_label_set_text(lbl_unit, "Current");
+    lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, 30, 265);
+
     lbl_value = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_value, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_value, &lv_font_montserrat_48, 0);
     lv_label_set_text(lbl_value, "--");
-    lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, 30, 265);
-
-    lbl_unit = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_unit, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_unit, "W");
-    lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, 30, 345);
+    lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, 30, 290);
 
     /* Chart */
     chart = lv_chart_create(scr_root);
@@ -285,6 +305,14 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_align(chart, LV_ALIGN_TOP_RIGHT, -30, 235);
     lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
     lv_chart_set_div_line_count(chart, 5, 8);
+    /* 512 samples across 700 px → ~1.4 px/sample. Default 3-px dots overlap
+     * into vertical bars that look like a scatter mess. Drop the per-point
+     * marker, thicken the connecting line so it reads as a graph. */
+    lv_obj_set_style_size(chart, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_line_width(chart, 2, LV_PART_ITEMS);
+    /* Y axis tick labels — 5 major divisions, 2 minor in between, draw_size
+     * 60 reserves the space LVGL needs for the rendered numbers. */
+    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y, 8, 4, 5, 2, true, 60);
     lv_obj_set_style_bg_color(chart, lv_color_hex(0x1a2a44), 0);
     lv_obj_set_style_border_color(chart, lv_color_hex(0x335577), 0);
     lv_obj_set_style_border_width(chart, 1, 0);
