@@ -95,6 +95,10 @@ static void poll_water(void) {
     static char body[2048];
     if (http_get("192.168.99.115", "/api/v1/data", body, sizeof(body)) != 0) {
         hw_state.connected_water = 0;
+        /* On a disconnect, zero the live flow too — otherwise the home
+         * tile keeps the stale L/min reading (and its spinner) up
+         * indefinitely until the WTR comes back. */
+        hw_state.water_lpm = 0;
         return;
     }
     const char * j = strstr(body, "\r\n\r\n");
