@@ -1219,20 +1219,22 @@ lv_obj_t * screen_home_create(void) {
     waste_icon_1 = lv_img_create(waste_big.tile);
     lv_img_set_src(waste_icon_1, &icon_trash);
     lv_obj_set_style_img_recolor_opa(waste_icon_1, 255, 0);
-    lv_obj_align(waste_icon_1, LV_ALIGN_TOP_LEFT, 4, 26);
+    /* Below the make_tile() title (font_18 at y=14 → ends at ~y=36).
+     * Was 26, which overlapped the "Waste" header glyphs. */
+    lv_obj_align(waste_icon_1, LV_ALIGN_TOP_LEFT, 4, 42);
     lv_obj_add_flag(waste_icon_1, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     lbl_waste_date = lv_label_create(waste_big.tile);
     lv_obj_set_style_text_color(lbl_waste_date, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_waste_date, &lv_font_montserrat_28, 0);
     lv_label_set_text(lbl_waste_date, "--");
-    lv_obj_align(lbl_waste_date, LV_ALIGN_TOP_LEFT, 72, 28);
+    lv_obj_align(lbl_waste_date, LV_ALIGN_TOP_LEFT, 72, 44);
 
     lbl_waste_type = lv_label_create(waste_big.tile);
     lv_obj_set_style_text_color(lbl_waste_type, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_waste_type, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_waste_type, "");
-    lv_obj_align(lbl_waste_type, LV_ALIGN_TOP_LEFT, 72, 62);
+    lv_obj_align(lbl_waste_type, LV_ALIGN_TOP_LEFT, 72, 78);
 
     /* Second-pickup icon renders at native size — lv_img_set_zoom on an
        alpha-8 source skips the recolor pass in LVGL 8.3 so the icon
@@ -1240,7 +1242,7 @@ lv_obj_t * screen_home_create(void) {
     waste_icon_2 = lv_img_create(waste_big.tile);
     lv_img_set_src(waste_icon_2, &icon_trash);
     lv_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
-    lv_obj_align(waste_icon_2, LV_ALIGN_TOP_LEFT, 4, 116);
+    lv_obj_align(waste_icon_2, LV_ALIGN_TOP_LEFT, 4, 128);
     lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
 
@@ -1248,13 +1250,13 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_waste_date_2, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_waste_date_2, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_waste_date_2, "");
-    lv_obj_align(lbl_waste_date_2, LV_ALIGN_TOP_LEFT, 72, 118);
+    lv_obj_align(lbl_waste_date_2, LV_ALIGN_TOP_LEFT, 72, 130);
 
     lbl_waste_type_2 = lv_label_create(waste_big.tile);
     lv_obj_set_style_text_color(lbl_waste_type_2, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_waste_type_2, &lv_font_montserrat_14, 0);
     lv_label_set_text(lbl_waste_type_2, "");
-    lv_obj_align(lbl_waste_type_2, LV_ALIGN_TOP_LEFT, 72, 152);
+    lv_obj_align(lbl_waste_type_2, LV_ALIGN_TOP_LEFT, 72, 164);
 
     /* Live Energy tile (replaces the old Humidity tile — humidity is now
        on the Heater bottom strip). Big live power on top, gas total below,
