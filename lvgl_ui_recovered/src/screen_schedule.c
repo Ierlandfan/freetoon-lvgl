@@ -27,13 +27,14 @@ static lv_obj_t * timeline_now_line;
 static lv_obj_t * day_list;       /* parent of switch-point rows */
 static lv_timer_t * refresh_timer = NULL;
 
-/* Layout constants */
-#define TL_X        70
-#define TL_Y        160
-#define TL_W        920
-#define TL_H        180
-#define TL_ROW_H    24
-#define HOUR_PX     (TL_W / 24)   /* ~38 px per hour */
+/* Layout constants — VERTICAL orientation: one column per weekday, time
+ * runs top→bottom (00:00 at top, 24:00 at bottom). Reads like a planner. */
+#define TL_X        80
+#define TL_Y        140
+#define TL_COL_W    120                /* width of each weekday column   */
+#define TL_HOUR_PX  18                 /* vertical pixels per hour        */
+#define TL_H        (24 * TL_HOUR_PX)  /* total height = 432 px           */
+#define TL_W        (7  * TL_COL_W)    /* total width  = 840 px           */
 
 /* Forward decls */
 static void rebuild_day_list(void);
@@ -60,75 +61,98 @@ static void on_chip_tap(lv_event_t * e) {
     rebuild_day_list();
 }
 
-/* ---------- timeline ---------- */
+/* ---------- timeline (vertical layout) ---------- */
 static void rebuild_timeline(void) {
     /* Clear all children of timeline_box except the now-line. */
     lv_obj_clean(timeline_box);
     timeline_now_line = NULL;
 
-    /* Hour gridlines for visual reference (every 6h). */
-    for (int h = 0; h <= 24; h += 6) {
+    /* Day-of-week column headers across the top inside the timeline box. */
+    for (int d = 0; d < 7; d++) {
+        lv_obj_t * h = lv_label_create(timeline_box);
+        lv_label_set_text(h, schedule_day_short(d));
+        lv_obj_set_style_text_color(h, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(h, &lv_font_montserrat_18, 0);
+        lv_obj_set_width(h, TL_COL_W);
+        lv_obj_set_style_text_align(h, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(h, d * TL_COL_W, -28);
+    }
+
+    /* Horizontal hour gridlines every 6 hours, spanning all 7 day columns. */
+    for (int hr = 0; hr <= 24; hr += 6) {
+        int y = hr * TL_HOUR_PX;
         lv_obj_t * tick = lv_obj_create(timeline_box);
-        lv_obj_set_size(tick, 1, 7 * TL_ROW_H);
-        lv_obj_set_pos(tick, h * HOUR_PX, 0);
+        lv_obj_set_size(tick, TL_W, 1);
+        lv_obj_set_pos(tick, 0, y);
         lv_obj_set_style_bg_color(tick, lv_color_hex(0x223344), 0);
         lv_obj_set_style_border_width(tick, 0, 0);
         lv_obj_set_style_radius(tick, 0, 0);
         lv_obj_clear_flag(tick, LV_OBJ_FLAG_SCROLLABLE);
+        /* Hour label on the LEFT outside the column area. */
+        lv_obj_t * hl = lv_label_create(timeline_box);
+        lv_label_set_text_fmt(hl, "%02d", hr);
+        lv_obj_set_style_text_color(hl, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(hl, &lv_font_montserrat_14, 0);
+        lv_obj_set_pos(hl, -32, y - 7);
     }
 
-    /* Schedule blocks. Entries can span days (e.g., 23:00 Mon → 07:00 Tue),
-       so we may need to draw two rectangles per entry. */
+    /* Schedule blocks. Each is a vertical rectangle inside its day's
+     * column, from start-time at the top to end-time below. Overnight
+     * entries split into a "rest of source day" piece + "start of next
+     * day" piece. */
     for (int i = 0; i < schedule_count; i++) {
         const schedule_entry_t * e = &schedule_entries[i];
-        int s_min_of_day = e->start_hour * 60 + e->start_min;
-        int e_min_of_day = e->end_hour   * 60 + e->end_min;
+        int s_min = e->start_hour * 60 + e->start_min;
+        int e_min = e->end_hour   * 60 + e->end_min;
         int day = e->start_day;
-        if (e->end_day == e->start_day && e_min_of_day > s_min_of_day) {
-            /* Same-day segment */
-            int x1 = (s_min_of_day * HOUR_PX) / 60;
-            int x2 = (e_min_of_day * HOUR_PX) / 60;
+        uint32_t col = schedule_state_color(e->target_state);
+        int col_x = day * TL_COL_W + 4;
+        int col_w = TL_COL_W - 8;
+        if (e->end_day == e->start_day && e_min > s_min) {
+            int y1 = (s_min * TL_HOUR_PX) / 60;
+            int y2 = (e_min * TL_HOUR_PX) / 60;
             lv_obj_t * b = lv_obj_create(timeline_box);
-            lv_obj_set_size(b, x2 - x1, TL_ROW_H - 4);
-            lv_obj_set_pos(b, x1, day * TL_ROW_H + 2);
-            lv_obj_set_style_bg_color(b, lv_color_hex(schedule_state_color(e->target_state)), 0);
+            lv_obj_set_size(b, col_w, y2 - y1);
+            lv_obj_set_pos(b, col_x, y1);
+            lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
             lv_obj_set_style_border_width(b, 0, 0);
             lv_obj_set_style_radius(b, 3, 0);
             lv_obj_clear_flag(b, LV_OBJ_FLAG_SCROLLABLE);
         } else {
-            /* Overnight: draw two parts. */
-            int x1 = (s_min_of_day * HOUR_PX) / 60;
-            int x_end_day1 = 24 * HOUR_PX;
+            /* Overnight — bottom slice on start_day, top slice on end_day. */
+            int y1 = (s_min * TL_HOUR_PX) / 60;
+            int y_end = TL_H;
             lv_obj_t * b1 = lv_obj_create(timeline_box);
-            lv_obj_set_size(b1, x_end_day1 - x1, TL_ROW_H - 4);
-            lv_obj_set_pos(b1, x1, day * TL_ROW_H + 2);
-            lv_obj_set_style_bg_color(b1, lv_color_hex(schedule_state_color(e->target_state)), 0);
+            lv_obj_set_size(b1, col_w, y_end - y1);
+            lv_obj_set_pos(b1, col_x, y1);
+            lv_obj_set_style_bg_color(b1, lv_color_hex(col), 0);
             lv_obj_set_style_border_width(b1, 0, 0);
             lv_obj_set_style_radius(b1, 3, 0);
             lv_obj_clear_flag(b1, LV_OBJ_FLAG_SCROLLABLE);
 
-            int x2 = (e_min_of_day * HOUR_PX) / 60;
+            int y2 = (e_min * TL_HOUR_PX) / 60;
             int d2 = e->end_day;
+            int col_x2 = d2 * TL_COL_W + 4;
             lv_obj_t * b2 = lv_obj_create(timeline_box);
-            lv_obj_set_size(b2, x2, TL_ROW_H - 4);
-            lv_obj_set_pos(b2, 0, d2 * TL_ROW_H + 2);
-            lv_obj_set_style_bg_color(b2, lv_color_hex(schedule_state_color(e->target_state)), 0);
+            lv_obj_set_size(b2, col_w, y2);
+            lv_obj_set_pos(b2, col_x2, 0);
+            lv_obj_set_style_bg_color(b2, lv_color_hex(col), 0);
             lv_obj_set_style_border_width(b2, 0, 0);
             lv_obj_set_style_radius(b2, 3, 0);
             lv_obj_clear_flag(b2, LV_OBJ_FLAG_SCROLLABLE);
         }
     }
 
-    /* "Now" vertical line */
+    /* "Now" horizontal stripe across the current day's column. */
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
     int wd = tm.tm_wday;            /* 0=Sunday..6=Saturday in tm */
     int toon_day = (wd + 6) % 7;    /* convert to 0=Mon */
-    int x_now = ((tm.tm_hour * 60 + tm.tm_min) * HOUR_PX) / 60;
+    int y_now = ((tm.tm_hour * 60 + tm.tm_min) * TL_HOUR_PX) / 60;
     timeline_now_line = lv_obj_create(timeline_box);
-    lv_obj_set_size(timeline_now_line, 2, TL_ROW_H);
-    lv_obj_set_pos(timeline_now_line, x_now - 1, toon_day * TL_ROW_H);
+    lv_obj_set_size(timeline_now_line, TL_COL_W, 2);
+    lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W, y_now - 1);
     lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_border_width(timeline_now_line, 0, 0);
     lv_obj_set_style_radius(timeline_now_line, 0, 0);
@@ -447,10 +471,10 @@ static void refresh_cb(lv_timer_t * t) {
     localtime_r(&now, &tm);
     int wd = tm.tm_wday;
     int toon_day = (wd + 6) % 7;
-    int x_now = ((tm.tm_hour * 60 + tm.tm_min) * HOUR_PX) / 60;
+    int y_now = ((tm.tm_hour * 60 + tm.tm_min) * TL_HOUR_PX) / 60;
     timeline_now_line = lv_obj_create(timeline_box);
-    lv_obj_set_size(timeline_now_line, 2, TL_ROW_H);
-    lv_obj_set_pos(timeline_now_line, x_now - 1, toon_day * TL_ROW_H);
+    lv_obj_set_size(timeline_now_line, TL_COL_W, 2);
+    lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W, y_now - 1);
     lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_border_width(timeline_now_line, 0, 0);
     lv_obj_set_style_radius(timeline_now_line, 0, 0);

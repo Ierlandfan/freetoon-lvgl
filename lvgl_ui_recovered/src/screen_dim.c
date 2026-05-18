@@ -38,6 +38,8 @@ static lv_obj_t * lbl_waste = NULL;
 static lv_obj_t * dim_fc_icon[WEATHER_FORECAST_DAYS];
 static lv_obj_t * dim_fc_day[WEATHER_FORECAST_DAYS];
 static lv_obj_t * dim_fc_temp[WEATHER_FORECAST_DAYS];
+/* City header above the forecast strip — mirrors the home tile. */
+static lv_obj_t * dim_lbl_city = NULL;
 static lv_obj_t * dim_vent_fan  = NULL;   /* spinning fan icon */
 static lv_obj_t * dim_vent_lbl  = NULL;   /* "57 %" — actual ExhFanSpeed */
 static lv_obj_t * dim_img_water = NULL;   /* drop icon, visible while pouring */
@@ -107,11 +109,16 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text_fmt(lbl_temp, "%.1f C", display_indoor_temp(toon_state.indoor_temp));
     else
         lv_label_set_text(lbl_temp, "...");
-    /* "to X" only when CH is actively heating — see screen_home.c. */
-    if (toon_state.burner_on && toon_state.setpoint > 0)
-        lv_label_set_text_fmt(lbl_setpoint, "to %.1f C", toon_state.setpoint);
-    else
+    /* Setpoint visible at all times; "to" prefix only when the boiler is
+     * actively heating toward it (see screen_home.c for the same idea). */
+    if (toon_state.setpoint > 0) {
+        if (toon_state.burner_on)
+            lv_label_set_text_fmt(lbl_setpoint, "to %.1f C", toon_state.setpoint);
+        else
+            lv_label_set_text_fmt(lbl_setpoint, "%.1f C", toon_state.setpoint);
+    } else {
         lv_label_set_text(lbl_setpoint, "");
+    }
 
     lv_label_set_text(lbl_program, program_label());
 
@@ -229,22 +236,52 @@ static void refresh_cb(lv_timer_t * t) {
     }
     /* Forecast strip — 3-hourly to match home screen. Falls back to daily
      * if the hourly feed hasn't populated yet (first 30 s after boot). */
+    /* City header — same as home tile, sits just above the forecast
+     * strip. Mirrors the format the home screen uses. */
+    if (dim_lbl_city) {
+        if (settings.show_dim_weather && weather_state.connected) {
+            const char * city = settings.weather_location[0]
+                                ? settings.weather_location : "Forecast";
+            lv_label_set_text_fmt(dim_lbl_city, "%s  -  %.1f C now",
+                                  city, weather_state.current_temp);
+            lv_obj_clear_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     int use_hourly = settings.show_dim_weather && weather_state.hour_count > 0;
     int n_slots    = use_hourly ? weather_state.hour_count : weather_state.day_count;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         if (!dim_fc_icon[i]) continue;
-        if (settings.show_dim_weather && i < n_slots) {
+        /* For the hourly view, skip slot 0 — it's "now" and already lives
+         * in the city header above. Daily view shows all 5 days from 0. */
+        int si = use_hourly ? i + 1 : i;
+        if (settings.show_dim_weather && si < n_slots) {
             if (use_hourly) {
-                const weather_hour_t * h = &weather_state.hours[i];
+                const weather_hour_t * h = &weather_state.hours[si];
                 lv_img_set_src(dim_fc_icon[i], weather_icon_for(h->icon));
                 lv_label_set_text(dim_fc_day[i], h->label);
-                lv_label_set_text_fmt(dim_fc_temp[i], "%.0f C", h->temperature);
+                /* Combine temp + wind direction on a single line so it
+                 * fits the dim-strip vertical budget. Format:
+                 * "16C  ZW3" — no "Bft" suffix to keep it compact. */
+                if (h->wind_dir[0])
+                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f C  %s%d",
+                                          h->temperature, h->wind_dir, h->wind_bft);
+                else
+                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f C",
+                                          h->temperature);
             } else {
                 const weather_day_t * d = &weather_state.days[i];
                 lv_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
                 lv_label_set_text(dim_fc_day[i], d->day);
-                lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f C",
-                                      d->min_temp, d->max_temp);
+                if (d->wind_dir[0])
+                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
+                                          d->min_temp, d->max_temp,
+                                          d->wind_dir, d->wind_bft);
+                else
+                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f C",
+                                          d->min_temp, d->max_temp);
             }
             lv_obj_clear_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
@@ -502,6 +539,17 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_waste, "");
     lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, 30, 140);
     lv_obj_add_flag(lbl_waste, LV_OBJ_FLAG_HIDDEN);
+
+    /* City header above the forecast strip — same content as the home
+     * tile's "Medemblik - 14.5 C now" line. Placed above the strip in
+     * the small gap left between the metrics row and the icons. */
+    dim_lbl_city = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(dim_lbl_city, lv_color_hex(0xbbbbbb), 0);
+    lv_obj_set_style_text_font(dim_lbl_city, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(dim_lbl_city, 1024);
+    lv_obj_set_style_text_align(dim_lbl_city, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(dim_lbl_city, "");
+    lv_obj_set_pos(dim_lbl_city, 0, 494);
 
     /* 5-day forecast strip across the bottom of dim. Black/white style:
        40×40 icon at top, day label below, temp range under that. */

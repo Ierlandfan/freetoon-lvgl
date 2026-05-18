@@ -397,13 +397,17 @@ static void refresh_cb(lv_timer_t * t) {
 
     if (toon_state.indoor_temp > 0)
         lv_label_set_text_fmt(lbl_t_temp, "%.1f C", display_indoor_temp(toon_state.indoor_temp));
-    /* "to X" only when the boiler is actively heating CH — when idle the
-     * setpoint is uninteresting (room is already at/above target), so
-     * blank the label to keep the tile clean. */
-    if (toon_state.burner_on && toon_state.setpoint > 0)
-        lv_label_set_text_fmt(lbl_t_setpoint, "to %.1f C", toon_state.setpoint);
-    else
+    /* Setpoint visible at all times; the "to" prefix only when the CH
+     * burner is actively heating toward it (idle just shows the target
+     * temperature, no arrow). */
+    if (toon_state.setpoint > 0) {
+        if (toon_state.burner_on)
+            lv_label_set_text_fmt(lbl_t_setpoint, "to %.1f C", toon_state.setpoint);
+        else
+            lv_label_set_text_fmt(lbl_t_setpoint, "%.1f C", toon_state.setpoint);
+    } else {
         lv_label_set_text(lbl_t_setpoint, "");
+    }
 
     /* Active scheme (Comfort/Home/Sleep/Away) or "Manual" if overridden. */
     lv_label_set_text(lbl_t_program, program_label());
@@ -751,9 +755,13 @@ static void refresh_cb(lv_timer_t * t) {
     int show_hourly = settings.forecast_mode != FORECAST_DAILY
                       && weather_state.hour_count > 0;
     if (show_hourly) {
-        for (int i = 0; i < weather_state.hour_count
-                     && i < WEATHER_FORECAST_DAYS; i++) {
-            const weather_hour_t * h = &weather_state.hours[i];
+        /* The "Medemblik - X.X C now" header above the strip already shows
+         * the current hour's value, so start at index 1 (the next 3-hour
+         * slot) to avoid duplicating it in the first column. */
+        for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
+            int si = i + 1;     /* skip slot 0 — that's "now" */
+            if (si >= weather_state.hour_count) break;
+            const weather_hour_t * h = &weather_state.hours[si];
             lv_label_set_text(fc_day_lbl[i], h->label);
             lv_label_set_text_fmt(fc_temp_lbl[i], "%.0f\xc2\xb0",
                                   h->temperature);
@@ -1043,8 +1051,10 @@ lv_obj_t * screen_home_create(void) {
     lv_label_set_text(lbl_t_temp, "-- C");
     lv_obj_align(lbl_t_temp, LV_ALIGN_CENTER, 0, -90);
 
-    /* Setpoint row: [-] setpoint [+]. Children, so their clicks don't
-       bubble into the tile's open-detail handler. */
+    /* Setpoint row: [-] setpoint [+]. sp_row itself is NOT clickable so
+     * taps on its centre (the setpoint label dead-zone between the two
+     * buttons) pass through to the tile and open the detail page. The
+     * +/- buttons keep their own click handlers. */
     lv_obj_t * sp_row = lv_obj_create(th);
     lv_obj_set_size(sp_row, 460, 84);
     lv_obj_align(sp_row, LV_ALIGN_CENTER, 0, -10);
@@ -1052,6 +1062,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_pad_all(sp_row, 0, 0);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * btn_dn = lv_btn_create(sp_row);
     lv_obj_set_size(btn_dn, 84, 76);
