@@ -450,10 +450,11 @@ static void refresh_cb(lv_timer_t * t) {
         lv_obj_set_style_border_width(tile_btn_mode_program,
                                       on_schedule ? 2 : 0, 0);
 
-    /* Program-button label carries the active preset (and "(temp)" while
-     * the override is in flight) so the user can read state from the
-     * button text instead of guessing from the highlight ring. In Manual
-     * mode the label is just "Program" — the unhighlighted side. */
+    /* Program-button label: just "Program" normally, "Program*" while a
+     * +/- temporary override is outstanding (the schedule will reassert
+     * itself at the next switch). The active preset is identifiable from
+     * the highlighted button on the preset row below — no need to also
+     * carry it inside the mode-toggle label. */
     int preset;
     if (toon_state.active_state >= 0 &&
         toon_state.program_state >= 0 && toon_state.program_state <= 3) {
@@ -462,21 +463,8 @@ static void refresh_cb(lv_timer_t * t) {
         preset = temp_origin;
     }
     if (lbl_t_program) {
-        const char * pname = NULL;
-        switch (preset) {
-            case 0: pname = "Comfort"; break;
-            case 1: pname = "Home";    break;
-            case 2: pname = "Sleep";   break;
-            case 3: pname = "Away";    break;
-        }
-        if (on_schedule && pname) {
-            if (boxtalk_temp_override_active())
-                lv_label_set_text_fmt(lbl_t_program, "Program: %s (temp)", pname);
-            else
-                lv_label_set_text_fmt(lbl_t_program, "Program: %s", pname);
-        } else {
-            lv_label_set_text(lbl_t_program, "Program");
-        }
+        lv_label_set_text(lbl_t_program,
+            boxtalk_temp_override_active() ? "Program*" : "Program");
     }
 
     /* Direct-preset row: white border on whichever preset is currently in
@@ -1218,13 +1206,13 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_up_lbl);
 
-    /* Mode toggle row — Manual | Program, both tappable. The active mode
-     * gets a white outline so the user can read state at a glance. The
-     * Program button's label is dynamic ("Program: Home", "Program: Home
-     * (temp)" while a +/- override is in flight) — packs the active-preset
-     * info into the button itself instead of needing a separate label. */
+    /* Mode toggle row — Manual | Program, both tappable. Active mode gets
+     * a white outline. Buttons are compact (110 + 140) — the active preset
+     * is already visible from the highlighted preset button on the row
+     * below, so the Program button doesn't need to carry it. An asterisk
+     * appears on Program while a +/- temporary override is in flight. */
     {
-        const int manual_w = 130, prog_w = 270, btn_h = 52, gap = 6;
+        const int manual_w = 110, prog_w = 140, btn_h = 52, gap = 6;
         const int total   = manual_w + prog_w + gap;
         const int left_x  = -total / 2 + manual_w / 2;
         const int right_x = -total / 2 + manual_w + gap + prog_w / 2;
