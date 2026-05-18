@@ -15,11 +15,12 @@ typedef struct {
     volatile int   curtain_is_closed;  /* 0/1 (is_closed attr)           */
     volatile int   curtain_battery;    /* % — min of the two child curtains */
     char           curtain_state[16];  /* "open" / "closed" / "opening" / "closing" / "unknown" */
-    /* Life360 location for the two people we care about. Short string
-     * suitable for inline display: "home" when state == "home", else
-     * "<street>, <city>" trimmed from the address attribute. */
-    char           loc_ronald[64];
-    char           loc_caja[64];
+    /* Life360 location for the two tracked people. "home" when at home,
+     * else "<city/region> > <street> > <number>" formatted from the
+     * device_tracker.life360_* address attribute. 128 chars to fit longer
+     * Dutch city + street names without truncation. */
+    char           loc_ronald[128];
+    char           loc_caja[128];
 } ha_state_t;
 
 extern ha_state_t ha_state;

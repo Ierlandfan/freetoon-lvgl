@@ -225,10 +225,73 @@ void ha_light_toggle_async(const char * entity_id) {
 void ha_lights_all_on_async(void)  { fire_light_action("turn_on",  "light.all_lights"); }
 void ha_lights_all_off_async(void) { fire_light_action("turn_off", "light.all_lights"); }
 
-/* Fetch a device_tracker.life360_* and compress to a short display string.
- *   home  → "home"
- *   else  → "<street>, <city>" trimmed from the "address" attribute, or
- *           the bare state if no address is available. */
+/* Strip leading/trailing whitespace in place. Returns the input pointer
+ * (possibly advanced) so callers can chain. */
+static char * trim(char * s) {
+    while (*s == ' ' || *s == '\t') s++;
+    char * e = s + strlen(s);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t')) *--e = 0;
+    return s;
+}
+
+/* Pull the house number out of a "<num> <street>" or "<street> <num>"
+ * fragment. Writes the number into *num_out (may be empty if not found)
+ * and the street name into *street_out, both NUL-terminated. */
+static void split_street(const char * src, char * street_out, size_t street_sz,
+                                              char * num_out,    size_t num_sz) {
+    street_out[0] = 0;
+    num_out[0]    = 0;
+    char buf[160];
+    snprintf(buf, sizeof(buf), "%s", src);
+    char * s = trim(buf);
+
+    /* Case 1: leading digits — "32 Graaf Florislaan". */
+    if (s[0] >= '0' && s[0] <= '9') {
+        char * sp = s;
+        while (*sp && *sp != ' ') sp++;
+        size_t nl = (size_t)(sp - s);
+        if (nl >= num_sz) nl = num_sz - 1;
+        memcpy(num_out, s, nl); num_out[nl] = 0;
+        while (*sp == ' ') sp++;
+        snprintf(street_out, street_sz, "%s", sp);
+        return;
+    }
+    /* Case 2: trailing digits — "Graafland 32". Scan back from end. */
+    size_t L = strlen(s);
+    if (L == 0) return;
+    char * end = s + L;
+    char * p = end;
+    while (p > s && p[-1] >= '0' && p[-1] <= '9') p--;
+    if (p < end && p > s && p[-1] == ' ') {
+        snprintf(num_out, num_sz, "%s", p);
+        *--p = 0;
+        snprintf(street_out, street_sz, "%s", trim(s));
+        return;
+    }
+    /* No number recognised — treat the whole thing as street. */
+    snprintf(street_out, street_sz, "%s", s);
+}
+
+/* Strip a leading postcode (e.g. "1693 AT Wervershoof" → "Wervershoof"). */
+static const char * strip_postcode(const char * city) {
+    while (*city == ' ') city++;
+    const char * p = city;
+    int saw_digit = 0;
+    while ((*p >= '0' && *p <= '9') || *p == ' ') { if (*p >= '0') saw_digit = 1; p++; }
+    if (saw_digit) {
+        /* skip an optional letter block ("AT") + spaces */
+        while ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')) p++;
+        while (*p == ' ') p++;
+        if (*p) return p;
+    }
+    return city;
+}
+
+/* Fetch a device_tracker.life360_* and format as "City > Street > Number".
+ *   home → "home"
+ *   else → "<city/region> > <street> > <number>"
+ * Falls back gracefully when fields are missing: drops the empty
+ * segments instead of leaving stray "> >" markers. */
 static void poll_life360_one(const char * entity_id, char * out, size_t outsz) {
     char body[1536];
     if (ha_get_state(entity_id, body, sizeof(body)) != 0) return;
@@ -238,19 +301,37 @@ static void poll_life360_one(const char * entity_id, char * out, size_t outsz) {
         snprintf(out, outsz, "home");
         return;
     }
-    /* Try address (Life360 attribute) — trim long zip+region tails so the
-     * inline display stays short. */
     char addr[160] = {0};
     extract_str(body, "address", addr, sizeof(addr));
-    if (addr[0]) {
-        /* Keep only "street, city" if there are >= 2 commas in the field. */
-        char * c1 = strchr(addr, ',');
-        char * c2 = c1 ? strchr(c1 + 1, ',') : NULL;
-        if (c2) *c2 = 0;
-        snprintf(out, outsz, "%s", addr);
-    } else if (state[0]) {
-        snprintf(out, outsz, "%s", state);
+    if (!addr[0]) {
+        if (state[0]) snprintf(out, outsz, "%s", state);
+        return;
     }
+    /* Split address on commas — Life360 emits e.g.
+     *   "32 Graaf Florislaan, North Holland"
+     *   "Graafland 32, 1693AT Wervershoof, Netherlands"
+     * We treat parts[0] as the street, parts[1] (postcode stripped) as
+     * the city/region; deeper parts (country) get ignored. */
+    char work[160];
+    snprintf(work, sizeof(work), "%s", addr);
+    char * c1 = strchr(work, ',');
+    if (c1) *c1 = 0;
+    char * c2 = (c1 ? strchr(c1 + 1, ',') : NULL);
+    if (c2) *c2 = 0;
+
+    char street[96] = {0}, num[16] = {0};
+    split_street(work, street, sizeof(street), num, sizeof(num));
+    const char * city = c1 ? strip_postcode(trim(c1 + 1)) : "";
+
+    /* Compose "city > street > number" with graceful elision. */
+    char tmp[160];
+    int n = 0;
+    if (city && city[0]) n += snprintf(tmp + n, sizeof(tmp) - n, "%s", city);
+    if (street[0]) n += snprintf(tmp + n, sizeof(tmp) - n,
+                                 "%s%s", (n ? " > " : ""), street);
+    if (num[0])    n += snprintf(tmp + n, sizeof(tmp) - n,
+                                 "%s%s", (n ? " > " : ""), num);
+    snprintf(out, outsz, "%s", n ? tmp : addr);
 }
 
 static void poll_life360(void) {

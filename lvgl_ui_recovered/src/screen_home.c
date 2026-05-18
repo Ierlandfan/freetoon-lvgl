@@ -922,12 +922,13 @@ static void refresh_cb(lv_timer_t * t) {
             lv_label_set_text(lbl_forecast_city, city);
     }
 
-    /* Family tile (Life360). Empty strings show "?". */
+    /* Family tile (Life360). Colour identifies who's who — see the
+     * label-create calls above. Empty strings show "?". */
     if (lbl_life360_ronald)
-        lv_label_set_text_fmt(lbl_life360_ronald, "Ronald: %s",
+        lv_label_set_text(lbl_life360_ronald,
             ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?");
     if (lbl_life360_caja)
-        lv_label_set_text_fmt(lbl_life360_caja, "Caja: %s",
+        lv_label_set_text(lbl_life360_caja,
             ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
 
     /* Forecast band — splat-recovery left two more copies of this
@@ -1526,20 +1527,30 @@ lv_obj_t * screen_home_create(void) {
     tile_t family_t;
     make_tile(scr_root, 790, 160, 214, 130, "Family", 0xff8866,
               open_placeholder, &family_t);
+    /* Two scrolling labels — the formatted address ("City > Street > Num")
+     * almost always exceeds the 194-px tile width, so we use
+     * SCROLL_CIRCULAR to slide the full string through the label area
+     * with a short gap between repeats. Looks tidier than chopping with
+     * an ellipsis and the user can read the entire address without
+     * tapping into a detail view. */
+    /* Person 1 — blue (matches dim screen's first row colour). The two
+     * scrolling labels are coloured rather than name-prefixed; the colour
+     * carries the identity so the scroll has full width for the address. */
     lbl_life360_ronald = lv_label_create(family_t.tile);
-    lv_obj_set_style_text_color(lbl_life360_ronald, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_color(lbl_life360_ronald, lv_color_hex(0x88aaff), 0);
     lv_obj_set_style_text_font(lbl_life360_ronald, &lv_font_montserrat_18, 0);
     lv_obj_set_width(lbl_life360_ronald, 194);
-    lv_label_set_long_mode(lbl_life360_ronald, LV_LABEL_LONG_DOT);
-    lv_label_set_text(lbl_life360_ronald, "Ronald: ?");
+    lv_label_set_long_mode(lbl_life360_ronald, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_label_set_text(lbl_life360_ronald, "?");
     lv_obj_align(lbl_life360_ronald, LV_ALIGN_TOP_LEFT, 0, 44);
 
+    /* Person 2 — pink (mirrors dim screen). */
     lbl_life360_caja = lv_label_create(family_t.tile);
-    lv_obj_set_style_text_color(lbl_life360_caja, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_color(lbl_life360_caja, lv_color_hex(0xff88cc), 0);
     lv_obj_set_style_text_font(lbl_life360_caja, &lv_font_montserrat_18, 0);
     lv_obj_set_width(lbl_life360_caja, 194);
-    lv_label_set_long_mode(lbl_life360_caja, LV_LABEL_LONG_DOT);
-    lv_label_set_text(lbl_life360_caja, "Caja: ?");
+    lv_label_set_long_mode(lbl_life360_caja, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_label_set_text(lbl_life360_caja, "?");
     lv_obj_align(lbl_life360_caja, LV_ALIGN_TOP_LEFT, 0, 76);
 
     tile_t water_t;

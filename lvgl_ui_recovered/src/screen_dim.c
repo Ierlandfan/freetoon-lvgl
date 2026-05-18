@@ -256,12 +256,11 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Life360 — top-right stack under the outside temp. Hide rows that
-     * have no data yet so we don't render "Ronald: ?" forever. */
+    /* Life360 — top-right stack under the outside temp. Colour identifies
+     * who's who (matches the home Family tile). Hidden until data lands. */
     if (dim_lbl_life360_ronald) {
         if (ha_state.loc_ronald[0]) {
-            lv_label_set_text_fmt(dim_lbl_life360_ronald, "Ronald: %s",
-                                  ha_state.loc_ronald);
+            lv_label_set_text(dim_lbl_life360_ronald, ha_state.loc_ronald);
             lv_obj_clear_flag(dim_lbl_life360_ronald, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(dim_lbl_life360_ronald, LV_OBJ_FLAG_HIDDEN);
@@ -269,8 +268,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
     if (dim_lbl_life360_caja) {
         if (ha_state.loc_caja[0]) {
-            lv_label_set_text_fmt(dim_lbl_life360_caja, "Caja: %s",
-                                  ha_state.loc_caja);
+            lv_label_set_text(dim_lbl_life360_caja, ha_state.loc_caja);
             lv_obj_clear_flag(dim_lbl_life360_caja, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(dim_lbl_life360_caja, LV_OBJ_FLAG_HIDDEN);
