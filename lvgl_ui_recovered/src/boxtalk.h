@@ -77,6 +77,15 @@ int boxtalk_set_manual(void);
 /* Resume schedule = pick the preset the schedule says is active right
  * now and call set_program(N). Used by the on-screen "Scheduled" toggle. */
 int boxtalk_resume_schedule(void);
+/* Drive the temporary-override expiry. Call from a 1 s UI tick. When a
+ * +/- nudge is outstanding and the schedule's "current preset" rolls
+ * over (next switch point passed), this auto-calls resume_schedule. */
+void boxtalk_tick(void);
+int  boxtalk_temp_override_active(void);
+/* Returns the preset (0..3) the schedule was on when the override armed,
+ * or -1 when no override is in flight. Used by the UI to keep the right
+ * preset button highlighted while active_state is parked at -1. */
+int  boxtalk_temp_override_origin(void);
 
 /* Request an RRD archive from hcb_rrd. Response arrives asynchronously
    and is stored in rrd_response_buf (NUL-terminated XML). Caller polls

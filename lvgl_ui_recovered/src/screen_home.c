@@ -201,13 +201,17 @@ static void picker_apply_cb(lv_event_t * e) {
     if (pe->modal) lv_obj_del(pe->modal);
 }
 
-/* Single tap on the home pill = toggle between Manual and Scheduled. The
- * full picker (Comfort/Home/Sleep/Away/Manual) is still one tap away on
- * the heater-detail page; the home pill stays one-tap-simple. */
+/* Single tap on the home pill = toggle between Off and Scheduled. A
+ * temporary override (active after a +/- nudge) still counts as "on the
+ * schedule" for toggle purposes, so the next tap takes the user to the
+ * explicit Off mode (permanent hold) rather than re-arming the schedule
+ * they never actually left. */
 static void on_program_toggle(lv_event_t * e) {
     (void)e;
-    if (toon_state.active_state < 0) boxtalk_resume_schedule();
-    else                             boxtalk_set_manual();
+    int on_schedule = (toon_state.active_state >= 0) ||
+                      boxtalk_temp_override_active();
+    if (on_schedule) boxtalk_set_manual();
+    else             boxtalk_resume_schedule();
 }
 
 /* Direct preset tap on one of the four pill-side buttons. user_data carries
@@ -405,6 +409,9 @@ static void open_inbox(lv_event_t * e) {
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
 
+    /* Expire any pending +/- temporary override once the schedule advances. */
+    boxtalk_tick();
+
     /* Clock on thermostat tile */
     time_t now = time(NULL);
     struct tm tm;
@@ -440,13 +447,19 @@ static void refresh_cb(lv_timer_t * t) {
         lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(COL_TEXT_DIM), 0);
 
     /* Direct-preset row: white border on whichever preset is currently in
-     * effect (only while the schedule is in the driver's seat — when manual
-     * we drop all borders so the user sees no preset is active). */
+     * effect. While a +/- temporary override is armed the schedule has
+     * been parked at active_state=-1 server-side, so fall back to the
+     * captured origin preset so the highlight survives the nudge. Off
+     * mode (no override either) drops all borders. */
     {
-        int preset = (toon_state.active_state >= 0 &&
-                      toon_state.program_state >= 0 &&
-                      toon_state.program_state <= 3)
-                         ? toon_state.program_state : -1;
+        int preset;
+        if (toon_state.active_state >= 0 &&
+            toon_state.program_state >= 0 &&
+            toon_state.program_state <= 3) {
+            preset = toon_state.program_state;
+        } else {
+            preset = boxtalk_temp_override_origin();   /* -1 if none */
+        }
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
             lv_obj_set_style_border_width(tile_btn_preset[i],
