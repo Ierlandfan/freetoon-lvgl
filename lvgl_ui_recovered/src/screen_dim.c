@@ -116,22 +116,22 @@ static void refresh_cb(lv_timer_t * t) {
            greyed row. Missing inputs collapse to "--" so the strip layout
            stays stable. AQ label is appended only when we actually have
            air-quality data to classify. */
-        char buf[160];
-        char tvoc[16] = "TVOC --";
-        char ppm[20]  = "-- ppm";
-        char bar[16]  = "-- bar";
+        char buf[200];
+        char tvoc[24] = "TVOC --";
+        char co2[24]  = "CO2 --";
+        char bar[24]  = "CV --";
         if (toon_state.tvoc)
-            snprintf(tvoc, sizeof tvoc, "TVOC %d", toon_state.tvoc);
+            snprintf(tvoc, sizeof tvoc, "TVOC %d ppb", toon_state.tvoc);
         if (toon_state.eco2)
-            snprintf(ppm, sizeof ppm, "%d ppm", toon_state.eco2);
+            snprintf(co2,  sizeof co2,  "CO2 %d ppm", toon_state.eco2);
         if (toon_state.water_pressure > 0.1f)
-            snprintf(bar, sizeof bar, "%.1f bar", toon_state.water_pressure);
+            snprintf(bar,  sizeof bar,  "CV %.1f bar", toon_state.water_pressure);
         const char * aql = air_quality_label(toon_state.eco2, toon_state.tvoc);
         if (*aql)
-            snprintf(buf, sizeof buf, "%s    %s    %s    %s",
-                     tvoc, ppm, bar, aql);
+            snprintf(buf, sizeof buf, "%s    %s    %s    Air: %s",
+                     tvoc, co2, bar, aql);
         else
-            snprintf(buf, sizeof buf, "%s    %s    %s", tvoc, ppm, bar);
+            snprintf(buf, sizeof buf, "%s    %s    %s", tvoc, co2, bar);
         lv_label_set_text(lbl_metrics, buf);
     }
 
@@ -210,7 +210,7 @@ static void refresh_cb(lv_timer_t * t) {
             const weather_day_t * d = &weather_state.days[i];
             lv_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
             lv_label_set_text(dim_fc_day[i], d->day);
-            lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f",
+            lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f C",
                                   d->min_temp, d->max_temp);
             lv_obj_clear_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);

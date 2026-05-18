@@ -1042,6 +1042,52 @@ static void open_otbridge_modal(lv_event_t * e) {
 
 static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 
+/* --------- Clean-screen overlay: 30 s timer that ignores all touch -------
+ * Loads a full-black screen with a single centred countdown so the user can
+ * wipe the glass without triggering buttons. The screen has zero event
+ * handlers — taps reach the LVGL input layer and find nothing actionable.
+ * Backlight stays at the current "active" level so the countdown stays
+ * readable; the LCD is 99% black anyway, which reads as "off". On expiry
+ * the screen pops itself back to settings. */
+static lv_obj_t *  g_clean_scr  = NULL;
+static lv_obj_t *  g_clean_lbl  = NULL;
+static lv_timer_t * g_clean_tmr = NULL;
+static int         g_clean_remaining = 0;
+
+static void clean_finish(void) {
+    if (g_clean_tmr) { lv_timer_del(g_clean_tmr); g_clean_tmr = NULL; }
+    if (g_clean_scr) {
+        lv_obj_t * dead = g_clean_scr;
+        g_clean_scr = NULL; g_clean_lbl = NULL;
+        ui_pop();
+        lv_obj_del_async(dead);
+    }
+}
+
+static void clean_tick(lv_timer_t * t) {
+    (void)t;
+    g_clean_remaining--;
+    if (g_clean_remaining <= 0) { clean_finish(); return; }
+    if (g_clean_lbl) lv_label_set_text_fmt(g_clean_lbl, "%d", g_clean_remaining);
+}
+
+static void open_clean_modal(lv_event_t * e) {
+    (void)e;
+    g_clean_remaining = 30;
+    g_clean_scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(g_clean_scr, lv_color_hex(0x000000), 0);
+    lv_obj_clear_flag(g_clean_scr, LV_OBJ_FLAG_SCROLLABLE);
+    /* No event_cb anywhere on this screen → touches do nothing. */
+    g_clean_lbl = lv_label_create(g_clean_scr);
+    lv_obj_set_style_text_color(g_clean_lbl, lv_color_hex(0xffffff), 0);
+    LV_FONT_DECLARE(lv_font_montserrat_96_custom);
+    lv_obj_set_style_text_font(g_clean_lbl, &lv_font_montserrat_96_custom, 0);
+    lv_label_set_text_fmt(g_clean_lbl, "%d", g_clean_remaining);
+    lv_obj_center(g_clean_lbl);
+    ui_push(g_clean_scr);
+    g_clean_tmr = lv_timer_create(clean_tick, 1000, NULL);
+}
+
 /* One category tile: icon (optional), big title, caption. */
 static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
                       const char * title, const char * caption, lv_event_cb_t cb) {
@@ -1451,6 +1497,8 @@ lv_obj_t * screen_settings_create(void) {
               "broker + topics", open_mqtt_modal);
     make_tile(x0 + 0*(308+gap), row3, NULL, LV_SYMBOL_LIST, "About",
               "status & diagnostics", open_about_modal);
+    make_tile(x0 + 1*(308+gap), row3, NULL, LV_SYMBOL_EYE_CLOSE, "Clean",
+              "30 s screen lock to wipe", open_clean_modal);
 
     return scr_root;
 }
