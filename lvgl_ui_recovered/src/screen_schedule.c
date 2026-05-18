@@ -82,12 +82,18 @@ static void rebuild_timeline(void) {
         lv_obj_set_style_border_width(tick, 0, 0);
         lv_obj_set_style_radius(tick, 0, 0);
         lv_obj_clear_flag(tick, LV_OBJ_FLAG_SCROLLABLE);
-        /* Hour label on the LEFT outside the column area. */
-        lv_obj_t * hl = lv_label_create(timeline_box);
+        /* Hour label on the LEFT outside the column area. Anchored to
+         * scr_root with absolute coords because timeline_box sits flush
+         * against the left edge (x=20) and there's no negative-x room
+         * for labels positioned relative to the box. */
+        lv_obj_t * hl = lv_label_create(scr_root);
         lv_label_set_text_fmt(hl, "%02d", hr);
         lv_obj_set_style_text_color(hl, lv_color_hex(0x88aabb), 0);
         lv_obj_set_style_text_font(hl, &lv_font_montserrat_14, 0);
-        lv_obj_set_pos(hl, -32, y - 7);
+        /* timeline_box at (TL_X-20=60, TL_Y); pad_all=8 internally → the
+         * y=0 row inside the box is at screen y = TL_Y+8. Labels sit
+         * just left of the box. */
+        lv_obj_set_pos(hl, TL_X - 20 - 28, TL_Y + 8 + y - 7);
     }
 
     /* Schedule blocks. Each is a vertical rectangle inside its day's
@@ -540,7 +546,8 @@ lv_obj_t * screen_schedule_create(void) {
     /* Timeline container */
     timeline_box = lv_obj_create(scr_root);
     lv_obj_set_size(timeline_box, TL_W, TL_H);
-    lv_obj_set_pos(timeline_box, TL_X - 60, TL_Y);
+    /* Origin offset by 40 px on the left so the hour-axis labels fit. */
+    lv_obj_set_pos(timeline_box, TL_X - 20, TL_Y);
     lv_obj_set_style_bg_color(timeline_box, lv_color_hex(0x1a2a44), 0);
     lv_obj_set_style_radius(timeline_box, 10, 0);
     lv_obj_set_style_border_width(timeline_box, 0, 0);

@@ -237,24 +237,14 @@ static void refresh_cb(lv_timer_t * t) {
     }
     /* Forecast strip — 3-hourly to match home screen. Falls back to daily
      * if the hourly feed hasn't populated yet (first 30 s after boot). */
-    /* City header — same as home tile, including the Life360 locations
-     * for Ronald + Caja so dim is just as informative. */
+    /* City header — weather only. (Life360 lives on the Family tile on
+     * the home screen.) */
     if (dim_lbl_city) {
         if (settings.show_dim_weather && weather_state.connected) {
             const char * city = settings.weather_location[0]
                                 ? settings.weather_location : "Forecast";
-            char wx[80];
-            snprintf(wx, sizeof wx, "%s  -  %.1f C now",
-                     city, weather_state.current_temp);
-            if (ha_state.loc_ronald[0] || ha_state.loc_caja[0]) {
-                lv_label_set_text_fmt(dim_lbl_city,
-                    "%s   |   Ronald: %s   Caja: %s",
-                    wx,
-                    ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?",
-                    ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
-            } else {
-                lv_label_set_text(dim_lbl_city, wx);
-            }
+            lv_label_set_text_fmt(dim_lbl_city, "%s  -  %.1f C now",
+                                  city, weather_state.current_temp);
             lv_obj_clear_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);

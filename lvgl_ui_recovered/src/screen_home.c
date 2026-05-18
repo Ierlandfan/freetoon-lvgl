@@ -87,6 +87,8 @@ static lv_obj_t * fc_icon[WEATHER_FORECAST_DAYS];
 static lv_obj_t * water_spinner;
 static lv_obj_t * forecast_box;
 static lv_obj_t * lbl_forecast_city = NULL;
+static lv_obj_t * lbl_life360_ronald = NULL;
+static lv_obj_t * lbl_life360_caja   = NULL;
 static lv_obj_t * lbl_outside_main;
 static lv_obj_t * lbl_outside_sub;
 static lv_obj_t * fc_day_lbl[WEATHER_FORECAST_DAYS];
@@ -819,28 +821,24 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text_fmt(lbl_outside_main, "%.1f C",
                               weather_state.current_temp);
     }
-    /* "Medemblik - 14.7 C now   |   Ronald: home  Caja: home" header
-     * above the forecast strip. Life360 strings come from HA poller —
-     * stay blank if Life360 isn't available so the city still reads. */
+    /* "Medemblik - 14.7 C now" header above the forecast strip. Life360
+     * moved to its own tile so this stays purely weather. */
     if (lbl_forecast_city) {
         const char * city = settings.weather_location[0] ? settings.weather_location : "Forecast";
-        char wx[64];
         if (weather_state.connected)
-            snprintf(wx, sizeof wx, "%s  -  %.1f C now",
-                     city, weather_state.current_temp);
+            lv_label_set_text_fmt(lbl_forecast_city, "%s  -  %.1f C now",
+                                  city, weather_state.current_temp);
         else
-            snprintf(wx, sizeof wx, "%s", city);
-
-        if (ha_state.loc_ronald[0] || ha_state.loc_caja[0]) {
-            lv_label_set_text_fmt(lbl_forecast_city,
-                "%s   |   Ronald: %s   Caja: %s",
-                wx,
-                ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?",
-                ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
-        } else {
-            lv_label_set_text(lbl_forecast_city, wx);
-        }
+            lv_label_set_text(lbl_forecast_city, city);
     }
+
+    /* Family tile (Life360). Empty strings show "?". */
+    if (lbl_life360_ronald)
+        lv_label_set_text_fmt(lbl_life360_ronald, "Ronald: %s",
+            ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?");
+    if (lbl_life360_caja)
+        lv_label_set_text_fmt(lbl_life360_caja, "Caja: %s",
+            ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
 
     /* Forecast band — splat-recovery left two more copies of this
        writer further down; gate them on the same hourly/daily decision so
@@ -1296,17 +1294,19 @@ lv_obj_t * screen_home_create(void) {
        on the Heater bottom strip). Big live power on top, gas total below,
        today's kWh in the corner. */
     tile_t energy_t;
-    make_tile(scr_root, 790, 20, 214, 200, "Energy", 0xaa77ff,
+    make_tile(scr_root, 790, 20, 214, 130, "Energy", 0xaa77ff,
               open_stats, &energy_t);
+    /* Compressed for the new 130-px tile: 28-pt W value (was 48), gas
+     * total on the same baseline range below. */
     lbl_energy_w = lv_label_create(energy_t.tile);
     lv_obj_set_style_text_color(lbl_energy_w, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_energy_w, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(lbl_energy_w, &lv_font_montserrat_28, 0);
     lv_label_set_text(lbl_energy_w, "-- W");
-    lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, -14);
+    lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, -8);
 
     lbl_energy_gas = lv_label_create(energy_t.tile);
     lv_obj_set_style_text_color(lbl_energy_gas, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_energy_gas, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_energy_gas, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_energy_gas, "-- m3 gas");
     lv_obj_align(lbl_energy_gas, LV_ALIGN_BOTTOM_LEFT, 0, -4);
 
@@ -1393,8 +1393,29 @@ lv_obj_t * screen_home_create(void) {
     lv_label_set_text(lbl_boiler_pressure, "--\n--");
     lv_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
 
+    /* Family tile — Life360 locations for Ronald + Caja. Sits between
+     * the shrunken Energy and Water tiles in the right column. */
+    tile_t family_t;
+    make_tile(scr_root, 790, 160, 214, 130, "Family", 0xff8866,
+              open_placeholder, &family_t);
+    lbl_life360_ronald = lv_label_create(family_t.tile);
+    lv_obj_set_style_text_color(lbl_life360_ronald, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_life360_ronald, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(lbl_life360_ronald, 194);
+    lv_label_set_long_mode(lbl_life360_ronald, LV_LABEL_LONG_DOT);
+    lv_label_set_text(lbl_life360_ronald, "Ronald: ?");
+    lv_obj_align(lbl_life360_ronald, LV_ALIGN_TOP_LEFT, 0, 44);
+
+    lbl_life360_caja = lv_label_create(family_t.tile);
+    lv_obj_set_style_text_color(lbl_life360_caja, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_life360_caja, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(lbl_life360_caja, 194);
+    lv_label_set_long_mode(lbl_life360_caja, LV_LABEL_LONG_DOT);
+    lv_label_set_text(lbl_life360_caja, "Caja: ?");
+    lv_obj_align(lbl_life360_caja, LV_ALIGN_TOP_LEFT, 0, 76);
+
     tile_t water_t;
-    make_tile(scr_root, 790, 230, 214, 200, "Water", 0x44aaff, open_placeholder, &water_t);
+    make_tile(scr_root, 790, 300, 214, 130, "Water", 0x44aaff, open_placeholder, &water_t);
     lbl_inbox_main = lv_label_create(water_t.tile);
     lv_obj_set_style_text_color(lbl_inbox_main, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_inbox_main, &lv_font_montserrat_28, 0);
@@ -1402,9 +1423,9 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_align(lbl_inbox_main, LV_ALIGN_CENTER, 0, -8);
     lbl_inbox_sub = lv_label_create(water_t.tile);
     lv_obj_set_style_text_color(lbl_inbox_sub, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_inbox_sub, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_inbox_sub, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_inbox_sub, "-- L/min");
-    lv_obj_align(lbl_inbox_sub, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_align(lbl_inbox_sub, LV_ALIGN_BOTTOM_MID, 0, -4);
 
     /* Spinner overlay: visible only while water is flowing. lv_spinner draws
        a continuously-rotating arc that reads as "something is moving". */
