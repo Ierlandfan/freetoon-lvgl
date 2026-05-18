@@ -335,10 +335,15 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_align(img_drop, LV_ALIGN_BOTTOM_LEFT, 48, -320);
     lv_obj_add_flag(img_drop, LV_OBJ_FLAG_HIDDEN);
 
+    /* "Boiler idle / Heating / Hot water" status label — was at
+     * BOTTOM_LEFT(90, -325) which collided horizontally with the new
+     * program-buttons row (the Manual button sat exactly behind the
+     * text). Pinned to the upper-left under the back button so it has
+     * its own clean strip. */
     lbl_burner = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_burner, LV_ALIGN_BOTTOM_LEFT, 90, -325);
+    lv_obj_align(lbl_burner, LV_ALIGN_TOP_LEFT, 180, 130);
     lv_label_set_text(lbl_burner, "Boiler idle");
 
     /* CH water inlet/outlet block — right side, above the setpoint row.

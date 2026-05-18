@@ -1466,7 +1466,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_forecast_city, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_forecast_city, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_forecast_city, settings.weather_location);
-    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 420);
+    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 428);
 
     /* --- Forecast band — fills the area below the upper-row tiles.
            5 day columns; each shows day label + min/max temp + a big
