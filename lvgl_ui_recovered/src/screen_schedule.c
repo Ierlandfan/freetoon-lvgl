@@ -554,14 +554,24 @@ lv_obj_t * screen_schedule_create(void) {
     lv_obj_set_style_pad_all(timeline_box, 8, 0);
     lv_obj_clear_flag(timeline_box, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Day-list container below the timeline (now shorter to fit) */
+    /* Day-list container below the timeline. Stretched to the bottom edge
+     * (height 168) and made vertically scrollable so all switch-points fit
+     * even when a day has 5+ entries plus the "Add" button. The scrollbar
+     * stays visible so it's obvious there's more below the fold. */
     day_list = lv_obj_create(scr_root);
-    lv_obj_set_size(day_list, 960, 160);
+    lv_obj_set_size(day_list, 960, 168);
     lv_obj_set_pos(day_list, 30, 432);
     lv_obj_set_style_bg_opa(day_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(day_list, 0, 0);
     lv_obj_set_style_pad_all(day_list, 0, 0);
-    lv_obj_clear_flag(day_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(day_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(day_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(day_list, LV_SCROLLBAR_MODE_ON);
+    lv_obj_set_style_bg_color(day_list, lv_color_hex(0x335577),
+                              LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(day_list, LV_OPA_70, LV_PART_SCROLLBAR);
+    lv_obj_set_style_width(day_list, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(day_list, 3, LV_PART_SCROLLBAR);
 
     rebuild_timeline();
     rebuild_day_list();

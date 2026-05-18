@@ -2,7 +2,9 @@
 #define TOON_WEATHER_H
 
 #define WEATHER_FORECAST_DAYS  5
-#define WEATHER_FORECAST_HOURS 5    /* number of 3-hour slots we surface */
+/* 6 so the home/dim strips can render 5 future slots after skipping
+ * slot 0 (which feeds the "Medemblik - 14.7 C now" header above). */
+#define WEATHER_FORECAST_HOURS 6    /* number of 3-hour slots we surface */
 
 /* One day in the 5-day forecast — fields parsed from buienradar JSON's
    `forecast.fivedayforecast[]`. */

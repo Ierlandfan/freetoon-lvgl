@@ -37,18 +37,35 @@ TOON_PASS="${TOON_PASS:-toon}"
 TOON_USER="${TOON_USER:-root}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-# Where artefacts live in this dev tree. Each must already be cross-compiled
-# for armv7-hardfloat. If you cloned a binary release tarball these are
-# next to install.sh; if you built from source they're inside the build
-# subdirs of each component.
-TOONUI_BIN="$HERE/lvgl_ui_recovered/build/toonui"
-QUBY_BIN="$HERE/quby_bridge/quby_bridge"
-P1_BIN="$HERE/p1bridge/p1bridge"
-TOONTAP_BIN="$HERE/../qt_rebuild/toontap"           # cross-compiled in /tmp/qt_rebuild
-# Prefer the in-tree copies so the install bundle is self-contained; fall
-# back to the dev /tmp paths if the user hasn't run ./tools/sync-static.sh
-OT_MODE_SCRIPT="${OT_MODE_SCRIPT:-$HERE/scripts/ot_mode_switch.sh}"
-PWA_DIR="${PWA_DIR:-$HERE/pwa_static}"
+# Where artefacts live. Two layouts are supported without a flag:
+#   release tarball  → binaries live next to install.sh ("$HERE/toonui",
+#                      "$HERE/p1bridge", optional "$HERE/quby_bridge"),
+#                      PWA in "$HERE/pwa/", helper in "$HERE/ot_mode_switch.sh".
+#   dev tree         → binaries live inside each component's build subdir
+#                      (lvgl_ui_recovered/build/toonui, p1bridge/p1bridge, …).
+# Env-vars (TOONUI_BIN=… etc.) override the auto-pick when set.
+pick_artefact() {
+    # Usage: pick_artefact VAR_NAME candidate1 candidate2 …
+    # Echoes the first existing path. Honours $VAR_NAME if pre-set.
+    local var="$1"; shift
+    local override="${!var:-}"
+    if [[ -n "$override" ]]; then printf '%s\n' "$override"; return; fi
+    for cand in "$@"; do
+        if [[ -e "$cand" ]]; then printf '%s\n' "$cand"; return; fi
+    done
+    printf '%s\n' "$1"   # echo first candidate so error messages stay useful
+}
+
+TOONUI_BIN="$(pick_artefact TOONUI_BIN  "$HERE/toonui"        "$HERE/lvgl_ui_recovered/build/toonui")"
+QUBY_BIN="$(  pick_artefact QUBY_BIN    "$HERE/quby_bridge"   "$HERE/quby_bridge/quby_bridge")"
+P1_BIN="$(    pick_artefact P1_BIN      "$HERE/p1bridge"      "$HERE/p1bridge/p1bridge")"
+TOONTAP_BIN="$(pick_artefact TOONTAP_BIN "$HERE/toontap"      "$HERE/../qt_rebuild/toontap")"
+OT_MODE_SCRIPT="$(pick_artefact OT_MODE_SCRIPT "$HERE/ot_mode_switch.sh" "$HERE/scripts/ot_mode_switch.sh")"
+if [[ -z "${PWA_DIR:-}" ]]; then
+    if   [[ -f "$HERE/pwa/index.html"        ]]; then PWA_DIR="$HERE/pwa"
+    elif [[ -f "$HERE/pwa_static/index.html" ]]; then PWA_DIR="$HERE/pwa_static"
+    else PWA_DIR="$HERE/pwa_static"; fi
+fi
 
 SSH="sshpass -p $TOON_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $TOON_USER@$TOON_HOST"
 SCP="sshpass -p $TOON_PASS scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
@@ -77,24 +94,28 @@ remote() { $SSH "$@"; }
 
 check_artefacts() {
     local missing=0
-    for f in "$TOONUI_BIN" "$QUBY_BIN" "$P1_BIN" "$TOONTAP_BIN"; do
+    # REQUIRED — installer can't proceed without these.
+    for f in "$TOONUI_BIN" "$P1_BIN"; do
         if [[ ! -x "$f" ]]; then
-            echo "  missing: $f" >&2
+            echo "  missing (required): $f" >&2
             missing=1
         fi
     done
     if [[ ! -f "$OT_MODE_SCRIPT" ]]; then
-        echo "  missing: $OT_MODE_SCRIPT (mode-switch helper)" >&2
+        echo "  missing (required): $OT_MODE_SCRIPT (mode-switch helper)" >&2
         missing=1
     fi
     if [[ ! -f "$PWA_DIR/index.html" ]]; then
-        echo "  missing PWA static dir: $PWA_DIR/index.html" >&2
+        echo "  missing (required) PWA static dir: $PWA_DIR/index.html" >&2
         missing=1
     fi
+    # OPTIONAL — release tarballs may skip these; warn but don't fail.
+    [[ -x "$QUBY_BIN"    ]] || echo "  note: $QUBY_BIN absent — quby_bridge will not be installed/started" >&2
+    [[ -x "$TOONTAP_BIN" ]] || echo "  note: $TOONTAP_BIN absent — toontap (debug helper) will not be installed" >&2
     if (( missing )); then
-        echo "Run 'make' in lvgl_ui_recovered/src/, p1bridge/, quby_bridge/" >&2
-        echo "(and compile toontap.c via toolchain) before installing." >&2
-        echo "PWA files should be checked in under pwa_static/." >&2
+        echo >&2
+        echo "If you're using a release tarball, expand it first and run install.sh from inside it." >&2
+        echo "If you're building from source, run 'make' in lvgl_ui_recovered/src/ and p1bridge/." >&2
         exit 3
     fi
 }
@@ -141,10 +162,10 @@ do_install() {
 
     echo "[2/6] Pushing binaries to $TOON_HOST..."
     push_atomic "$TOONUI_BIN"   "/mnt/data/toonui"
-    push_atomic "$QUBY_BIN"     "/mnt/data/quby_bridge"
     push_atomic "$P1_BIN"       "/mnt/data/p1bridge"
-    push_atomic "$TOONTAP_BIN"  "/mnt/data/toontap"
     push_atomic "$OT_MODE_SCRIPT" "/mnt/data/ot_mode_switch.sh"
+    [[ -x "$QUBY_BIN"    ]] && push_atomic "$QUBY_BIN"    "/mnt/data/quby_bridge"
+    [[ -x "$TOONTAP_BIN" ]] && push_atomic "$TOONTAP_BIN" "/mnt/data/toontap"
 
     echo "[2b/6] Pushing PWA static files to /mnt/data/pwa/..."
     remote "mkdir -p /mnt/data/pwa"
@@ -179,8 +200,14 @@ do_install() {
 
     echo "[5/6] Wiring /etc/inittab..."
     upsert_inittab_row "$TOONUI_LINE"
-    upsert_inittab_row "$QUBY_LINE"
     upsert_inittab_row "$P1_LINE"
+    if [[ -x "$QUBY_BIN" ]]; then
+        upsert_inittab_row "$QUBY_LINE"
+    else
+        # No quby_bridge in this bundle — drop any stale row so init
+        # doesn't keep trying to respawn a binary that's no longer there.
+        drop_inittab_row qbri
+    fi
 
     echo "[6/6] Reloading init (kill -HUP 1)..."
     reload_init

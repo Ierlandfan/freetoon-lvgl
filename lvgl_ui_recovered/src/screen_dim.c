@@ -41,6 +41,9 @@ static lv_obj_t * dim_fc_day[WEATHER_FORECAST_DAYS];
 static lv_obj_t * dim_fc_temp[WEATHER_FORECAST_DAYS];
 /* City header above the forecast strip — mirrors the home tile. */
 static lv_obj_t * dim_lbl_city = NULL;
+/* Life360 — stacked TOP_RIGHT under lbl_outside, opposite the waste block. */
+static lv_obj_t * dim_lbl_life360_ronald = NULL;
+static lv_obj_t * dim_lbl_life360_caja   = NULL;
 static lv_obj_t * dim_vent_fan  = NULL;   /* spinning fan icon */
 static lv_obj_t * dim_vent_lbl  = NULL;   /* "57 %" — actual ExhFanSpeed */
 static lv_obj_t * dim_img_water = NULL;   /* drop icon, visible while pouring */
@@ -237,8 +240,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
     /* Forecast strip — 3-hourly to match home screen. Falls back to daily
      * if the hourly feed hasn't populated yet (first 30 s after boot). */
-    /* City header — weather only. (Life360 lives on the Family tile on
-     * the home screen.) */
+    /* City header — weather only. */
     if (dim_lbl_city) {
         if (settings.show_dim_weather && weather_state.connected) {
             const char * city = settings.weather_location[0]
@@ -251,39 +253,85 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
+    /* Life360 — top-right stack under the outside temp. Hide rows that
+     * have no data yet so we don't render "Ronald: ?" forever. */
+    if (dim_lbl_life360_ronald) {
+        if (ha_state.loc_ronald[0]) {
+            lv_label_set_text_fmt(dim_lbl_life360_ronald, "Ronald: %s",
+                                  ha_state.loc_ronald);
+            lv_obj_clear_flag(dim_lbl_life360_ronald, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(dim_lbl_life360_ronald, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (dim_lbl_life360_caja) {
+        if (ha_state.loc_caja[0]) {
+            lv_label_set_text_fmt(dim_lbl_life360_caja, "Caja: %s",
+                                  ha_state.loc_caja);
+            lv_obj_clear_flag(dim_lbl_life360_caja, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(dim_lbl_life360_caja, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     int use_hourly = settings.show_dim_weather && weather_state.hour_count > 0;
-    int n_slots    = use_hourly ? weather_state.hour_count : weather_state.day_count;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         if (!dim_fc_icon[i]) continue;
+        if (!settings.show_dim_weather) {
+            lv_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
         /* For the hourly view, skip slot 0 — it's "now" and already lives
-         * in the city header above. Daily view shows all 5 days from 0. */
-        int si = use_hourly ? i + 1 : i;
-        if (settings.show_dim_weather && si < n_slots) {
-            if (use_hourly) {
+         * in the city header above. Daily view shows all 5 days from 0.
+         * If the hourly horizon runs short (late evening) fall back to the
+         * daily forecast so all 5 columns still carry data. */
+        int painted = 0;
+        if (use_hourly) {
+            int si = i + 1;
+            if (si < weather_state.hour_count) {
                 const weather_hour_t * h = &weather_state.hours[si];
                 lv_img_set_src(dim_fc_icon[i], weather_icon_for(h->icon));
                 lv_label_set_text(dim_fc_day[i], h->label);
-                /* Combine temp + wind direction on a single line so it
-                 * fits the dim-strip vertical budget. Format:
-                 * "16C  ZW3" — no "Bft" suffix to keep it compact. */
                 if (h->wind_dir[0])
                     lv_label_set_text_fmt(dim_fc_temp[i], "%.0f C  %s%d",
                                           h->temperature, h->wind_dir, h->wind_bft);
                 else
                     lv_label_set_text_fmt(dim_fc_temp[i], "%.0f C",
                                           h->temperature);
+                painted = 1;
             } else {
-                const weather_day_t * d = &weather_state.days[i];
-                lv_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
-                lv_label_set_text(dim_fc_day[i], d->day);
-                if (d->wind_dir[0])
-                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
-                                          d->min_temp, d->max_temp,
-                                          d->wind_dir, d->wind_bft);
-                else
-                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f C",
-                                          d->min_temp, d->max_temp);
+                /* Fall back to daily, starting at days[0] (= tomorrow). */
+                int di = si - weather_state.hour_count;
+                if (di < weather_state.day_count) {
+                    const weather_day_t * d = &weather_state.days[di];
+                    lv_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
+                    lv_label_set_text(dim_fc_day[i], d->day);
+                    if (d->wind_dir[0])
+                        lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
+                                              d->min_temp, d->max_temp,
+                                              d->wind_dir, d->wind_bft);
+                    else
+                        lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f C",
+                                              d->min_temp, d->max_temp);
+                    painted = 1;
+                }
             }
+        } else if (i < weather_state.day_count) {
+            const weather_day_t * d = &weather_state.days[i];
+            lv_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
+            lv_label_set_text(dim_fc_day[i], d->day);
+            if (d->wind_dir[0])
+                lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
+                                      d->min_temp, d->max_temp,
+                                      d->wind_dir, d->wind_bft);
+            else
+                lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f C",
+                                      d->min_temp, d->max_temp);
+            painted = 1;
+        }
+        if (painted) {
             lv_obj_clear_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
@@ -413,23 +461,25 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_color(lbl_program, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_program, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_program, "--");
-    lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, 150);
+    lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, 140);
 
     /* Air-quality + CH-pressure strip — moved below program so the TVOC /
-       ppm / bar / AQ block doesn't shove the manual label off the layout. */
+       ppm / bar / AQ block doesn't shove the manual label off the layout.
+       At +170 it ends around y=492, leaving room for dim_lbl_city at y=498
+       and the forecast strip at y=518 without anything overlapping. */
     lbl_metrics = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_metrics, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(lbl_metrics, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_metrics, "");
-    lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, 190);
+    lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, 170);
 
-    /* Burner state — between metrics and the forecast strip.
+    /* Burner state — sits to the right of lbl_program on the same baseline.
        CH-heating shows "-> 90 C" (red). DHW shows the faucet+drop pair
        slightly to the left of where the text would be. Idle hides both. */
     lbl_burner = lv_label_create(scr_root);
     lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_burner, "");
-    lv_obj_align(lbl_burner, LV_ALIGN_CENTER, 80, 150);
+    lv_obj_align(lbl_burner, LV_ALIGN_CENTER, 80, 140);
     lv_obj_add_flag(lbl_burner, LV_OBJ_FLAG_HIDDEN);
 
     /* Toon-style radiator+flame glyph, parked to the right of the big indoor
@@ -525,6 +575,29 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_outside, "-- C");
     lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, -30, 140);
 
+    /* Life360 — sits under the outside temp on the right edge, mirroring
+     * the Family tile on the home screen. Right-aligned so longer street
+     * names extend to the LEFT instead of clipping the bezel. */
+    dim_lbl_life360_ronald = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(dim_lbl_life360_ronald, lv_color_hex(0x88aaff), 0);
+    lv_obj_set_style_text_font(dim_lbl_life360_ronald, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(dim_lbl_life360_ronald, 340);
+    lv_obj_set_style_text_align(dim_lbl_life360_ronald, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(dim_lbl_life360_ronald, LV_LABEL_LONG_DOT);
+    lv_label_set_text(dim_lbl_life360_ronald, "");
+    lv_obj_align(dim_lbl_life360_ronald, LV_ALIGN_TOP_RIGHT, -30, 174);
+    lv_obj_add_flag(dim_lbl_life360_ronald, LV_OBJ_FLAG_HIDDEN);
+
+    dim_lbl_life360_caja = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(dim_lbl_life360_caja, lv_color_hex(0xff88cc), 0);
+    lv_obj_set_style_text_font(dim_lbl_life360_caja, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(dim_lbl_life360_caja, 340);
+    lv_obj_set_style_text_align(dim_lbl_life360_caja, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(dim_lbl_life360_caja, LV_LABEL_LONG_DOT);
+    lv_label_set_text(dim_lbl_life360_caja, "");
+    lv_obj_align(dim_lbl_life360_caja, LV_ALIGN_TOP_RIGHT, -30, 198);
+    lv_obj_add_flag(dim_lbl_life360_caja, LV_OBJ_FLAG_HIDDEN);
+
     /* Waste — 80×80 trash icon top-LEFT (mirroring the weather block).
        Visibility + label gated by settings + lead-days window. */
     waste_icon = lv_img_create(scr_root);
@@ -550,13 +623,16 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_width(dim_lbl_city, 1024);
     lv_obj_set_style_text_align(dim_lbl_city, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(dim_lbl_city, "");
-    lv_obj_set_pos(dim_lbl_city, 0, 494);
+    /* y=498 so it sits below the metrics row (CENTER + 170 ≈ 470..492)
+     * with a small gap, and still above the forecast strip at y=518. */
+    lv_obj_set_pos(dim_lbl_city, 0, 498);
 
     /* 5-day forecast strip across the bottom of dim. Black/white style:
        40×40 icon at top, day label below, temp range under that. */
-    int strip_y = 514;       /* sits below the program line (CENTER + 190
-                                → bottom edge ~512); was 470 which overlapped
-                                "manual" once the metrics row was added. */
+    /* Strip sits below the city header (y=498..~516) with a tiny gap.
+     * Total vertical budget: 600 − 518 = 82 px for icon(40) + 4 gap +
+     * day(18) + 2 gap + temp(18) = 82, tight but fits cleanly. */
+    int strip_y = 518;
     int col_w   = 1024 / WEATHER_FORECAST_DAYS;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         int cx = i * col_w + col_w / 2;

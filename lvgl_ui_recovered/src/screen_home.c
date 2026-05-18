@@ -762,26 +762,61 @@ static void refresh_cb(lv_timer_t * t) {
          * slot) to avoid duplicating it in the first column. */
         for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
             int si = i + 1;     /* skip slot 0 — that's "now" */
-            if (si >= weather_state.hour_count) break;
-            const weather_hour_t * h = &weather_state.hours[si];
-            lv_label_set_text(fc_day_lbl[i], h->label);
-            lv_label_set_text_fmt(fc_temp_lbl[i], "%.0f\xc2\xb0",
-                                  h->temperature);
-            lv_img_set_src(fc_icon[i], weather_icon_for(h->icon));
-            if (h->wind_dir[0]) {
-                lv_label_set_text_fmt(fc_wind_lbl[i], "%s %d Bft",
-                                      h->wind_dir, h->wind_bft);
-                int ang = wind_dir_angle(h->wind_dir);
-                if (fc_wind_arrow[i] && ang >= 0) {
-                    lv_img_set_angle(fc_wind_arrow[i], ang);
-                    lv_obj_clear_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
-                } else if (fc_wind_arrow[i]) {
-                    lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+            if (si < weather_state.hour_count) {
+                const weather_hour_t * h = &weather_state.hours[si];
+                lv_label_set_text(fc_day_lbl[i], h->label);
+                lv_label_set_text_fmt(fc_temp_lbl[i], "%.0f\xc2\xb0",
+                                      h->temperature);
+                lv_img_set_src(fc_icon[i], weather_icon_for(h->icon));
+                if (h->wind_dir[0]) {
+                    lv_label_set_text_fmt(fc_wind_lbl[i], "%s %d Bft",
+                                          h->wind_dir, h->wind_bft);
+                    int ang = wind_dir_angle(h->wind_dir);
+                    if (fc_wind_arrow[i] && ang >= 0) {
+                        lv_img_set_angle(fc_wind_arrow[i], ang);
+                        lv_obj_clear_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+                    } else if (fc_wind_arrow[i]) {
+                        lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+                    }
+                } else {
+                    lv_label_set_text(fc_wind_lbl[i], "");
+                    if (fc_wind_arrow[i])
+                        lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
                 }
             } else {
-                lv_label_set_text(fc_wind_lbl[i], "");
-                if (fc_wind_arrow[i])
-                    lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+                /* Past the hourly horizon — fall back to the daily forecast
+                 * so the last column(s) still carry signal. Index into days[]
+                 * starting at 0 (tomorrow / first daily entry available). */
+                int di = si - weather_state.hour_count;
+                if (di >= weather_state.day_count) {
+                    lv_label_set_text(fc_day_lbl[i], "");
+                    lv_label_set_text(fc_temp_lbl[i], "");
+                    lv_label_set_text(fc_wind_lbl[i], "");
+                    if (fc_wind_arrow[i])
+                        lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+                    continue;
+                }
+                const weather_day_t * d = &weather_state.days[di];
+                lv_label_set_text(fc_day_lbl[i], d->day);
+                lv_label_set_text_fmt(fc_temp_lbl[i],
+                                      "%.0f\xc2\xb0 (%.0f\xc2\xb0)",
+                                      d->max_temp, d->min_temp);
+                lv_img_set_src(fc_icon[i], weather_icon_for(d->icon));
+                if (d->wind_dir[0]) {
+                    lv_label_set_text_fmt(fc_wind_lbl[i], "%s %d Bft",
+                                          d->wind_dir, d->wind_bft);
+                    int ang = wind_dir_angle(d->wind_dir);
+                    if (fc_wind_arrow[i] && ang >= 0) {
+                        lv_img_set_angle(fc_wind_arrow[i], ang);
+                        lv_obj_clear_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+                    } else if (fc_wind_arrow[i]) {
+                        lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+                    }
+                } else {
+                    lv_label_set_text(fc_wind_lbl[i], "");
+                    if (fc_wind_arrow[i])
+                        lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
+                }
             }
         }
     } else {

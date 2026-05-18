@@ -134,32 +134,103 @@ small service worker.
 `toonui` is added with `respawn` so init brings it back on crash. Config
 lives at `/mnt/data/toonui.cfg`; logs go to `/var/volatile/tmp/toonui.log`.
 
-## Building
+## Install
 
-Cross-compile for the Toon's ARMv7 hardfloat target. The Makefile expects a
-Linaro toolchain at `/tmp/qt_rebuild/linaro/`:
+Two paths: grab a pre-built **release** (no toolchain required), or build
+from **source** if you want to hack on the code. Both use the same
+`install.sh` script — it auto-detects which layout it's running in.
 
-```bash
-cd lvgl_ui_recovered/src
-make            # produces ../build/toonui
-```
+### Prerequisites (both paths)
 
-Native build for desktop development (SDL2 driver) is also supported via the
-LVGL submodule; see `src/Makefile` for the targets.
+* A Linux host with `bash`, `ssh`, `scp`, and `sshpass` on `PATH`
+  (`apt-get install sshpass`).
+* SSH enabled on the Toon — toggle from the stock `hcb_config` menu
+  (Internals → SSH server). Default credentials are `root` / `toon`.
+* `/mnt/data/` is writable on stock firmware; nothing to do there.
+* A reachable MQTT broker is recommended (powers the packages banner
+  and the energy/water logging path).
+* Home Assistant is optional (drives curtains, Life360 location, push
+  notifications) — set the LLAT in `/mnt/data/ha.cfg` after install.
 
-## Deploying
+### Path A — Use a release (recommended)
 
-`install.sh` does an end-to-end install from a development host to a fresh
-Toon — pulls the toolchain, builds, copies `toonui` + PWA + scripts to
-`/mnt/data/`, patches `inittab`. SSH access is required (the Toon's stock
-`hcb_config` flips the SSH server on via the Internals menu).
+1. Grab the latest tarball from
+   [Releases](https://github.com/Ierlandfan/freetoon-lvgl/releases) — pick
+   `freetoon-lvgl-vX.Y.Z.tar.gz`.
 
-The default deploy expects:
+2. Extract somewhere on your Linux host:
 
-* Toon reachable as `toon@<ip>` (default password `toon`)
-* `/mnt/data/` mounted RW (it is, on stock firmware)
-* A reachable MQTT broker for the packages banner and (optionally) P1 telemetry
-* Home Assistant (optional, for curtain control / push notifications)
+   ```bash
+   tar xzf freetoon-lvgl-v0.5.0.tar.gz
+   cd freetoon-lvgl-v0.5.0
+   ```
+
+   The tarball contains:
+
+   ```
+   toonui                 # LVGL UI binary (ARMv7 hardfloat)
+   p1bridge               # HomeWizard → hcb_rrd bridge
+   quby_bridge            # (optional) Quby-protocol bridge to keteladapter
+   ot_mode_switch.sh      # helper called by the on-device Settings UI
+   pwa/                   # PWA static assets served on :10081
+   install.sh             # the same script as in the repo
+   ```
+
+3. Run the installer against your Toon:
+
+   ```bash
+   TOON_HOST=192.168.3.212 \
+   P1_TOKEN=<HomeWizard v2 bearer token> \
+   VENT_USER=<Itho-Wifi user> VENT_PASS=<…> \
+   ./install.sh
+   ```
+
+   The script scps every binary to `/mnt/data/`, writes
+   `/mnt/data/p1bridge.conf` + `/mnt/data/vent.conf`, upserts the
+   `toon` / `p1br` / `qbri` rows in `/etc/inittab`, then `kill -HUP 1`s
+   init. After ~4 seconds it pgreps the new processes so you can see them
+   running. Idempotent — re-run to upgrade.
+
+4. (Optional) edit `/mnt/data/toonui.cfg` on-device — or open the
+   Settings tile on the LVGL UI — to point at your MQTT broker, set the
+   weather location, dial brightness/idle timeout, etc.
+
+To uninstall: `./install.sh --uninstall` (drops inittab rows, kills
+processes, removes binaries + PWA + configs).
+
+### Path B — Build from source
+
+Use this if you want to modify the UI or the bridges.
+
+1. Clone the repo and grab the LVGL submodule:
+
+   ```bash
+   git clone https://github.com/Ierlandfan/freetoon-lvgl.git
+   cd freetoon-lvgl
+   git submodule update --init --recursive
+   ```
+
+2. Cross-compile for ARMv7 hardfloat. The Makefile expects a Linaro
+   toolchain at `/tmp/qt_rebuild/linaro/` (mirror of
+   `gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz`). Adjust
+   the path in the Makefiles if yours lives elsewhere.
+
+   ```bash
+   make -C lvgl_ui_recovered/src        # produces lvgl_ui_recovered/build/toonui
+   make -C p1bridge                     # produces p1bridge/p1bridge
+   make -C quby_bridge                  # produces quby_bridge/quby_bridge (optional)
+   ```
+
+   Native desktop build with the SDL2 driver is also wired up — useful
+   for previewing UI changes without a Toon on the desk. See
+   `lvgl_ui_recovered/src/Makefile` for the `sdl` target.
+
+3. Deploy with the same script — it picks the in-tree build paths
+   automatically:
+
+   ```bash
+   TOON_HOST=192.168.3.212 P1_TOKEN=… ./install.sh
+   ```
 
 Edit `lvgl_ui_recovered/src/settings.c` defaults or `/mnt/data/toonui.cfg`
 on-device to point at your own IPs.
