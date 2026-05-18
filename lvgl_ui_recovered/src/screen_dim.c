@@ -6,6 +6,7 @@
 #include "screens.h"
 #include "boxtalk.h"
 #include "settings.h"
+#include "homewizard.h"
 #include "packages.h"
 #include "weather.h"
 #include "wastecollection.h"
@@ -39,6 +40,8 @@ static lv_obj_t * dim_fc_day[WEATHER_FORECAST_DAYS];
 static lv_obj_t * dim_fc_temp[WEATHER_FORECAST_DAYS];
 static lv_obj_t * dim_vent_fan  = NULL;   /* spinning fan icon */
 static lv_obj_t * dim_vent_lbl  = NULL;   /* "57 %" — actual ExhFanSpeed */
+static lv_obj_t * dim_img_water = NULL;   /* drop icon, visible while pouring */
+static lv_obj_t * dim_lbl_water = NULL;   /* "1.4 L/m" / "+1.4 L" */
 static int        dim_vent_period_ms = 0; /* current spin animation period */
 static lv_timer_t * refresh_timer = NULL;
 
@@ -140,6 +143,26 @@ static void refresh_cb(lv_timer_t * t) {
        degrees ("-> 90 C", red); DHW shows a faucet + water-drop icon pair
        (no text — the icons say it). Idle hides everything so the dim
        screen stays clean. */
+    /* Live water-flow indicator on dim, right side below the radiator slot
+     * so it can co-exist with the CH flame. Same visibility rules as the
+     * home-tile version: drop+L/m while pouring, "+X.X L" briefly after. */
+    if (dim_img_water && dim_lbl_water) {
+        if (hw_state.connected_water && hw_state.water_lpm > 0.05f) {
+            lv_label_set_text_fmt(dim_lbl_water, "%.1f L/m",
+                                  hw_state.water_lpm);
+            lv_obj_clear_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        } else if (hw_state.connected_water && hw_state.water_session_l > 0) {
+            lv_label_set_text_fmt(dim_lbl_water, "+%.1f L",
+                                  hw_state.water_session_l);
+            lv_obj_clear_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     /* Show the radiator-with-flame glyph next to the indoor temp when the
      * boiler is firing CH — original-Toon style. No "90 C" target text:
      * the glyph itself is the signal. */
@@ -389,6 +412,23 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_align(dim_img_drop, LV_ALIGN_CENTER, 158, 55);
     lv_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
+    /* Live water flow — drop icon + "X.X L/m" right of the indoor temp,
+     * sits below the radiator slot so both can be visible at once. */
+    dim_img_water = lv_img_create(scr_root);
+    lv_img_set_src(dim_img_water, &icon_drop);
+    lv_img_set_zoom(dim_img_water, 256);
+    lv_obj_set_style_img_recolor(dim_img_water, lv_color_hex(0x66bbff), 0);
+    lv_obj_set_style_img_recolor_opa(dim_img_water, 255, 0);
+    lv_obj_align(dim_img_water, LV_ALIGN_CENTER, 130, 80);
+    lv_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+
+    dim_lbl_water = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
+    lv_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
+    lv_label_set_text(dim_lbl_water, "");
+    lv_obj_align(dim_lbl_water, LV_ALIGN_CENTER, 175, 80);
+    lv_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+
     /* Vent — small fan icon top-RIGHT (mirrors the waste icon on top-LEFT)
        with the actual ExhFanSpeed % below. Spin animation tracks % so
        the user can read at-a-glance whether the unit is idling or
@@ -416,7 +456,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(dim_vent_lbl, "-- %");
     lv_obj_set_style_text_align(dim_vent_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(dim_vent_lbl, 120);
-    lv_obj_align(dim_vent_lbl, LV_ALIGN_CENTER, -205, 85);
+    lv_obj_align(dim_vent_lbl, LV_ALIGN_CENTER, -145, 85);
     lv_obj_add_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
 
     /* Weather icon (large, top-right) + outside temp underneath.

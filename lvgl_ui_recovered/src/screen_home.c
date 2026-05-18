@@ -55,6 +55,10 @@ static lv_obj_t * lbl_t_program;
 static lv_obj_t * tile_img_flame;
 static lv_obj_t * tile_img_faucet;
 static lv_obj_t * tile_img_drop;
+/* Live water-flow indicator — small drop + "X L/min" on the home tile,
+ * visible whenever any tap is open (HomeWizard reports flow > 0.05). */
+static lv_obj_t * tile_img_water = NULL;
+static lv_obj_t * tile_lbl_water = NULL;
 /* Bottom-row labels (Energy/Weather/Waste) — updated by refresh_cb */
 static lv_obj_t * lbl_bot_energy;
 static lv_obj_t * lbl_bot_weather;
@@ -706,6 +710,26 @@ static void refresh_cb(lv_timer_t * t) {
         else
             lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
     }
+    /* Drop + L/m indicator on the big heater tile — visible whenever a tap
+     * is open so the user sees the flow at a glance without checking the
+     * (smaller) Water tile. Stays up briefly after the tap closes to show
+     * the just-poured total. */
+    if (tile_img_water && tile_lbl_water) {
+        if (hw_state.connected_water && hw_state.water_lpm > 0.05f) {
+            lv_label_set_text_fmt(tile_lbl_water, "%.1f L/m",
+                                  hw_state.water_lpm);
+            lv_obj_clear_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        } else if (hw_state.connected_water && hw_state.water_session_l > 0) {
+            lv_label_set_text_fmt(tile_lbl_water, "+%.1f L",
+                                  hw_state.water_session_l);
+            lv_obj_clear_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     /* (water_spinner visibility decided ONCE at the bottom of refresh_cb
      * with the proper connected_water + >0.05 LPM gate. This earlier copy
      * was a splat-recovery duplicate with a too-loose 0.01 threshold and
@@ -851,6 +875,26 @@ static void refresh_cb(lv_timer_t * t) {
                                   hw_state.water_session_l);
         else
             lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+    }
+    /* Drop + L/m indicator on the big heater tile — visible whenever a tap
+     * is open so the user sees the flow at a glance without checking the
+     * (smaller) Water tile. Stays up briefly after the tap closes to show
+     * the just-poured total. */
+    if (tile_img_water && tile_lbl_water) {
+        if (hw_state.connected_water && hw_state.water_lpm > 0.05f) {
+            lv_label_set_text_fmt(tile_lbl_water, "%.1f L/m",
+                                  hw_state.water_lpm);
+            lv_obj_clear_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        } else if (hw_state.connected_water && hw_state.water_session_l > 0) {
+            lv_label_set_text_fmt(tile_lbl_water, "+%.1f L",
+                                  hw_state.water_session_l);
+            lv_obj_clear_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+        }
     }
     /* (water_spinner visibility decided ONCE at the bottom of refresh_cb
      * with the proper connected_water + >0.05 LPM gate. This earlier copy
@@ -1137,6 +1181,24 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_img_recolor_opa(tile_img_drop, 255, 0);
     lv_obj_align(tile_img_drop, LV_ALIGN_CENTER, 125, -80);
     lv_obj_add_flag(tile_img_drop, LV_OBJ_FLAG_HIDDEN);
+
+    /* Live water-flow indicator on the left side of the indoor temp —
+     * mirrors the radiator+flame on the right. Drop icon + "X.X L/m"
+     * label, both hidden until HomeWizard reports flow > 0. */
+    tile_img_water = lv_img_create(th);
+    lv_img_set_src(tile_img_water, &icon_drop);
+    lv_img_set_zoom(tile_img_water, 256);
+    lv_obj_set_style_img_recolor(tile_img_water, lv_color_hex(0x66bbff), 0);
+    lv_obj_set_style_img_recolor_opa(tile_img_water, 255, 0);
+    lv_obj_align(tile_img_water, LV_ALIGN_CENTER, -130, -90);
+    lv_obj_add_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
+
+    tile_lbl_water = lv_label_create(th);
+    lv_obj_set_style_text_color(tile_lbl_water, lv_color_hex(0x66bbff), 0);
+    lv_obj_set_style_text_font(tile_lbl_water, &lv_font_montserrat_22, 0);
+    lv_label_set_text(tile_lbl_water, "");
+    lv_obj_align(tile_lbl_water, LV_ALIGN_CENTER, -100, -75);
+    lv_obj_add_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
 
     /* --- Waste tile: two stacked pickup rows ---
        Each row gets its own type-specific icon (newspaper for Papier,
