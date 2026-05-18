@@ -29,6 +29,12 @@
 toon_state_t toon_state = { .program_state = -1, .active_state = -1,
                             .boiler_type = -1 };
 
+/* Temporary-override bookkeeping. Read by program_label() at the top of
+ * the file as well as by the +/- nudge and tick paths further down, so
+ * the declarations live up here. See note_temp_override() for semantics. */
+static int temp_override_active = 0;
+static int temp_override_origin = -1;   /* program at moment of override */
+
 /* happ_thermstat device uuid — destination for thermostat/boiler actions. */
 #define THERMSTAT_UUID "b822de89-ecbd-4f6f-9fd2-5cac18fc06c4"
 /* boilerDev device uuid (profile "BoilerInfo") — destination for boiler
@@ -82,16 +88,31 @@ const char* program_label(void) {
      * schedule) is one tap away from being obvious. Returns a pointer into
      * a static buffer; safe because LVGL copies labels on set_text. */
     static char buf[40];
-    if (toon_state.active_state < 0) return "Manual";
+    /* happ_thermstat flips active_state to -1 the moment we write a
+     * roomSetpoint. For our +/- nudges that's not really "Off" — it's a
+     * temporary override on top of the schedule. When temp_override is
+     * armed, paint the label as "Scheduled: <origin preset> (temp)" so
+     * the user sees that the schedule will reassert at the next switch.
+     * "Off" is reserved for an explicit hold from the dedicated button. */
+    int origin = -1;
+    if (temp_override_active && temp_override_origin >= 0 &&
+                                temp_override_origin <= 3)
+        origin = temp_override_origin;
+    int preset_idx = (toon_state.active_state >= 0)
+                         ? toon_state.program_state : origin;
+    if (preset_idx < 0) return "Off";
     const char * preset;
-    switch (toon_state.program_state) {
+    switch (preset_idx) {
         case 0: preset = "Comfort"; break;
         case 1: preset = "Home";    break;
         case 2: preset = "Sleep";   break;
         case 3: preset = "Away";    break;
         default: return "Scheduled";
     }
-    snprintf(buf, sizeof(buf), "Scheduled: %s", preset);
+    if (temp_override_active)
+        snprintf(buf, sizeof(buf), "Scheduled: %s (temp)", preset);
+    else
+        snprintf(buf, sizeof(buf), "Scheduled: %s", preset);
     return buf;
 }
 
@@ -752,8 +773,12 @@ int boxtalk_set_program(int state) {
 }
 
 int boxtalk_set_manual(void) {
-    /* Re-apply current setpoint via roomSetpoint — this implicitly
-       sets activeState=-1 (manual override). */
+    /* "Off" in the UI: leave the schedule and hold the current setpoint
+     * indefinitely. happ_thermstat treats roomSetpoint as a permanent
+     * override (active_state = -1) on its own; we mirror that locally so
+     * the UI updates instantly. Any temporary-override bookkeeping is
+     * blown away — the user explicitly asked for a permanent hold. */
+    temp_override_active = 0;
     float sp = toon_state.setpoint > 0 ? toon_state.setpoint : 18.0f;
     int rc = boxtalk_set_setpoint(sp);
     if (rc == 0) toon_state.active_state = -1;
@@ -765,23 +790,67 @@ int boxtalk_resume_schedule(void) {
      * for "resume schedule" — instead we ask for the preset the schedule
      * says is currently active, which puts activeState back ≥0 and lets
      * the schedule daemon progress normally from there. */
+    temp_override_active = 0;
     int now_state = schedule_program_now();
     if (now_state < 0) now_state = 1;     /* fall back to Home if no schedule */
     return boxtalk_set_program(now_state);
 }
 
+/* +/- on the home tile = temporary override that auto-reverts to the
+ * schedule at the next switch point. We can't ask happ_thermstat to do
+ * this — roomSetpoint by itself flips to active_state=-1 (indefinite
+ * manual). Workaround: remember the program the schedule was on when
+ * the user first nudged the setpoint, then in boxtalk_tick() (called
+ * from the UI refresh) watch for schedule_program_now() to change and
+ * auto-call resume_schedule().
+ *
+ * The "Off" button (boxtalk_set_manual above) clears this flag — that's
+ * the explicit "no, I really want a permanent hold" path. */
+static void note_temp_override(void) {
+    if (!temp_override_active) {
+        /* First nudge — capture the preset that was active. If we're
+         * already in manual (active_state < 0), fall back to whatever
+         * the schedule says is current now; we still want the
+         * auto-resume behaviour. */
+        int origin = (toon_state.active_state >= 0)
+                         ? toon_state.program_state
+                         : schedule_program_now();
+        if (origin < 0) return;   /* no schedule loaded — leave it manual */
+        temp_override_origin = origin;
+        temp_override_active = 1;
+    }
+}
+
 int boxtalk_setpoint_increase(void) {
-    /* happ_thermstat has no ManualSetpointIncrease verb (Not implemented).
-       Read current setpoint and SetThermostatSetpoint to value + 0.5. */
+    note_temp_override();
     float cur = toon_state.setpoint;
     if (cur < 5.0f) cur = 17.0f;  /* fallback if not yet known */
     return boxtalk_set_setpoint(cur + 0.5f);
 }
 
 int boxtalk_setpoint_decrease(void) {
+    note_temp_override();
     float cur = toon_state.setpoint;
     if (cur < 5.0f) cur = 17.0f;
     return boxtalk_set_setpoint(cur - 0.5f);
+}
+
+void boxtalk_tick(void) {
+    /* Drive the temporary-override expiry from the UI's 1 s refresh.
+     * When the weekly schedule advances past the program that was
+     * active at the moment of the override, snap back to whatever the
+     * schedule wants now and clear the flag. */
+    if (!temp_override_active) return;
+    int now_prog = schedule_program_now();
+    if (now_prog < 0 || now_prog == temp_override_origin) return;
+    temp_override_active = 0;
+    boxtalk_resume_schedule();
+}
+
+int boxtalk_temp_override_active(void) { return temp_override_active; }
+
+int boxtalk_temp_override_origin(void) {
+    return temp_override_active ? temp_override_origin : -1;
 }
 
 /* ---- background thread ---- */

@@ -31,10 +31,14 @@ static lv_obj_t * lbl_date;
 static lv_timer_t * refresh_timer = NULL;
 /* Program preset buttons just below the indoor temp.
  *   [0] Scheduled  → resume_schedule (whatever the schedule says now)
- *   [1] Manual     → set_manual (hold current setpoint, activeState = -1)
+ *   [1] Off        → set_manual (permanent hold, activeState = -1).
+ *                    Labelled "Off" = "off the schedule" because the home
+ *                    tile's +/- nudges are temporary (auto-resume at the
+ *                    next switch); this button is how you ask for a
+ *                    permanent manual hold instead.
  *   [2..5] Comfort/Home/Sleep/Away → set_program(0..3)
  * Sentinel -2 in prog_state[] means "resume schedule" — distinct from -1
- * (manual). The active mode (Scheduled or Manual) AND the active preset
+ * (manual). The active mode (Scheduled or Off) AND the active preset
  * both get a white outline; the two highlights live on different buttons
  * so they don't clash. */
 static lv_obj_t * btn_prog[6] = {0};
@@ -76,14 +80,22 @@ static void refresh_cb(lv_timer_t * t) {
     if (toon_state.indoor_temp > 0)
         lv_label_set_text_fmt(lbl_temp, "%.1f C", display_indoor_temp(toon_state.indoor_temp));
 
-    /* Highlight logic: the mode button (Scheduled[0] or Manual[1]) gets a
+    /* Highlight logic: the mode button (Scheduled[0] or Off[1]) gets a
      * white border based on active_state; the preset button (Comfort[2] /
-     * Home[3] / Sleep[4] / Away[5]) gets one based on program_state. Both
-     * fire at once so the user can see "Scheduled, currently Home" at a
-     * glance instead of trying to remember which one was last tapped. */
-    int mode_idx = (toon_state.active_state < 0) ? 1 : 0;
-    int preset_idx = (toon_state.program_state >= 0 && toon_state.program_state <= 3)
-                         ? toon_state.program_state + 2 : -1;
+     * Home[3] / Sleep[4] / Away[5]) gets one based on program_state. A
+     * +/- temporary override counts as "still on the schedule" so the
+     * Scheduled mode + origin preset stay highlighted while it's in flight. */
+    int temp_origin = boxtalk_temp_override_origin();   /* -1 if none */
+    int on_schedule = (toon_state.active_state >= 0) || (temp_origin >= 0);
+    int mode_idx    = on_schedule ? 0 : 1;
+    int preset;
+    if (toon_state.active_state >= 0 &&
+        toon_state.program_state >= 0 && toon_state.program_state <= 3) {
+        preset = toon_state.program_state;
+    } else {
+        preset = temp_origin;
+    }
+    int preset_idx = (preset >= 0) ? preset + 2 : -1;
     for (int i = 0; i < 6; i++) {
         if (!btn_prog[i]) continue;
         int active = (i == mode_idx) || (i == preset_idx);
@@ -241,7 +253,7 @@ lv_obj_t * screen_thermostat_create(void) {
      * schedule editor pills for instant recognition; Scheduled uses a
      * neutral teal so it doesn't fight any of the preset colours. */
     {
-        const char * names[6] = {"Scheduled", "Manual",
+        const char * names[6] = {"Scheduled", "Off",
                                  "Comfort", "Home", "Sleep", "Away"};
         uint32_t     cols[6]  = {0x2f6b6b, 0x6a5424,
                                  0xcc7733, 0x3377cc, 0x553388, 0x557788};
