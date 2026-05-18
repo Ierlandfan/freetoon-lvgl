@@ -106,6 +106,17 @@ static void poll_water(void) {
     hw_state.water_total_m3 = (float)parse_num(j, "total_liter_m3",   0);
     hw_state.water_lpm      = (float)parse_num(j, "active_liter_lpm", 0);
     hw_state.connected_water = 1;
+    /* Demo override: if /tmp/demo_water exists with a number, treat it as the
+     * live L/min. Used only to record marketing GIFs without needing a tap
+     * physically open. Delete the file to return to real readings. */
+    {
+        FILE * df = fopen("/tmp/demo_water", "r");
+        if (df) {
+            float v;
+            if (fscanf(df, "%f", &v) == 1) hw_state.water_lpm = v;
+            fclose(df);
+        }
+    }
 
     /* Session bookkeeping. Called every poll tick (2 s). The poll interval
      * matters here — session_age_s grows by it on each zero-flow tick. */

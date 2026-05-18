@@ -9,7 +9,7 @@ you can also drive the house from your phone.
 
 ![Demo](docs/demo.gif)
 
-*Live capture from the device — clock ticking, vent fan spinning, water flow & energy values updating in real time.*
+*Captured live from the device framebuffer: home idle → home with water flowing → settings tile grid → home heating + water → dim ambient with clock, fan spinning, radiator+flame and water drop all visible.*
 
 ![Home screen](docs/screenshots/home.png)
 
