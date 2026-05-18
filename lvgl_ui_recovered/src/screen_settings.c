@@ -72,6 +72,28 @@ static void on_forecast_mode_change(lv_event_t * e) {
     settings.forecast_mode = v;
     lv_label_set_text(lbl_forecast_mode, forecast_mode_label(v));
 }
+
+/* Weather modal: free-text city label + GeoNames id, both persisted via
+ * the modal_close() save path. The id is what the API actually uses; the
+ * label is purely cosmetic for the Weather screen header. */
+static lv_obj_t * ta_wx_city = NULL;
+static lv_obj_t * ta_wx_id   = NULL;
+static lv_obj_t * lbl_wx_status = NULL;
+static void on_weather_apply(lv_event_t * e) {
+    (void)e;
+    if (ta_wx_city) snprintf(settings.weather_location,
+                             sizeof settings.weather_location,
+                             "%s", lv_textarea_get_text(ta_wx_city));
+    if (ta_wx_id) {
+        int id = atoi(lv_textarea_get_text(ta_wx_id));
+        if (id > 0) settings.weather_location_id = id;
+    }
+    settings_save();
+    if (lbl_wx_status)
+        lv_label_set_text_fmt(lbl_wx_status,
+            "Saved. %s = %d", settings.weather_location,
+            settings.weather_location_id);
+}
 static void on_dim_waste_change(lv_event_t * e) {
     settings.show_dim_waste = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
@@ -374,7 +396,7 @@ static void open_display_modal(lv_event_t * e) {
 
 static void open_weather_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Weather", 310);
+    lv_obj_t * p = modal_open("Weather", 560);
     int y = 70;
 
     lv_obj_t * r = panel_row(p, y, "Show weather on dim screen", NULL);
@@ -388,6 +410,62 @@ static void open_weather_modal(lv_event_t * e) {
                       forecast_mode_label(settings.forecast_mode));
     sl_forecast_mode = row_slider(r, 0, 2, settings.forecast_mode,
                                   on_forecast_mode_change);
+    y += 90;
+
+    /* City name (cosmetic) + Buienradar GeoNames id (used by the API). */
+    lv_obj_t * lbl_city = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_city, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_city, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lbl_city, "City:");
+    lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_wx_city = lv_textarea_create(p);
+    lv_obj_set_size(ta_wx_city, 380, 44);
+    lv_obj_align(ta_wx_city, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_textarea_set_one_line(ta_wx_city, true);
+    lv_textarea_set_text(ta_wx_city, settings.weather_location);
+    y += 60;
+
+    lv_obj_t * lbl_id = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_id, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_id, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lbl_id, "Buienradar id:");
+    lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_wx_id = lv_textarea_create(p);
+    lv_obj_set_size(ta_wx_id, 380, 44);
+    lv_obj_align(ta_wx_id, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_textarea_set_one_line(ta_wx_id, true);
+    lv_textarea_set_accepted_chars(ta_wx_id, "0123456789");
+    char id_str[16]; snprintf(id_str, sizeof id_str, "%d",
+                              settings.weather_location_id);
+    lv_textarea_set_text(ta_wx_id, id_str);
+    y += 50;
+
+    /* Hint — where to find the id. */
+    lv_obj_t * hint = lv_label_create(p);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_label_set_text(hint,
+        "Find your city's id in the URL on buienradar.nl/weer/<city>/nl/<ID>\n"
+        "(e.g. Medemblik = 2751073, De Bilt = 2757783). Plain KNMI codes\n"
+        "won't work — these are GeoNames ids.");
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y);
+    y += 70;
+
+    lv_obj_t * btn = lv_btn_create(p);
+    lv_obj_set_size(btn, 200, 50);
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_add_event_cb(btn, on_weather_apply, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bl = lv_label_create(btn);
+    lv_label_set_text(bl, "Apply");
+    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(bl);
+
+    lbl_wx_status = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_wx_status, lv_color_hex(0x9fc4e6), 0);
+    lv_obj_set_style_text_font(lbl_wx_status, &lv_font_montserrat_18, 0);
+    lv_label_set_text(lbl_wx_status, "");
+    lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, 220, y + 12);
 }
 
 static void open_waste_modal(lv_event_t * e) {
