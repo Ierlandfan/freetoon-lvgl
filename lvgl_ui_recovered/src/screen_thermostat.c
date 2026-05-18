@@ -106,11 +106,12 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text_fmt(lbl_voc, "eCO2 %d ppm", toon_state.eco2);
 
     if (hw_state.connected_water) {
+        /* 3 decimals — every litre poured ticks the displayed total. */
         if (hw_state.water_lpm > 0.05f)
-            lv_label_set_text_fmt(lbl_water, "%.2f m3  /  %.1f L/min",
+            lv_label_set_text_fmt(lbl_water, "%.3f m3  /  %.1f L/min",
                                   hw_state.water_total_m3, hw_state.water_lpm);
         else
-            lv_label_set_text_fmt(lbl_water, "%.2f m3",
+            lv_label_set_text_fmt(lbl_water, "%.3f m3",
                                   hw_state.water_total_m3);
     } else {
         lv_label_set_text(lbl_water, "Water -- m3");

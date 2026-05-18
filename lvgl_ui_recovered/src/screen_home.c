@@ -753,7 +753,7 @@ static void refresh_cb(lv_timer_t * t) {
      * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
      * feedback that the pour registered. */
     if (lbl_inbox_main && hw_state.connected_water) {
-        lv_label_set_text_fmt(lbl_inbox_main, "%.2f m3", hw_state.water_total_m3);
+        lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
     }
     if (lbl_inbox_sub && hw_state.connected_water) {
         if (hw_state.water_lpm > 0.05f)
@@ -982,7 +982,7 @@ static void refresh_cb(lv_timer_t * t) {
      * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
      * feedback that the pour registered. */
     if (lbl_inbox_main && hw_state.connected_water) {
-        lv_label_set_text_fmt(lbl_inbox_main, "%.2f m3", hw_state.water_total_m3);
+        lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
     }
     if (lbl_inbox_sub && hw_state.connected_water) {
         if (hw_state.water_lpm > 0.05f)
@@ -1065,7 +1065,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Water tile (replaces Inbox placeholder) — total + live l/min. */
     if (lbl_inbox_main && hw_state.connected_water) {
-        lv_label_set_text_fmt(lbl_inbox_main, "%.2f m3", hw_state.water_total_m3);
+        lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
     }
     if (lbl_inbox_sub && hw_state.connected_water) {
         lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min", hw_state.water_lpm);

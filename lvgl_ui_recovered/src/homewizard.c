@@ -90,6 +90,14 @@ static float session_start_m3 = 0;
 static int   session_zero_seconds = 0;
 #define WATER_SESSION_GRACE_S 20   /* zero-flow seconds before we close   */
 #define WATER_SESSION_FADE_S  60   /* keep "+X L" visible this long after */
+#define WATER_POLL_INTERVAL_S 2
+
+/* Previous-poll total. Used to detect flow by diffing the cumulative
+ * counter (which ticks per litre and is reliable down to 1 L pours) —
+ * the device's "active_liter_lpm" field needs the flow to stay above
+ * ~0.5 L/min for ~10 s before it registers, so trickle pours and a
+ * just-opened tap stay invisible if we trust it alone. */
+static float prev_total_m3 = -1.0f;
 
 static void poll_water(void) {
     static char body[2048];
@@ -107,9 +115,24 @@ static void poll_water(void) {
         hw_state.connected_water = 0;
         return;
     }
-    hw_state.water_total_m3 = (float)parse_num(j, "total_liter_m3",   0);
-    hw_state.water_lpm      = (float)parse_num(j, "active_liter_lpm", 0);
+    float new_total_m3 = (float)parse_num(j, "total_liter_m3",   0);
+    float device_lpm   = (float)parse_num(j, "active_liter_lpm", 0);
+    hw_state.water_total_m3  = new_total_m3;
     hw_state.connected_water = 1;
+
+    /* Delta-derived flow: litres since last poll → L/min. Picks up tiny
+     * pours the device's smoothed lpm misses entirely. The device's own
+     * lpm wins when it's larger (heavy flow ramping up faster than the
+     * 2 s tick resolves). */
+    float derived_lpm = 0;
+    if (prev_total_m3 >= 0 && new_total_m3 >= prev_total_m3) {
+        float dl = (new_total_m3 - prev_total_m3) * 1000.0f;   /* litres */
+        derived_lpm = dl * (60.0f / (float)WATER_POLL_INTERVAL_S);
+    }
+    prev_total_m3 = new_total_m3;
+
+    float shown_lpm = (device_lpm > derived_lpm) ? device_lpm : derived_lpm;
+
     /* Demo override: if /tmp/demo_water exists with a number, treat it as the
      * live L/min. Used only to record marketing GIFs without needing a tap
      * physically open. Delete the file to return to real readings. */
@@ -117,14 +140,17 @@ static void poll_water(void) {
         FILE * df = fopen("/tmp/demo_water", "r");
         if (df) {
             float v;
-            if (fscanf(df, "%f", &v) == 1) hw_state.water_lpm = v;
+            if (fscanf(df, "%f", &v) == 1) shown_lpm = v;
             fclose(df);
         }
     }
+    hw_state.water_lpm = shown_lpm;
 
-    /* Session bookkeeping. Called every poll tick (2 s). The poll interval
-     * matters here — session_age_s grows by it on each zero-flow tick. */
-    if (hw_state.water_lpm > 0.05f) {
+    /* Session bookkeeping. The "flowing now?" test is shown_lpm > 0.05
+     * rather than device_lpm, so a single litre poured between two polls
+     * starts a session and the per-pour litre count starts ticking
+     * immediately instead of after the device's lpm field catches up. */
+    if (shown_lpm > 0.05f) {
         if (!hw_state.water_session_active) {
             session_start_m3 = hw_state.water_total_m3;
             hw_state.water_session_active = 1;
@@ -136,14 +162,14 @@ static void poll_water(void) {
         session_zero_seconds = 0;
     } else if (hw_state.water_session_active) {
         /* Flow stopped — wait the grace window before closing the session. */
-        session_zero_seconds += 2;
+        session_zero_seconds += WATER_POLL_INTERVAL_S;
         if (session_zero_seconds >= WATER_SESSION_GRACE_S) {
             hw_state.water_session_active = 0;
             hw_state.water_session_age_s = 0;
         }
     } else if (hw_state.water_session_l > 0) {
         /* Session closed; fade out the "+X L" display. */
-        hw_state.water_session_age_s += 2;
+        hw_state.water_session_age_s += WATER_POLL_INTERVAL_S;
         if (hw_state.water_session_age_s >=
             WATER_SESSION_GRACE_S + WATER_SESSION_FADE_S) {
             hw_state.water_session_l = 0;
