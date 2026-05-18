@@ -1293,30 +1293,31 @@ lv_obj_t * screen_home_create(void) {
 
     /* Bottom strip: humidity | eCO2 | TVOC | water-pressure on one row.
        Font 18 keeps the 4 values from running into each other on a
-       520-wide tile. */
+       520-wide tile. y offset 0 pins them flush with the tile bottom
+       so the mode-toggle and preset rows above have more breathing room. */
     lbl_t_humidity = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_humidity, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_t_humidity, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_t_humidity, "RH --%");
-    lv_obj_align(lbl_t_humidity, LV_ALIGN_BOTTOM_LEFT, 12, -4);
+    lv_obj_align(lbl_t_humidity, LV_ALIGN_BOTTOM_LEFT, 12, 0);
 
     lbl_t_ppm = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_ppm, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_t_ppm, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_t_ppm, "-- ppm");
-    lv_obj_align(lbl_t_ppm, LV_ALIGN_BOTTOM_LEFT, 140, -4);
+    lv_obj_align(lbl_t_ppm, LV_ALIGN_BOTTOM_LEFT, 140, 0);
 
     lbl_t_tvoc = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_tvoc, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_t_tvoc, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_t_tvoc, "TVOC --");
-    lv_obj_align(lbl_t_tvoc, LV_ALIGN_BOTTOM_LEFT, 280, -4);
+    lv_obj_align(lbl_t_tvoc, LV_ALIGN_BOTTOM_LEFT, 280, 0);
 
     lbl_t_pressure = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_pressure, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_t_pressure, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_t_pressure, "-- bar");
-    lv_obj_align(lbl_t_pressure, LV_ALIGN_BOTTOM_RIGHT, -12, -4);
+    lv_obj_align(lbl_t_pressure, LV_ALIGN_BOTTOM_RIGHT, -12, 0);
 
     /* CH-pressure warning banner. Sits on top of the Heater tile so the
        user can't miss it. EVENT_BUBBLE keeps the tile clickable through
@@ -1458,7 +1459,9 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_energy_w, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_energy_w, &lv_font_montserrat_28, 0);
     lv_label_set_text(lbl_energy_w, "-- W");
-    lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, -8);
+    /* +6 sits the big number just below the tile centre — clears the
+     * "Energy" header more cleanly than the prior -8. */
+    lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, 6);
 
     lbl_energy_gas = lv_label_create(energy_t.tile);
     lv_obj_set_style_text_color(lbl_energy_gas, lv_color_hex(COL_TEXT_DIM), 0);
@@ -1586,7 +1589,8 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_inbox_main, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_inbox_main, &lv_font_montserrat_28, 0);
     lv_label_set_text(lbl_inbox_main, "-- m3");
-    lv_obj_align(lbl_inbox_main, LV_ALIGN_CENTER, 0, -8);
+    /* +6 matches the Energy tile so the two big numbers line up vertically. */
+    lv_obj_align(lbl_inbox_main, LV_ALIGN_CENTER, 0, 6);
     lbl_inbox_sub = lv_label_create(water_t.tile);
     lv_obj_set_style_text_color(lbl_inbox_sub, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_inbox_sub, &lv_font_montserrat_18, 0);
