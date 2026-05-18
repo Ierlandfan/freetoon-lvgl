@@ -51,8 +51,13 @@ static lv_obj_t * waste_icon_2;
  * Hidden when pressure is OK or unknown. */
 static lv_obj_t * pressure_banner = NULL;
 static lv_obj_t * pressure_banner_lbl = NULL;
-static lv_obj_t * lbl_t_program;
-/* Four small one-tap preset buttons sitting just below the program pill —
+static lv_obj_t * lbl_t_program;     /* small "Home (temp)" hint under buttons */
+/* Mode toggle on the heater tile — two side-by-side buttons. Manual taps
+ * to permanent hold; Program taps to resume schedule. Active mode gets a
+ * white border so the user can read state at a glance. */
+static lv_obj_t * tile_btn_mode_manual  = NULL;
+static lv_obj_t * tile_btn_mode_program = NULL;
+/* Four small one-tap preset buttons sitting just below the mode toggle —
  * Comfort / Home / Sleep / Away. Each fires boxtalk_set_program(N) so the
  * Toon jumps straight to that preset (and the schedule keeps progressing
  * from there). Active preset gets a white border. */
@@ -201,18 +206,10 @@ static void picker_apply_cb(lv_event_t * e) {
     if (pe->modal) lv_obj_del(pe->modal);
 }
 
-/* Single tap on the home pill = toggle between Off and Scheduled. A
- * temporary override (active after a +/- nudge) still counts as "on the
- * schedule" for toggle purposes, so the next tap takes the user to the
- * explicit Off mode (permanent hold) rather than re-arming the schedule
- * they never actually left. */
-static void on_program_toggle(lv_event_t * e) {
-    (void)e;
-    int on_schedule = (toon_state.active_state >= 0) ||
-                      boxtalk_temp_override_active();
-    if (on_schedule) boxtalk_set_manual();
-    else             boxtalk_resume_schedule();
-}
+/* Mode-toggle taps. Each button always sends the corresponding action;
+ * re-tapping the active mode is a no-op the user can't get wrong. */
+static void on_mode_manual(lv_event_t * e)  { (void)e; boxtalk_set_manual();      }
+static void on_mode_program(lv_event_t * e) { (void)e; boxtalk_resume_schedule(); }
 
 /* Direct preset tap on one of the four pill-side buttons. user_data carries
  * the Toon program state (0=Comfort, 1=Home, 2=Sleep, 3=Away). */
@@ -439,40 +436,62 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text(lbl_t_setpoint, "");
     }
 
-    /* Active scheme (Comfort/Home/Sleep/Away) or "Manual" if overridden. */
-    lv_label_set_text(lbl_t_program, program_label());
-    if (toon_state.active_state < 0)
-        lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(0xffaa44), 0); /* manual = amber */
-    else
-        lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(COL_TEXT_DIM), 0);
+    /* Mode toggle + preset highlighting in one pass.  on_schedule treats a
+     * +/- temporary override as "still on the schedule" — the schedule
+     * daemon is parked at active_state=-1 server-side but the override
+     * tick will swing it back, so the UI shouldn't pretend we're in Manual. */
+    int temp_origin = boxtalk_temp_override_origin();   /* -1 if none */
+    int on_schedule = (toon_state.active_state >= 0) || (temp_origin >= 0);
+
+    if (tile_btn_mode_manual)
+        lv_obj_set_style_border_width(tile_btn_mode_manual,
+                                      on_schedule ? 0 : 2, 0);
+    if (tile_btn_mode_program)
+        lv_obj_set_style_border_width(tile_btn_mode_program,
+                                      on_schedule ? 2 : 0, 0);
+
+    /* Program-button label carries the active preset (and "(temp)" while
+     * the override is in flight) so the user can read state from the
+     * button text instead of guessing from the highlight ring. In Manual
+     * mode the label is just "Program" — the unhighlighted side. */
+    int preset;
+    if (toon_state.active_state >= 0 &&
+        toon_state.program_state >= 0 && toon_state.program_state <= 3) {
+        preset = toon_state.program_state;
+    } else {
+        preset = temp_origin;
+    }
+    if (lbl_t_program) {
+        const char * pname = NULL;
+        switch (preset) {
+            case 0: pname = "Comfort"; break;
+            case 1: pname = "Home";    break;
+            case 2: pname = "Sleep";   break;
+            case 3: pname = "Away";    break;
+        }
+        if (on_schedule && pname) {
+            if (boxtalk_temp_override_active())
+                lv_label_set_text_fmt(lbl_t_program, "Program: %s (temp)", pname);
+            else
+                lv_label_set_text_fmt(lbl_t_program, "Program: %s", pname);
+        } else {
+            lv_label_set_text(lbl_t_program, "Program");
+        }
+    }
 
     /* Direct-preset row: white border on whichever preset is currently in
      * effect. While a +/- temporary override is armed the schedule has
      * been parked at active_state=-1 server-side, so fall back to the
-     * captured origin preset so the highlight survives the nudge. Off
+     * captured origin preset so the highlight survives the nudge. Manual
      * mode (no override either) drops all borders. */
     {
-        int preset;
-        if (toon_state.active_state >= 0 &&
-            toon_state.program_state >= 0 &&
-            toon_state.program_state <= 3) {
-            preset = toon_state.program_state;
-        } else {
-            preset = boxtalk_temp_override_origin();   /* -1 if none */
-        }
+        int hi = on_schedule ? preset : -1;
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
             lv_obj_set_style_border_width(tile_btn_preset[i],
-                                          (i == preset) ? 2 : 0, 0);
+                                          (i == hi) ? 2 : 0, 0);
         }
     }
-
-    /* Active scheme (Comfort/Home/Sleep/Away) or "Manual" if overridden. */
-    lv_label_set_text(lbl_t_program, program_label());
-    if (toon_state.active_state < 0)
-        lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(0xffaa44), 0); /* manual = amber */
-    else
-        lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(COL_TEXT_DIM), 0);
 
     /* Pure-icon burner indicator next to the big indoor-temp number. No
      * "-> 90 C" text — the radiator+flame glyph carries the meaning, same
@@ -922,13 +941,12 @@ static void refresh_cb(lv_timer_t * t) {
             lv_label_set_text(lbl_forecast_city, city);
     }
 
-    /* Family tile (Life360). Colour identifies who's who — see the
-     * label-create calls above. Empty strings show "?". */
+    /* Family tile (Life360). Name prefix + scrolling address. */
     if (lbl_life360_ronald)
-        lv_label_set_text(lbl_life360_ronald,
+        lv_label_set_text_fmt(lbl_life360_ronald, "Ronald: %s",
             ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?");
     if (lbl_life360_caja)
-        lv_label_set_text(lbl_life360_caja,
+        lv_label_set_text_fmt(lbl_life360_caja, "Caja: %s",
             ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
 
     /* Forecast band — splat-recovery left two more copies of this
@@ -1200,28 +1218,49 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_up_lbl);
 
-    /* Active program (Manual / Scheduled: <preset>). Wrapped in a clickable
-       pill so taps land on a generous hit area. Single tap toggles between
-       Manual and Scheduled — the full Comfort/Home/Sleep/Away picker lives
-       on the heater-detail page. Width 420 so the longest label
-       ("Manual  -  tap to resume") fits at 22-pt without clipping. */
-    lv_obj_t * prog_pill = lv_obj_create(th);
-    lv_obj_set_size(prog_pill, 420, 52);
-    lv_obj_align(prog_pill, LV_ALIGN_CENTER, 0, 70);
-    lv_obj_set_style_bg_color(prog_pill, lv_color_hex(0x1a3a5a), 0);
-    lv_obj_set_style_radius(prog_pill, 22, 0);
-    lv_obj_set_style_border_width(prog_pill, 1, 0);
-    lv_obj_set_style_border_color(prog_pill, lv_color_hex(COL_TILE_ACCENT), 0);
-    lv_obj_set_style_pad_all(prog_pill, 0, 0);
-    lv_obj_clear_flag(prog_pill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_ext_click_area(prog_pill, 14);
-    lv_obj_add_event_cb(prog_pill, on_program_toggle, LV_EVENT_CLICKED, NULL);
+    /* Mode toggle row — Manual | Program, both tappable. The active mode
+     * gets a white outline so the user can read state at a glance. The
+     * Program button's label is dynamic ("Program: Home", "Program: Home
+     * (temp)" while a +/- override is in flight) — packs the active-preset
+     * info into the button itself instead of needing a separate label. */
+    {
+        const int manual_w = 130, prog_w = 270, btn_h = 52, gap = 6;
+        const int total   = manual_w + prog_w + gap;
+        const int left_x  = -total / 2 + manual_w / 2;
+        const int right_x = -total / 2 + manual_w + gap + prog_w / 2;
 
-    lbl_t_program = lv_label_create(prog_pill);
-    lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_program, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_t_program, "--");
-    lv_obj_center(lbl_t_program);
+        tile_btn_mode_manual = lv_btn_create(th);
+        lv_obj_set_size(tile_btn_mode_manual, manual_w, btn_h);
+        lv_obj_align(tile_btn_mode_manual, LV_ALIGN_CENTER, left_x, 70);
+        lv_obj_set_style_bg_color(tile_btn_mode_manual, lv_color_hex(0x6a5424), 0);
+        lv_obj_set_style_radius(tile_btn_mode_manual, 22, 0);
+        lv_obj_set_style_border_color(tile_btn_mode_manual, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_width(tile_btn_mode_manual, 0, 0);
+        lv_obj_set_ext_click_area(tile_btn_mode_manual, 8);
+        lv_obj_add_event_cb(tile_btn_mode_manual, on_mode_manual,
+                            LV_EVENT_CLICKED, NULL);
+        lv_obj_t * ml = lv_label_create(tile_btn_mode_manual);
+        lv_label_set_text(ml, "Manual");
+        lv_obj_set_style_text_color(ml, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(ml, &lv_font_montserrat_22, 0);
+        lv_obj_center(ml);
+
+        tile_btn_mode_program = lv_btn_create(th);
+        lv_obj_set_size(tile_btn_mode_program, prog_w, btn_h);
+        lv_obj_align(tile_btn_mode_program, LV_ALIGN_CENTER, right_x, 70);
+        lv_obj_set_style_bg_color(tile_btn_mode_program, lv_color_hex(0x2f6b6b), 0);
+        lv_obj_set_style_radius(tile_btn_mode_program, 22, 0);
+        lv_obj_set_style_border_color(tile_btn_mode_program, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_width(tile_btn_mode_program, 0, 0);
+        lv_obj_set_ext_click_area(tile_btn_mode_program, 8);
+        lv_obj_add_event_cb(tile_btn_mode_program, on_mode_program,
+                            LV_EVENT_CLICKED, NULL);
+        lbl_t_program = lv_label_create(tile_btn_mode_program);
+        lv_label_set_text(lbl_t_program, "Program");
+        lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(lbl_t_program, &lv_font_montserrat_22, 0);
+        lv_obj_center(lbl_t_program);
+    }
 
     /* Direct-preset row just below the pill — one tap to set Comfort /
      * Home / Sleep / Away. Colours mirror the schedule editor and heater
