@@ -92,11 +92,19 @@ static int is_newer_than_build(const char * tag) {
 
 void update_check_now(void) {
     if (!settings.update_check_enabled) return;
-    static char body[8192];
-    int n = http_fetch(RELEASES_API_URL, body, sizeof body);
+    /* GitHub's /releases/latest payload runs ~8-12 KB once asset metadata
+     * is in there; bump the buffer to 32 KB so curl doesn't EPIPE when we
+     * close the read pipe before it's finished writing. */
+    static char body[32768];
+    body[0] = 0;
+    int rc = http_fetch(RELEASES_API_URL, body, sizeof body);
     g_update_state.last_check_epoch = (long)time(NULL);
-    if (n <= 0) {
+    /* http_fetch returns 0 on success (not byte count). Treat anything
+     * non-zero as failure. body[] is also empty after a failure since
+     * we cleared it pre-call. */
+    if (rc != 0 || body[0] == 0) {
         g_update_state.last_check_ok = 0;
+        fprintf(stderr, "[update] fetch failed (rc=%d)\n", rc);
         return;
     }
     g_update_state.last_check_ok = 1;
