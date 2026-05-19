@@ -139,6 +139,16 @@ enable_ha=0
 CFG
 
     echo "[5/5] Wiring inittab + restart..."
+    # Drop legacy quby_bridge / p1bridge rows from earlier installs.
+    # 2026-05-19: keeping the bridge in the /dev/ttymxc0 path breaks happ↔BA
+    # framing and kills CV pressure. Default install no longer wires those
+    # bridges; users who really want the PWA boiler card can re-add them by
+    # hand. See project_quby_bridge_is_the_culprit_2026-05-19 in memory.
+    drop_row qbri
+    drop_row p1br
+    remote "pkill -x quby_bridge 2>/dev/null; pkill -x p1bridge 2>/dev/null; true"
+    # Drop any leftover bind-mount so happ_thermstat re-opens the real UART.
+    remote "umount -l /dev/ttymxc0 2>/dev/null; true"
     upsert_row "$TOON_ROW"
     upsert_row "$VNCS_ROW"
     # Stop the running UI / VNC so init respawns through the new launcher.

@@ -30,7 +30,12 @@ settings_t settings = {
      * https://www.buienradar.nl/weer/medemblik/nl/<ID> reveals it). */
     .weather_location_id = 2757783,
     .forecast_mode       = FORECAST_AUTO,
-    .ot_bridge_mode      = "proxy",
+    /* Default OFF — 2026-05-19 empirical finding: with the bridge in the
+     * /dev/ttymxc0 path, happ_thermstat ↔ keteladapter framing breaks and
+     * BoilerChPressure stops reaching toonui. Direct path (no bridge) =
+     * otCommError=0 + live CV pressure. See
+     * project_quby_bridge_is_the_culprit_2026-05-19 in memory. */
+    .ot_bridge_mode      = "off",
     .otgw_host           = "192.168.99.21",
     .otgw_user           = "",
     .otgw_pass           = "",

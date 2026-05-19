@@ -41,6 +41,7 @@ static lv_obj_t * lbl_t_humidity;
 static lv_obj_t * lbl_t_ppm;
 static lv_obj_t * lbl_t_tvoc;
 static lv_obj_t * lbl_t_date;
+static lv_obj_t * moon_phase_img;  /* small moon-phase widget next to date */
 static lv_obj_t * lbl_t_aq;
 static lv_obj_t * lbl_waste_date;
 static lv_obj_t * lbl_waste_type;
@@ -699,6 +700,14 @@ static void refresh_cb(lv_timer_t * t) {
         char dt[48];
         strftime(dt, sizeof(dt), "%a %d %b", &tm);
         lv_label_set_text(lbl_t_date, dt);
+    }
+    /* Refresh the moon-phase icon at most once per refresh tick — phase
+     * changes daily, not by-the-second, but keep this cheap: a single
+     * src-swap when the phase slot moves. */
+    if (moon_phase_img) {
+        const lv_img_dsc_t * ph = moon_phase_icon(40);
+        if (lv_img_get_src(moon_phase_img) != ph)
+            lv_img_set_src(moon_phase_img, ph);
     }
 
     if (toon_state.indoor_temp > 0)
@@ -1469,6 +1478,24 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(lbl_t_date, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_t_date, "");
     lv_obj_align(lbl_t_date, LV_ALIGN_TOP_LEFT, 0, 36);
+
+    /* Moon phase — 40-px icon sitting below the date, just left-of-centre
+     * inside the heater tile. ALWAYS shown so the user sees the current
+     * lunar phase even during the day; the icon is separate from the
+     * forecast band so it doesn't compete with the weather icon. A fixed
+     * pixel position is used (rather than align-to-date-label) because
+     * lv_obj_align_to runs before the label has measured its text width
+     * → the icon ends up clipped behind the clock. */
+    moon_phase_img = lv_img_create(th);
+    lv_img_set_src(moon_phase_img, moon_phase_icon(40));
+    lv_obj_set_style_img_recolor(moon_phase_img, lv_color_hex(0xe8edf2), 0);
+    lv_obj_set_style_img_recolor_opa(moon_phase_img, 255, 0);
+    /* Position: hovering to the right of "Tue 19 May", at clock baseline.
+     * Using lv_obj_align (not lv_obj_set_pos) because the heater tile is
+     * a styled container and set_pos has been observed to clip behind
+     * other children. The 40-px icon spans (148+20, 24+20) → (188+20,
+     * 64+20) inside the padded tile — well clear of the temp number. */
+    lv_obj_align(moon_phase_img, LV_ALIGN_TOP_LEFT, 148, 24);
 
     /* Air-quality badge — top-right of the Heater tile, coloured per
        eCO2/TVOC bucket (green/lime/yellow/orange/red). */
