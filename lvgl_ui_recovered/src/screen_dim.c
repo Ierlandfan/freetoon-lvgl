@@ -24,6 +24,7 @@ LV_FONT_DECLARE(lv_font_montserrat_96_custom);
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_clock;
 static lv_obj_t * lbl_date;
+static lv_obj_t * dim_moon_img;   /* moon-phase widget — always shown */
 static lv_obj_t * lbl_temp;
 static lv_obj_t * lbl_setpoint;
 static lv_obj_t * lbl_program;
@@ -106,6 +107,12 @@ static void refresh_cb(lv_timer_t * t) {
     char dt[64];
     strftime(dt, sizeof(dt), "%A %d %B", &tm);
     lv_label_set_text(lbl_date, dt);
+
+    if (dim_moon_img) {
+        const lv_img_dsc_t * ph = moon_phase_icon(80);
+        if (lv_img_get_src(dim_moon_img) != ph)
+            lv_img_set_src(dim_moon_img, ph);
+    }
 
     /* Always paint values: if data not yet present, fall back to a
        "wait..." marker instead of leaving the stale "-- C" default. */
@@ -450,6 +457,16 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, -50);
+
+    /* Moon phase — large pictogram on the LEFT side of the dim screen
+     * (clear-of the waste tile at top-left). Always-visible regardless
+     * of the weather code, since the lunar phase is independent of
+     * whether tonight happens to be cloudy. */
+    dim_moon_img = lv_img_create(scr_root);
+    lv_img_set_src(dim_moon_img, moon_phase_icon(80));
+    lv_obj_set_style_img_recolor(dim_moon_img, lv_color_hex(0xe8edf2), 0);
+    lv_obj_set_style_img_recolor_opa(dim_moon_img, 255, 0);
+    lv_obj_align(dim_moon_img, LV_ALIGN_LEFT_MID, 40, 0);
 
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
