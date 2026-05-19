@@ -77,7 +77,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     if (toon_state.indoor_temp > 0)
-        lv_label_set_text_fmt(lbl_temp, "%.1f C", display_indoor_temp(toon_state.indoor_temp));
+        lv_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
 
     /* Highlight logic: the mode button (Scheduled[0] or Off[1]) gets a
      * white border based on active_state; the preset button (Comfort[2] /
@@ -117,7 +117,7 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text(lbl_water, "Water -- m3");
     }
     if (toon_state.setpoint > 0)
-        lv_label_set_text_fmt(lbl_setpoint, "Setpoint: %.1f C", toon_state.setpoint);
+        lv_label_set_text_fmt(lbl_setpoint, "Setpoint: %.1f°C", toon_state.setpoint);
 
     /* For the "flow" reading prefer boiler_out_temp — that's the freshest
      * OTGW CurrentBoilerTemperature coming through the bridge. The
@@ -151,10 +151,10 @@ static void refresh_cb(lv_timer_t * t) {
        answered; return comes only from the boilerRetTemps query. */
     float flow = toon_state.boiler_out_temp > 0 ? toon_state.boiler_out_temp
                                                 : toon_state.boiler_temp;
-    if (flow > 0) lv_label_set_text_fmt(lbl_flow, "Flow  %.1f C", flow);
+    if (flow > 0) lv_label_set_text_fmt(lbl_flow, "Flow  %.1f°C", flow);
     else          lv_label_set_text(lbl_flow, "Flow  -- C");
     if (toon_state.boiler_in_temp > 0)
-        lv_label_set_text_fmt(lbl_return, "Return  %.1f C", toon_state.boiler_in_temp);
+        lv_label_set_text_fmt(lbl_return, "Return  %.1f°C", toon_state.boiler_in_temp);
     else
         /* Many boilers leave OT DID 28 (CH return temp) unimplemented; OTGW
          * reports returnwatertemperature=0 in that case and happ_thermstat
