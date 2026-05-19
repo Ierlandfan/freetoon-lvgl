@@ -94,6 +94,8 @@ TOONTAP_BIN="$(pick_artefact TOONTAP_BIN "$HERE/toontap"      "$HERE/../qt_rebui
 OT_MODE_SCRIPT="$(pick_artefact OT_MODE_SCRIPT "$HERE/ot_mode_switch.sh" "$HERE/scripts/ot_mode_switch.sh")"
 UI_LAUNCHER="$(pick_artefact UI_LAUNCHER "$HERE/ui_launcher.sh" "$HERE/scripts/ui_launcher.sh")"
 COMPANION_GATE="$(pick_artefact COMPANION_GATE "$HERE/companion_gate.sh" "$HERE/scripts/companion_gate.sh")"
+TOONVNC_SCRIPT="$(pick_artefact TOONVNC_SCRIPT "$HERE/toonvnc.sh" "$HERE/scripts/toonvnc.sh")"
+FBVNC_INPUT="$(pick_artefact FBVNC_INPUT "$HERE/fbvnc_input" "$HERE/../qt_rebuild/fbvnc_input")"
 if [[ -z "${PWA_DIR:-}" ]]; then
     if   [[ -f "$HERE/pwa/index.html"        ]]; then PWA_DIR="$HERE/pwa"
     elif [[ -f "$HERE/pwa_static/index.html" ]]; then PWA_DIR="$HERE/pwa_static"
@@ -122,6 +124,11 @@ TOONUI_LINE="toon:345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toon
 # (stock meteradapter / keteladapter take back over).
 QUBY_LINE="qbri:345:respawn:/mnt/data/companion_gate.sh quby_bridge /mnt/data/quby_bridge -m proxy >> /var/volatile/tmp/quby_bridge.log 2>&1"
 P1_LINE="p1br:345:respawn:/mnt/data/companion_gate.sh p1bridge /mnt/data/p1bridge >> /var/volatile/tmp/p1bridge.log 2>&1"
+# x11vnc-on-fb wrapper. Runs in both freetoon and qt-gui mode since
+# -rawfb reads /dev/fb0 directly — VNC clients see whatever the active UI
+# is rendering. Init respawns on crash. Disable by dropping the `vncs`
+# inittab row.
+VNC_LINE="vncs:345:respawn:/mnt/data/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
 
 # ----------------------------------------------------------------------
 # Helpers
@@ -222,6 +229,8 @@ do_install() {
     push_atomic "$OT_MODE_SCRIPT" "/mnt/data/ot_mode_switch.sh"
     push_atomic "$UI_LAUNCHER"  "/mnt/data/ui_launcher.sh"
     push_atomic "$COMPANION_GATE" "/mnt/data/companion_gate.sh"
+    push_atomic "$TOONVNC_SCRIPT" "/mnt/data/toonvnc.sh"
+    [[ -x "$FBVNC_INPUT" ]] && push_atomic "$FBVNC_INPUT" "/mnt/data/fbvnc_input"
     # p1bridge + quby_bridge are full-install only — basic install keeps the
     # stock meteradapter and skips the OT bridge entirely.
     if (( BASIC == 0 )); then
@@ -291,6 +300,10 @@ do_install() {
     else
         drop_inittab_row qbri
     fi
+    # VNC respawn row — always installed (no env gate). x11vnc reads the
+    # framebuffer regardless of which UI is rendering, so it's useful in
+    # both freetoon and qt-gui modes. Drop the row to disable persistently.
+    upsert_inittab_row "$VNC_LINE"
 
     echo "[6/6] Reloading init (kill -HUP 1)..."
     reload_init
@@ -309,13 +322,14 @@ do_uninstall() {
     drop_inittab_row toon
     drop_inittab_row qbri
     drop_inittab_row p1br
+    drop_inittab_row vncs
 
     echo "[2/3] Killing running processes..."
-    remote "pkill -x toonui      2>/dev/null; pkill -x quby_bridge 2>/dev/null; pkill -x p1bridge 2>/dev/null; true"
+    remote "pkill -x toonui      2>/dev/null; pkill -x quby_bridge 2>/dev/null; pkill -x p1bridge 2>/dev/null; pkill -x x11vnc 2>/dev/null; true"
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
 
     echo "[3/3] Removing binaries + configs + PWA + script..."
-    remote "rm -f /mnt/data/toonui /mnt/data/quby_bridge /mnt/data/p1bridge /mnt/data/toontap /mnt/data/ot_mode_switch.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/ui_choice /mnt/data/vent.conf /mnt/data/p1bridge.conf"
+    remote "rm -f /mnt/data/toonui /mnt/data/quby_bridge /mnt/data/p1bridge /mnt/data/toontap /mnt/data/ot_mode_switch.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/ui_choice /mnt/data/toonvnc.sh /mnt/data/fbvnc_input /mnt/data/toonvnc.plain /mnt/data/vent.conf /mnt/data/p1bridge.conf"
     remote "rm -rf /mnt/data/pwa"
 
     reload_init

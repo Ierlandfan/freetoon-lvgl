@@ -5,8 +5,12 @@
 # /dev/fb0, with /mnt/data/fbvnc_input bridging remote pointer events back
 # into the touchscreen (/dev/input/event1).
 #
-# Usage:  toonvnc.sh [start|stop|restart|status]   (default: start)
+# Usage:  toonvnc.sh [start|stop|restart|status|respawn]   (default: start)
 # Connect:  vncviewer <toon-ip>:5900
+#
+# `respawn` is what /etc/inittab calls — exec x11vnc in the foreground (no
+# `-bg`) so init owns the pid and restarts it on crash / OOM. Logs go to
+# stderr → inittab's `>> /var/volatile/tmp/x11vnc.log 2>&1`.
 #
 # Password: if /mnt/data/toonvnc.plain exists and is non-empty its first line
 # is used as the VNC password (x11vnc -passwdfile). toonui's Settings >
@@ -62,7 +66,28 @@ case "${1:-start}" in
       echo "x11vnc failed to start — see $LOG"; tail -n 5 "$LOG" 2>/dev/null
     fi
     ;;
+  respawn)
+    # Foreground variant for inittab. Identical args to `start` minus the
+    # `-bg` flag, so init keeps a real child pid and respawns on death.
+    if [ ! -x "$INPUT" ]; then
+      PIPE=""
+    else
+      PIPE="-pipeinput reopen:$INPUT"
+    fi
+    if [ -s "$PASSFILE" ]; then
+      AUTH="-passwdfile $PASSFILE"
+    else
+      AUTH="-nopw"
+    fi
+    # exec replaces the shell with x11vnc, so init sees x11vnc directly
+    # (clean `pkill -x x11vnc` from the existing stop/restart actions).
+    exec /usr/bin/x11vnc \
+      -rawfb map:/dev/fb0@1024x600x32 \
+      $PIPE \
+      -rfbport $PORT -forever -shared -nocursor \
+      -desktop ToonUI $AUTH
+    ;;
   *)
-    echo "usage: $0 [start|stop|restart|status]"; exit 1
+    echo "usage: $0 [start|stop|restart|status|respawn]"; exit 1
     ;;
 esac
