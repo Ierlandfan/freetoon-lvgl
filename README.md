@@ -103,6 +103,34 @@ LVGL screen plus a packages list with manual entry and the weekly schedule
 editor. Add to Home Screen for a phone-app feel; works offline-first via a
 small service worker.
 
+### Boot picker — escape hatch to stock qt-gui
+
+Every boot opens a 10-second picker letting the user choose between
+freetoon-lvgl and the original Eneco qt-gui. Default selection (the
+highlighted tile) is whichever was used last; the countdown falls
+through to that default. Same modal is reachable mid-session from
+**Settings → UI mode**. This means the device is never "trapped" on
+freetoon — anyone can switch back to stock qt-gui in seconds without
+SSH access.
+
+![Boot picker](docs/screenshots/boot-picker.png)
+
+The picker writes `/mnt/data/ui_choice`; a small `ui_launcher.sh` is
+the `inittab` `respawn:` target and dispatches to either
+`/mnt/data/toonui` or `/qmf/sbin/qt-gui` based on that file. Companion
+sidecars (`p1bridge`, `quby_bridge`, …) are wrapped by
+`companion_gate.sh` which polls the same file so they idle quietly
+when qt-gui is the active UI.
+
+### Settings → Marketplace
+
+Browse + one-tap install of third-party integrations from
+[freetoon-integrations](https://github.com/Ierlandfan/freetoon-integrations).
+Each integration is a C daemon that publishes data on BoxTalk; toonui
+picks it up via its existing subscribe path. Phase 2 (in flight) will
+add tap-to-reassign so the user binds any installed integration to any
+home-tile slot.
+
 ## Architecture
 
 ```
