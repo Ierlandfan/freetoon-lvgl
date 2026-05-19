@@ -15,6 +15,7 @@ extern const lv_img_dsc_t icon_wx_cloud;
 extern const lv_img_dsc_t icon_wx_rain_light;
 extern const lv_img_dsc_t icon_wx_rain_heavy;
 extern const lv_img_dsc_t icon_wx_thunder;
+extern const lv_img_dsc_t icon_wx_bolt;
 extern const lv_img_dsc_t icon_wx_snow;
 extern const lv_img_dsc_t icon_wx_fog;
 
@@ -25,6 +26,7 @@ extern const lv_img_dsc_t icon_wx_cloud_lg;
 extern const lv_img_dsc_t icon_wx_rain_light_lg;
 extern const lv_img_dsc_t icon_wx_rain_heavy_lg;
 extern const lv_img_dsc_t icon_wx_thunder_lg;
+extern const lv_img_dsc_t icon_wx_bolt_lg;
 extern const lv_img_dsc_t icon_wx_snow_lg;
 extern const lv_img_dsc_t icon_wx_fog_lg;
 extern const lv_img_dsc_t icon_trash_lg;

@@ -135,6 +135,17 @@ def thunder():
         line(p, pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], 230, 1.8)
     return p
 
+# --- Bolt only (no cloud) — used as a yellow overlay on top of a
+# separately-recolored gray cloud, so the thunder pictogram reads as
+# "stormy gray cloud + bright yellow bolt" instead of a monochrome
+# amber blob. ---
+def bolt():
+    p = blank()
+    pts = [(22, 16), (16, 24), (22, 22), (16, 32)]
+    for i in range(len(pts) - 1):
+        line(p, pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], 255, 2.2)
+    return p
+
 # --- Snow (cloud with stars) ---
 def snow():
     p = cloud()
@@ -172,6 +183,7 @@ def emit_all(size_px, suffix):
         ("icon_wx_rain_light"+ suffix, rain_light()),
         ("icon_wx_rain_heavy"+ suffix, rain_heavy()),
         ("icon_wx_thunder"   + suffix, thunder()),
+        ("icon_wx_bolt"      + suffix, bolt()),
         ("icon_wx_snow"      + suffix, snow()),
         ("icon_wx_fog"       + suffix, fog()),
     ]
@@ -271,6 +283,13 @@ def thunder_lg():
         line2(p, pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], 230, 3.6)
     return p
 
+def bolt_lg():
+    p = blank()
+    pts = [(44, 32), (32, 48), (44, 44), (32, 64)]
+    for i in range(len(pts) - 1):
+        line2(p, pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], 255, 4.4)
+    return p
+
 def snow_lg():
     p = cloud_lg()
     for (sx, sy) in [(24, 72), (40, 76), (56, 72), (32, 66), (48, 66)]:
@@ -302,6 +321,7 @@ icons_lg = [
     ("icon_wx_rain_light_lg", rain_light_lg()),
     ("icon_wx_rain_heavy_lg", rain_heavy_lg()),
     ("icon_wx_thunder_lg",    thunder_lg()),
+    ("icon_wx_bolt_lg",       bolt_lg()),
     ("icon_wx_snow_lg",       snow_lg()),
     ("icon_wx_fog_lg",        fog_lg()),
 ]

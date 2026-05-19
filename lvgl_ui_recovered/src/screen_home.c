@@ -102,12 +102,27 @@ static lv_obj_t * fc_icon_sun[WEATHER_FORECAST_DAYS];
 static void set_forecast_icon(lv_obj_t * cloud, lv_obj_t * sun,
                               const char * letter) {
     if (!cloud) return;
-    int is_partly = letter && (letter[0] == 'b' || letter[0] == 'j');
+    int is_partly  = letter && (letter[0] == 'b' || letter[0] == 'j');
+    int is_thunder = letter && (letter[0] == 'g' || letter[0] == 'm');
     if (is_partly) {
+        /* Partly cloudy — white cloud + yellow sun overlay (top-left). */
         lv_img_set_src(cloud, weather_icon_for("d"));            /* plain cloud */
         lv_obj_set_style_img_recolor(cloud, lv_color_hex(0xf0f4f8), 0);
         if (sun) {
             lv_img_set_src(sun, weather_icon_for("a"));          /* plain sun */
+            lv_obj_set_style_img_recolor(sun, lv_color_hex(0xffd24a), 0);
+            lv_obj_set_style_img_recolor_opa(sun, 255, 0);
+            lv_obj_clear_flag(sun, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else if (is_thunder) {
+        /* Thunder — dark-gray storm cloud + yellow bolt overlay.
+         * Single-recolor would have made the whole pictogram amber and
+         * lost the "stormy" reading. Use the bolt-only icon (no cloud
+         * portion) overlaid on a separately-recolored gray cloud. */
+        lv_img_set_src(cloud, weather_icon_for("d"));            /* plain cloud */
+        lv_obj_set_style_img_recolor(cloud, lv_color_hex(0x6a7888), 0);   /* stormy gray */
+        if (sun) {
+            lv_img_set_src(sun, &icon_wx_bolt);
             lv_obj_set_style_img_recolor(sun, lv_color_hex(0xffd24a), 0);
             lv_obj_set_style_img_recolor_opa(sun, 255, 0);
             lv_obj_clear_flag(sun, LV_OBJ_FLAG_HIDDEN);
