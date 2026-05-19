@@ -600,6 +600,77 @@ static void open_presets_modal(lv_event_t * e) {
     }
 }
 
+/* ==================== Integrations modal ====================
+ * Runtime on/off switches for the optional integrations. Toggles persist
+ * to /mnt/data/toonui.cfg via modal_close → settings_save, but the
+ * pollers only re-check the flags on (re)start, so the modal warns the
+ * user that flipping a switch needs a toonui restart to fully take
+ * effect (killing the proc → inittab respawns it cleanly). */
+static lv_obj_t * lbl_integ_hint;
+static lv_obj_t * sw_int_p1_elec;
+static lv_obj_t * sw_int_p1_water;
+static lv_obj_t * sw_int_vent;
+static lv_obj_t * sw_int_ha;
+
+static void integ_dirty_hint(void) {
+    if (!lbl_integ_hint) return;
+    lv_label_set_text(lbl_integ_hint,
+        "Saved. Restart toonui to apply (Settings → About → Restart, "
+        "or just unplug+plug the screen).");
+    lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0xffcc66), 0);
+}
+
+static void on_int_p1_elec(lv_event_t * e) {
+    settings.enable_p1_elec  = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    integ_dirty_hint();
+}
+static void on_int_p1_water(lv_event_t * e) {
+    settings.enable_p1_water = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    integ_dirty_hint();
+}
+static void on_int_vent(lv_event_t * e) {
+    settings.enable_vent     = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    integ_dirty_hint();
+}
+static void on_int_ha(lv_event_t * e) {
+    settings.enable_ha       = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    integ_dirty_hint();
+}
+
+static void open_integrations_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Integrations", 530);
+    int y = 70;
+
+    lv_obj_t * r;
+    r = panel_row(p, y, "HomeWizard P1 (electricity + gas)", NULL);
+    sw_int_p1_elec = row_switch(r, settings.enable_p1_elec, on_int_p1_elec);
+    y += 84;
+
+    r = panel_row(p, y, "HomeWizard HWE-WTR (water)", NULL);
+    sw_int_p1_water = row_switch(r, settings.enable_p1_water, on_int_p1_water);
+    y += 84;
+
+    r = panel_row(p, y, "Itho ventilation", NULL);
+    sw_int_vent = row_switch(r, settings.enable_vent, on_int_vent);
+    y += 84;
+
+    r = panel_row(p, y, "Home Assistant (curtains, Life360)", NULL);
+    sw_int_ha = row_switch(r, settings.enable_ha, on_int_ha);
+    y += 92;
+
+    lbl_integ_hint = lv_label_create(p);
+    lv_obj_set_style_text_font(lbl_integ_hint, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_width(lbl_integ_hint, 800);
+    lv_label_set_long_mode(lbl_integ_hint, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(lbl_integ_hint,
+        "Each integration needs its companion config "
+        "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
+        "Toggle a switch then restart toonui.");
+    lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, 4, y);
+}
+
 static void open_about_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("About", 320);
@@ -1581,7 +1652,12 @@ lv_obj_t * screen_settings_create(void) {
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
-    lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    /* Used to be SCROLLABLE-cleared. Row 3 already overflows the 600 px
+     * viewport; adding the Integrations tile pushes content further, so
+     * we enable vertical scroll and a thin scrollbar on the screen itself. */
+    lv_obj_add_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(scr_root, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(scr_root, LV_SCROLLBAR_MODE_AUTO);
 
     /* header */
     lv_obj_t * btn_back = lv_btn_create(scr_root);
@@ -1627,6 +1703,11 @@ lv_obj_t * screen_settings_create(void) {
               "status & diagnostics", open_about_modal);
     make_tile(x0 + 2*(308+gap), row3, NULL, LV_SYMBOL_EYE_CLOSE, "Clean",
               "30 s screen lock to wipe", open_clean_modal);
+
+    /* Row 4 — Integrations (default-off in basic install, opt-in via switches). */
+    int row4 = row3 + 188 + 16;   /* tile height + a small gap */
+    make_tile(x0 + 0*(308+gap), row4, NULL, LV_SYMBOL_PLUS, "Integrations",
+              "P1 / water / vent / HA", open_integrations_modal);
 
     return scr_root;
 }

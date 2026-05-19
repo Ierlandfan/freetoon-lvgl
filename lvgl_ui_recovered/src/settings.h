@@ -53,6 +53,20 @@ typedef struct {
     char mqtt_pass[64];
     char mqtt_topics[8][96];
     int  mqtt_topic_count;
+
+    /* Integration toggles — runtime on/off for optional add-ons.
+     * Default is 0 ("basic" install). On first boot (no toonui.cfg key),
+     * settings_load() auto-enables a flag if its config file is present:
+     *   enable_p1_elec   ← /mnt/data/p1bridge.conf exists
+     *   enable_p1_water  ← /mnt/data/p1bridge.conf has a .115 line
+     *   enable_vent      ← /mnt/data/vent.conf exists (non-empty)
+     *   enable_ha        ← /mnt/data/ha.cfg exists (non-empty)
+     * After first save the cfg keys are authoritative — user flips in
+     * Settings → Integrations and toonui restarts to apply. */
+    int enable_p1_elec;
+    int enable_p1_water;
+    int enable_vent;
+    int enable_ha;
 } settings_t;
 
 #define FORECAST_AUTO   0

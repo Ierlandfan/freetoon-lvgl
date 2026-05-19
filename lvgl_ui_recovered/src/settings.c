@@ -44,6 +44,12 @@ settings_t settings = {
     .mqtt_pass           = "",
     .mqtt_topics         = {"home/packages/banner", "home/packages/state"},
     .mqtt_topic_count    = 2,
+    /* Integrations default OFF — see settings.h for the on-first-boot
+     * auto-enable rule based on existing config files. */
+    .enable_p1_elec      = 0,
+    .enable_p1_water     = 0,
+    .enable_vent         = 0,
+    .enable_ha           = 0,
 };
 
 float display_indoor_temp(float raw) {
@@ -51,9 +57,39 @@ float display_indoor_temp(float raw) {
     return raw + (float)settings.temp_offset_centi / 100.0f;
 }
 
+/* True if a /mnt/data/<name> file exists and is non-empty. */
+static int file_has_content(const char * path) {
+    FILE * f = fopen(path, "r");
+    if (!f) return 0;
+    int c = fgetc(f);
+    fclose(f);
+    return (c != EOF);
+}
+
+/* True if /mnt/data/p1bridge.conf has a line whose host part matches the
+ * given prefix (e.g. "192.168.99.115="). Used to derive enable_p1_water. */
+static int p1conf_has_host(const char * host_eq) {
+    FILE * f = fopen("/mnt/data/p1bridge.conf", "r");
+    if (!f) return 0;
+    char line[256]; int hit = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, host_eq, strlen(host_eq)) == 0) { hit = 1; break; }
+    }
+    fclose(f);
+    return hit;
+}
+
 void settings_load(void) {
+    /* Tracks which integration keys appeared in toonui.cfg. Anything still
+     * 0 after the parse loop is filled in by the migration / autodetect
+     * step below — keeps existing installs from suddenly losing pollers
+     * after the upgrade. */
+    int seen_p1_elec = 0, seen_p1_water = 0, seen_vent = 0, seen_ha = 0;
+    int cfg_existed = 0;
+
     FILE * f = fopen(CFG_PATH, "r");
-    if (!f) return;
+    if (!f) goto autodetect;
+    cfg_existed = 1;
     char line[128];
     while (fgets(line, sizeof(line), f)) {
         char k[64], v[64];
@@ -109,8 +145,42 @@ void settings_load(void) {
                 snprintf(settings.mqtt_topics[idx],
                          sizeof settings.mqtt_topics[0], "%s", v);
         }
+        else if (strcmp(k, "enable_p1_elec")  == 0) { settings.enable_p1_elec  = iv; seen_p1_elec  = 1; }
+        else if (strcmp(k, "enable_p1_water") == 0) { settings.enable_p1_water = iv; seen_p1_water = 1; }
+        else if (strcmp(k, "enable_vent")     == 0) { settings.enable_vent     = iv; seen_vent     = 1; }
+        else if (strcmp(k, "enable_ha")       == 0) { settings.enable_ha       = iv; seen_ha       = 1; }
     }
     fclose(f);
+
+autodetect:
+    /* Two-mode autodetect:
+     *
+     *  Legacy upgrade (toonui.cfg already exists but is missing the new
+     *  enable_* keys) — assume all integrations were enabled, because in
+     *  the pre-toggle build they were unconditionally on. Anything the
+     *  user actually doesn't want they can flip off in Settings →
+     *  Integrations and that choice is persisted.
+     *
+     *  Fresh install (no toonui.cfg at all — basic-mode install) — fall
+     *  back to file-presence on the companion configs. With everything
+     *  blank this comes up with all integrations off, matching the
+     *  "basic release" intent. When the user passes P1_TOKEN / VENT_*
+     *  / HA_TOKEN to install.sh the matching file gets written and the
+     *  corresponding integration auto-comes-up on first boot.
+     *
+     *  Either way the first settings_save() persists explicit 0/1 values,
+     *  so this branch only runs once per install. */
+    {
+    int legacy = cfg_existed;
+    if (!seen_p1_elec)
+        settings.enable_p1_elec  = legacy ? 1 : file_has_content("/mnt/data/p1bridge.conf");
+    if (!seen_p1_water)
+        settings.enable_p1_water = legacy ? 1 : p1conf_has_host("192.168.99.115=");
+    if (!seen_vent)
+        settings.enable_vent     = legacy ? 1 : file_has_content("/mnt/data/vent.conf");
+    if (!seen_ha)
+        settings.enable_ha       = legacy ? 1 : file_has_content("/mnt/data/ha.cfg");
+    }
 
     /* Migration: if mqtt_pass is still empty, try to read /mnt/data/mqtt.cfg
      * (host:user:pass format from the legacy single-line tooling). Lets the
@@ -169,5 +239,9 @@ void settings_save(void) {
     fprintf(f, "mqtt_topic_count=%d\n",    settings.mqtt_topic_count);
     for (int i = 0; i < settings.mqtt_topic_count && i < 8; i++)
         fprintf(f, "mqtt_topic_%d=%s\n", i, settings.mqtt_topics[i]);
+    fprintf(f, "enable_p1_elec=%d\n",  settings.enable_p1_elec);
+    fprintf(f, "enable_p1_water=%d\n", settings.enable_p1_water);
+    fprintf(f, "enable_vent=%d\n",     settings.enable_vent);
+    fprintf(f, "enable_ha=%d\n",       settings.enable_ha);
     fclose(f);
 }

@@ -10,6 +10,7 @@
 #include "homeassistant.h"
 #include "http.h"
 #include "notify.h"
+#include "settings.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -419,6 +420,10 @@ void ha_curtain_close_async(void) { fire_cover_action("close_cover"); }
 void ha_curtain_stop_async(void)  { fire_cover_action("stop_cover");  }
 
 int ha_start(void) {
+    if (!settings.enable_ha) {
+        fprintf(stderr, "[ha] integration disabled — not starting poller\n");
+        return 0;
+    }
     load_token();
     if (!g_token[0]) {
         fprintf(stderr, "[ha] no token at " HA_TOKEN_PATH " — HA tile will stay disconnected\n");

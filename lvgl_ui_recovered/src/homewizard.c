@@ -9,6 +9,7 @@
  */
 #include "homewizard.h"
 #include "rrd_push.h"
+#include "settings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +60,7 @@ static double parse_num(const char * json, const char * key, double dflt) {
 }
 
 static void poll_p1(void) {
+    if (!settings.enable_p1_elec) { hw_state.connected_p1 = 0; return; }
     static char body[4096];
     if (http_get("192.168.99.69", "/api/v1/data", body, sizeof(body)) != 0) {
         hw_state.connected_p1 = 0;
@@ -100,6 +102,11 @@ static int   session_zero_seconds = 0;
 static float prev_total_m3 = -1.0f;
 
 static void poll_water(void) {
+    if (!settings.enable_p1_water) {
+        hw_state.connected_water = 0;
+        hw_state.water_lpm = 0;
+        return;
+    }
     static char body[2048];
     if (http_get("192.168.99.115", "/api/v1/data", body, sizeof(body)) != 0) {
         hw_state.connected_water = 0;
@@ -250,8 +257,17 @@ static void * hw_thread(void * arg) {
 }
 
 int homewizard_start(void) {
+    /* Skip the polling thread entirely when both halves are off — keeps
+     * "basic" installs from spawning a thread that does nothing every 2 s
+     * and from contaminating connected_* flags on the home tile. */
+    if (!settings.enable_p1_elec && !settings.enable_p1_water) {
+        fprintf(stderr, "[hw] both P1 integrations disabled — not starting poller\n");
+        return 0;
+    }
     pthread_t th;
     if (pthread_create(&th, NULL, hw_thread, NULL) != 0) return -1;
     pthread_detach(th);
+    fprintf(stderr, "[hw] poller started (elec=%d water=%d)\n",
+            settings.enable_p1_elec, settings.enable_p1_water);
     return 0;
 }

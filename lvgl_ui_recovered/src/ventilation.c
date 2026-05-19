@@ -11,6 +11,7 @@
  */
 #include "ventilation.h"
 #include "http.h"
+#include "settings.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>          /* atoi */
@@ -701,6 +702,10 @@ static void * vent_thread(void * arg) {
 }
 
 int vent_start(void) {
+    if (!settings.enable_vent) {
+        fprintf(stderr, "[vent] integration disabled — not starting poller/MQTT\n");
+        return 0;
+    }
     load_conf();
     if (!g_pass[0]) {
         fprintf(stderr, "[vent] no /mnt/data/vent.conf — vent will fail auth\n");
