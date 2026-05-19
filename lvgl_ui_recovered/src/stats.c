@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -37,23 +38,32 @@ static int http_get_body(const char * path_qs, char * out, size_t outsz) {
     return 0;
 }
 
-int stats_fetch(const char * logger_name, const char * rra, int max_samples,
+int stats_fetch(const char * logger_name, const char * rra,
+                long window_seconds, int max_samples,
                 stats_series_t * series) {
     series->n = 0;
     series->min = +1e30; series->max = -1e30;
     if (max_samples <= 0 || max_samples > STATS_MAX_SAMPLES)
         max_samples = STATS_MAX_SAMPLES;
-    char qs[256];
-    /* `samples=N` caps the response to the most-recent N entries — the
-     * default 5min/5yrhours/10yrdays archives are 512 buckets, mostly
-     * null, and the full JSON dumps weigh ~250 KB which used to
-     * overflow our 64-KB receive buffer and clip off the recent data.
-     * Per-period N (passed in) bounds the chart window to the right
-     * timespan — without this, every tab fetched 512 samples regardless
-     * of RRA granularity, so the "Week" tab actually showed ~21 days. */
-    snprintf(qs, sizeof(qs),
-        "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&readableTime=1&nullForNaN=1&samples=%d",
-        logger_name, rra, max_samples);
+    char qs[320];
+    /* hcb_rrd accepts `from=<unix>&to=<unix>` to scope the query to a
+     * specific time window. Without that, `samples=N` downsamples
+     * across the entire archive span (5yrhours = 5 years, 10yrdays =
+     * 10 years), so e.g. `samples=168` from 5yrhours returns 168
+     * points spread across 5 years — exactly the "Week tab showed 21
+     * days" bug we hit. With `from=now-7d&to=now` the response is
+     * scoped to the actual trailing 7 days; `samples=N` then trims
+     * within that window. */
+    if (window_seconds > 0) {
+        long now = (long)time(NULL);
+        snprintf(qs, sizeof(qs),
+            "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=%d",
+            logger_name, rra, now - window_seconds, now, max_samples);
+    } else {
+        snprintf(qs, sizeof(qs),
+            "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&readableTime=1&nullForNaN=1&samples=%d",
+            logger_name, rra, max_samples);
+    }
     static char body[256 * 1024];
     if (http_get_body(qs, body, sizeof(body)) != 0) return -1;
 
@@ -99,11 +109,14 @@ int stats_fetch(const char * logger_name, const char * rra, int max_samples,
             p = end;
         }
 
-        /* Filter clearly bogus samples — power can plausibly be a few kW,
-         * water flow tens of L/min, gas a few m3/h. Anything outside
-         * ±1e6 is RRD garbage (saw -2 029 354 in water_flow) and would
-         * skew the chart's Y range so badly the real data vanishes. */
-        if (!isnan(val) && (val < -1e6 || val > 1e6)) val = NAN;
+        /* Filter clearly bogus samples — water_flow once returned
+         * -2,029,354 which dragged the chart's Y range so wide that
+         * the real trace vanished. The cap has to stay above plausible
+         * cumulative meter readings though: elec_quantity_nt is in Wh
+         * and easily passes 1e6 (3.4 GWh meter = 3,452,227 Wh in the
+         * current capture). Use ±1e10 — covers any house meter, still
+         * catches the outlier values that wrecked the chart range. */
+        if (!isnan(val) && (val < -1e10 || val > 1e10)) val = NAN;
         series->samples[series->n] = val;
         /* Short label: "DD-MM HH:MM" (positions 0-4 = "DD-MM", 11-15 = "HH:MM") */
         if (klen >= 16) {
@@ -127,6 +140,6 @@ int stats_fetch(const char * logger_name, const char * rra, int max_samples,
     return 0;
 }
 
-int stats_elec_flow_5min(stats_series_t * out)  { return stats_fetch("elec_flow",  "5min", STATS_MAX_SAMPLES, out); }
-int stats_gas_flow_5min(stats_series_t * out)   { return stats_fetch("gas_flow",   "5min", STATS_MAX_SAMPLES, out); }
-int stats_water_flow_5min(stats_series_t * out) { return stats_fetch("water_flow", "5min", STATS_MAX_SAMPLES, out); }
+int stats_elec_flow_5min(stats_series_t * out)  { return stats_fetch("elec_flow",  "5min", 0, STATS_MAX_SAMPLES, out); }
+int stats_gas_flow_5min(stats_series_t * out)   { return stats_fetch("gas_flow",   "5min", 0, STATS_MAX_SAMPLES, out); }
+int stats_water_flow_5min(stats_series_t * out) { return stats_fetch("water_flow", "5min", 0, STATS_MAX_SAMPLES, out); }

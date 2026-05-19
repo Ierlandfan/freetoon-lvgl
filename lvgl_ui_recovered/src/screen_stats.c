@@ -99,50 +99,54 @@ static void chart_draw_x_label(lv_event_t * e) {
     dsc->text[0] = 0;
 }
 
-/* Per-period: which logger + rra + how many samples to fetch.
+/* Per-period: which logger + rra + time window + how many samples.
  *
- * Critical: each tab's `samples=` must match the visible window —
- * `5yrhours` archives go back 5 years (8760 samples × 5 ≈ 43800
- * buckets) so a default samples=512 would return ~21 days for the
- * Week tab. Match the archive bucket size to the tab's nominal
- * window so the chart actually shows what its tab label promises.
+ * Critical: each tab MUST pass an explicit `window_seconds` to
+ * stats_fetch so hcb_rrd returns only the trailing slice of the RRA
+ * archive. Without it, the archive's full multi-year span is
+ * downsampled to N evenly-spaced points — that's the "Week tab
+ * showed 21 days" bug. With from/to scoped, samples= just trims
+ * within the window.
  *
- *   Hour   1 h /  5 min   → 12 samples
- *   Day    24 h / 5 min   → 288
- *   Week   7 d /  1 h     → 168
- *   Month  31 d / 1 d     → 31
- *   Year   365 d / 1 d    → 365
+ *   Tab     Logger        RRA       Window      Samples cap
+ *   Hour    flow_logger   5min      1 h         12   (5-min res)
+ *   Day     flow_logger   5min      24 h        288  (5-min res)
+ *   Week    cum_logger    5yrhours  7 d         168  (hourly res)
+ *   Month   cum_logger    10yrdays  31 d        31   (daily res)
+ *   Year    cum_logger    10yrdays  365 d       365  (daily res)
  * Returns 0 if loaded. */
 static int load_for_period(void) {
     const metric_t * m = &metrics[selected_metric];
+    const long HOUR = 3600, DAY = 86400, WEEK = 7*DAY,
+               MONTH = 31*DAY, YEAR = 365*DAY;
     switch (selected_period) {
         case PERIOD_HOUR:
-            return stats_fetch(m->flow_logger, "5min", 12, &series);
+            return stats_fetch(m->flow_logger, "5min", HOUR, 12, &series);
         case PERIOD_DAY:
-            return stats_fetch(m->flow_logger, "5min", 288, &series);
+            return stats_fetch(m->flow_logger, "5min", DAY, 288, &series);
         case PERIOD_WEEK:
             /* Cumulative meter, hourly samples — diff'd to per-hour usage
              * in render_chart. 168 hours = 7 days exactly. */
             if (m->cum_logger_extra) {
-                stats_fetch(m->cum_logger_extra, "5yrhours", 168, &series2);
+                stats_fetch(m->cum_logger_extra, "5yrhours", WEEK, 168, &series2);
             } else {
                 series2.n = 0;
             }
-            return stats_fetch(m->cum_logger, "5yrhours", 168, &series);
+            return stats_fetch(m->cum_logger, "5yrhours", WEEK, 168, &series);
         case PERIOD_MONTH:
             if (m->cum_logger_extra) {
-                stats_fetch(m->cum_logger_extra, "10yrdays", 31, &series2);
+                stats_fetch(m->cum_logger_extra, "10yrdays", MONTH, 31, &series2);
             } else {
                 series2.n = 0;
             }
-            return stats_fetch(m->cum_logger, "10yrdays", 31, &series);
+            return stats_fetch(m->cum_logger, "10yrdays", MONTH, 31, &series);
         case PERIOD_YEAR:
             if (m->cum_logger_extra) {
-                stats_fetch(m->cum_logger_extra, "10yrdays", 365, &series2);
+                stats_fetch(m->cum_logger_extra, "10yrdays", YEAR, 365, &series2);
             } else {
                 series2.n = 0;
             }
-            return stats_fetch(m->cum_logger, "10yrdays", 365, &series);
+            return stats_fetch(m->cum_logger, "10yrdays", YEAR, 365, &series);
     }
     return -1;
 }
@@ -166,31 +170,59 @@ static void render_chart(void) {
     int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
     if (n < 2) n = 2;
 
-    /* For elec week/month/year, merge nt + lt by adding into a working
-       copy of `series`. */
-    if (selected_metric == 0 &&
-        (selected_period == PERIOD_WEEK || selected_period == PERIOD_MONTH ||
-         selected_period == PERIOD_YEAR) && series2.n == series.n) {
-        for (int i = 0; i < series.n; i++) {
-            if (!isnan(series.samples[i]) && !isnan(series2.samples[i]))
-                series.samples[i] += series2.samples[i];
-        }
-    }
-
-    /* Convert cumulative meter samples to deltas (per-bin usage). The raw
-       value is a monotonically increasing cumulative reading. */
+    /* For cumulative metrics (Week/Month/Year): diff each series in
+     * place to per-bin deltas, then add the secondary (electricity LT)
+     * deltas into the primary. hcb_rrd's elec_quantity_nt sometimes
+     * returns NT-alone (~1.8 MWh) and sometimes NT+LT combined
+     * (~3.4 MWh) — the source ABI isn't stable. A naïve diff captures
+     * the 1.6 MWh jump as a single bin's "usage." Filter per-bin
+     * deltas above MAX_BIN_DELTA — anything an hourly household will
+     * realistically log is well under 10 kWh, so anything above is
+     * the cross-tariff artefact and gets dropped. Values stay in raw
+     * Wh / mL so the integer cast in lv_chart_set_range below doesn't
+     * round small deltas to 0; the "Period total" label converts to
+     * kWh / m3 at display time. */
     if (selected_period == PERIOD_WEEK || selected_period == PERIOD_MONTH ||
         selected_period == PERIOD_YEAR) {
-        double scale = (selected_metric == 0) ? 0.001 : 0.001;  /* kWh or m3 */
+        /* Sanity cap: 10 kWh per hourly bin (Week) or 200 kWh per
+         * daily bin (Month/Year) is well above household usage. */
+        double max_bin_delta = (selected_period == PERIOD_WEEK)
+                               ? 10000.0   /* 10 kWh in Wh */
+                               : 200000.0; /* 200 kWh in Wh per day */
+
+        /* Primary: cumulative → delta */
         for (int i = n - 1; i > 0; i--) {
             if (!isnan(series.samples[i]) && !isnan(series.samples[i-1]) &&
-                series.samples[i] > series.samples[i-1]) {
-                series.samples[i] = (series.samples[i] - series.samples[i-1]) * scale;
+                series.samples[i] >= series.samples[i-1]) {
+                double d = series.samples[i] - series.samples[i-1];
+                series.samples[i] = (d > max_bin_delta) ? NAN : d;
             } else {
                 series.samples[i] = NAN;
             }
         }
         series.samples[0] = NAN;
+
+        /* Secondary (elec LT): same diff, then sum into primary. */
+        if (selected_metric == 0 && series2.n == series.n) {
+            for (int i = series2.n - 1; i > 0; i--) {
+                if (!isnan(series2.samples[i]) && !isnan(series2.samples[i-1]) &&
+                    series2.samples[i] >= series2.samples[i-1]) {
+                    double d = series2.samples[i] - series2.samples[i-1];
+                    series2.samples[i] = (d > max_bin_delta) ? NAN : d;
+                } else {
+                    series2.samples[i] = NAN;
+                }
+            }
+            series2.samples[0] = NAN;
+            for (int i = 0; i < n; i++) {
+                if (isnan(series.samples[i]) && !isnan(series2.samples[i])) {
+                    series.samples[i] = series2.samples[i];
+                } else if (!isnan(series.samples[i]) && !isnan(series2.samples[i])) {
+                    series.samples[i] += series2.samples[i];
+                }
+                /* else: leave whatever's there (delta or NaN) */
+            }
+        }
     }
 
     /* Recompute min/max after potential diff. */
@@ -250,7 +282,10 @@ static void render_chart(void) {
             double total = 0;
             for (int i = 0; i < n; i++)
                 if (!isnan(series.samples[i])) total += series.samples[i];
-            lv_label_set_text_fmt(lbl_value, "%.1f %s", total, m->unit_cum);
+            /* series.samples now carries the raw RRD delta (Wh / mL).
+             * Divide by 1000 for the user-facing kWh / m3 figure. */
+            lv_label_set_text_fmt(lbl_value, "%.1f %s",
+                                  total / 1000.0, m->unit_cum);
         }
     }
 }
