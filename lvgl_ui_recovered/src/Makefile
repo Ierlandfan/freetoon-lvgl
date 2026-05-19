@@ -8,9 +8,15 @@ LD         := $(CROSS)gcc
 OUT        := toonui
 BUILDDIR   := ../build
 
+# Build-time version stamp — `git describe --tags` from the repo root.
+# Falls back to "dev" when there's no git directory (release tarball, etc.).
+# Update-check polls GitHub and compares against this.
+BUILD_VERSION := $(shell cd ../.. && git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 # LVGL needs LV_CONF_INCLUDE_SIMPLE so it picks up lv_conf.h from current dir
 CFLAGS  := --sysroot=$(SYSROOT) -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
            -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE \
+           -DBUILD_VERSION=\"$(BUILD_VERSION)\" \
            -I. -Ilvgl -Ilv_drivers -pthread \
            -MMD -MP
 LDFLAGS := --sysroot=$(SYSROOT) -pthread -lm -lrt
@@ -27,7 +33,7 @@ APP_SRC       := main.c boxtalk.c ui_stack.c screen_home.c screen_thermostat.c \
                  stats.c homewizard.c weather.c http.c inbox.c rrd_push.c \
                  wastecollection.c ventilation.c homeassistant.c \
                  notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \
-                 schedule.c icons.c backlight.c settings.c bootpick.c \
+                 schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \
                  lv_font_montserrat_96_custom.c
 ALL_SRC       := $(APP_SRC) $(LVGL_SRC) $(LVDRV_SRC)
 OBJ           := $(patsubst %.c,$(BUILDDIR)/%.o,$(ALL_SRC))

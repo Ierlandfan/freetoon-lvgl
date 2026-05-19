@@ -9,6 +9,7 @@
 #include "boxtalk.h"
 #include "screens.h"
 #include "settings.h"
+#include "update_check.h"
 #include "backlight.h"
 #include "homewizard.h"
 #include "weather.h"
@@ -93,6 +94,8 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[main] healthcheck_start failed\n");
     if (pwa_start() != 0)
         fprintf(stderr, "[main] pwa_start failed\n");
+    if (update_check_start() != 0)
+        fprintf(stderr, "[main] update_check_start failed\n");
     packages_start();
 
     ui_init();

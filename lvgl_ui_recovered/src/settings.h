@@ -75,6 +75,12 @@ typedef struct {
      * user can always escape to the stock UI by tapping a button. */
     int boot_picker_enabled;
 
+    /* Update check — poll GitHub Releases every 6 h, banner on the
+     * home tile when a newer freetoon-lvgl release is available.
+     * Default 1; flip to 0 in toonui.cfg to disable the background
+     * fetch entirely (no network call, no banner). */
+    int update_check_enabled;
+
     /* Hide offline tiles on the home screen. Default 0 → tiles for
      * disabled / disconnected integrations stay visible with an
      * "offline" placeholder ("P1 offline" / "HA offline" / "Itho

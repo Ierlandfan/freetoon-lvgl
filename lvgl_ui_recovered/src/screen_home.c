@@ -15,6 +15,7 @@
 #include "ventilation.h"
 #include "homeassistant.h"
 #include "packages.h"
+#include "update_check.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -164,6 +165,12 @@ static lv_obj_t * tile_family   = NULL;
 static lv_obj_t * tile_vent     = NULL;
 static lv_obj_t * tile_energy   = NULL;
 static lv_obj_t * tile_curtains = NULL;
+/* Small banner at the top of the home screen — shown when the update
+ * checker finds a newer freetoon-lvgl release. Tapping it opens a modal
+ * with the release notes + the one-line install command. */
+static lv_obj_t * update_banner     = NULL;
+static lv_obj_t * update_banner_lbl = NULL;
+static lv_obj_t * update_modal      = NULL;
 
 /* Smaller tile widgets */
 static lv_obj_t * lbl_air_eco2;
@@ -320,6 +327,102 @@ static void on_program_tap(lv_event_t * e) {
 static void open_placeholder(lv_event_t * e) {
     (void)e;  /* TODO: per-tile detail screens */
 }
+
+/* Update banner click → modal with release notes + install command.
+ * Built lazily; one instance reused across taps (recreated if a newer
+ * version becomes available while it's already open and the user is
+ * looking at stale notes, since refresh_cb sees that and rebuilds). */
+static void on_update_modal_close(lv_event_t * e) {
+    (void)e;
+    if (update_modal) { lv_obj_del_async(update_modal); update_modal = NULL; }
+}
+static void on_update_banner_click(lv_event_t * e) {
+    (void)e;
+    if (!g_update_state.available) return;
+    if (update_modal) { lv_obj_del_async(update_modal); update_modal = NULL; }
+
+    update_modal = lv_obj_create(scr_root);
+    lv_obj_remove_style_all(update_modal);
+    lv_obj_set_size(update_modal, 1024, 600);
+    lv_obj_set_pos(update_modal, 0, 0);
+    lv_obj_set_style_bg_color(update_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(update_modal, LV_OPA_70, 0);
+    lv_obj_clear_flag(update_modal, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(update_modal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(update_modal, on_update_modal_close, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * panel = lv_obj_create(update_modal);
+    lv_obj_set_size(panel, 860, 520);
+    lv_obj_center(panel);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
+    lv_obj_set_style_border_width(panel, 0, 0);
+    lv_obj_set_style_radius(panel, 18, 0);
+    lv_obj_set_style_pad_all(panel, 20, 0);
+    lv_obj_set_scroll_dir(panel, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(panel, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * t = lv_label_create(panel);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
+    lv_label_set_text_fmt(t, "Update %s available",
+                          g_update_state.latest_version);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 0);
+
+    /* Current vs available */
+    lv_obj_t * sub = lv_label_create(panel);
+    lv_obj_set_style_text_font(sub, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(sub, lv_color_hex(0x88aabb), 0);
+    lv_label_set_text_fmt(sub, "running %s   ->   %s", BUILD_VERSION,
+                          g_update_state.latest_version);
+    lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 4, 42);
+
+    /* Install command — re-run the same install.sh that put toonui on
+     * the device; v0.7.x is upgrade-safe (existing toonui.cfg preserved). */
+    lv_obj_t * cmd_box = lv_obj_create(panel);
+    lv_obj_set_size(cmd_box, 820, 80);
+    lv_obj_align(cmd_box, LV_ALIGN_TOP_LEFT, 0, 80);
+    lv_obj_set_style_bg_color(cmd_box, lv_color_hex(0x0e1a2a), 0);
+    lv_obj_set_style_border_width(cmd_box, 0, 0);
+    lv_obj_set_style_radius(cmd_box, 10, 0);
+    lv_obj_set_style_pad_all(cmd_box, 10, 0);
+    lv_obj_clear_flag(cmd_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t * cmd = lv_label_create(cmd_box);
+    lv_obj_set_style_text_font(cmd, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(cmd, lv_color_hex(0xddddee), 0);
+    lv_label_set_long_mode(cmd, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(cmd, 800);
+    lv_label_set_text(cmd,
+        "curl -fsSL "
+        "https://github.com/Ierlandfan/freetoon-lvgl/releases/latest/"
+        "download/freetoon-lvgl-armhf.tar.gz | tar xz && "
+        "cd freetoon-lvgl-*/ && TOON_HOST=192.168.x.x ./install.sh");
+
+    /* Release notes (truncated to fit). */
+    lv_obj_t * notes = lv_label_create(panel);
+    lv_obj_set_style_text_font(notes, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(notes, lv_color_hex(0xc8d4e0), 0);
+    lv_label_set_long_mode(notes, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(notes, 820);
+    if (g_update_state.release_notes[0])
+        lv_label_set_text(notes, g_update_state.release_notes);
+    else
+        lv_label_set_text(notes, "(no release notes available)");
+    lv_obj_align(notes, LV_ALIGN_TOP_LEFT, 4, 180);
+
+    lv_obj_t * x = lv_btn_create(panel);
+    lv_obj_set_size(x, 100, 44);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, 4, -4);
+    lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
+    lv_obj_set_style_radius(x, 10, 0);
+    lv_obj_add_event_cb(x, on_update_modal_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * xl = lv_label_create(x);
+    lv_label_set_text(xl, "Close");
+    lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(xl, &lv_font_montserrat_18, 0);
+    lv_obj_center(xl);
+}
+
 static void open_vent(lv_event_t * e) {
     (void)e;
     ui_push(screen_vent_remote_create());
@@ -487,6 +590,18 @@ static void refresh_cb(lv_timer_t * t) {
     (void)t;
 
     apply_offline_tile_visibility();
+
+    /* Update-available banner — toggled live so the user sees it within
+     * a refresh tick of the background checker finding a new release. */
+    if (update_banner && update_banner_lbl) {
+        if (g_update_state.available) {
+            lv_label_set_text_fmt(update_banner_lbl, "%s available  -  tap for details",
+                                  g_update_state.latest_version);
+            lv_obj_clear_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 
     /* Expire any pending +/- temporary override once the schedule advances. */
     boxtalk_tick();
@@ -1900,6 +2015,25 @@ lv_obj_t * screen_home_create(void) {
        (not inside the big tile) per the user's spec. They float in the
        gap above the Humidity tile's accent bar — overlapping just the
        accent line, never the humidity value. */
+    /* Update-available banner — sits along the top edge, between the
+     * left-side schedule controls and the right-side buttons. Hidden
+     * by default; refresh_cb shows it when g_update_state.available
+     * flips on. Tap opens a modal with release notes + install hint. */
+    update_banner = lv_btn_create(scr_root);
+    lv_obj_set_size(update_banner, 380, 36);
+    lv_obj_align(update_banner, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_set_style_bg_color(update_banner, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_radius(update_banner, 8, 0);
+    lv_obj_set_ext_click_area(update_banner, 8);
+    lv_obj_add_event_cb(update_banner, on_update_banner_click,
+                        LV_EVENT_CLICKED, NULL);
+    update_banner_lbl = lv_label_create(update_banner);
+    lv_obj_set_style_text_color(update_banner_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(update_banner_lbl, &lv_font_montserrat_18, 0);
+    lv_label_set_text(update_banner_lbl, "Update available");
+    lv_obj_center(update_banner_lbl);
+    lv_obj_add_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
+
     envelope_btn = lv_btn_create(scr_root);
     lv_obj_set_size(envelope_btn, 44, 44);
     lv_obj_align(envelope_btn, LV_ALIGN_TOP_RIGHT, -66, 4);
