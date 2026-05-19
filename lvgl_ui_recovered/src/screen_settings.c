@@ -19,6 +19,7 @@
 #include "backlight.h"
 #include "boxtalk.h"
 #include "icons.h"
+#include "tile_slots.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -856,6 +857,122 @@ static void open_integrations_modal(lv_event_t * e) {
         "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
         "Toggle a switch then restart toonui.");
     lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, 4, y);
+}
+
+/* ==================== Tile slots modal ====================
+ * Phase 2 of marketplace work. Four dropdowns — one per right-column
+ * home tile (Energy / Family / Vent / Water) — let the user replace the
+ * built-in content with any installed marketplace integration. Empty
+ * dropdown = "Built-in" (existing behaviour). The screen also doubles as
+ * the picker triggered by long-press on a home tile (see tile_slot_open_picker).
+ */
+static lv_obj_t * dd_tile_slot[TILE_SLOT_COUNT];
+
+/* Build the option string for the rollers: "Built-in\n<name>\n<name>...".
+ * Output buffer is owned by caller and must be large enough — 64 chars per
+ * integration + 1 for separator. */
+static void build_slot_options(char * out, size_t cap) {
+    size_t n = snprintf(out, cap, "Built-in");
+    int total = tile_slots_integration_count();
+    for (int i = 0; i < total && n + INTEG_NAME_MAX + 2 < cap; i++) {
+        const integration_meta_t * m = tile_slots_integration_at(i);
+        n += snprintf(out + n, cap - n, "\n%s",
+                      m->tile_title[0] ? m->tile_title : m->id);
+    }
+}
+
+/* Resolve dropdown index → integration id for the given slot. Index 0 is
+ * the "Built-in" sentinel (empty string). */
+static const char * slot_dropdown_to_id(int idx) {
+    if (idx <= 0) return "";
+    const integration_meta_t * m = tile_slots_integration_at(idx - 1);
+    return m ? m->id : "";
+}
+
+static int slot_dropdown_from_id(const char * id) {
+    if (!id || !id[0]) return 0;
+    int total = tile_slots_integration_count();
+    for (int i = 0; i < total; i++) {
+        const integration_meta_t * m = tile_slots_integration_at(i);
+        if (strcmp(m->id, id) == 0) return i + 1;
+    }
+    return 0;
+}
+
+static void on_tile_slot_change(lv_event_t * e) {
+    lv_obj_t * dd = lv_event_get_target(e);
+    int slot = (int)(intptr_t)lv_event_get_user_data(e);
+    int idx  = lv_dropdown_get_selected(dd);
+    tile_slots_bind(slot, slot_dropdown_to_id(idx));
+}
+
+static void open_tile_slots_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Tile slots", 500);
+
+    if (tile_slots_integration_count() == 0) {
+        lv_obj_t * msg = lv_label_create(p);
+        lv_obj_set_style_text_font(msg, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_color(msg, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_width(msg, 800);
+        lv_label_set_long_mode(msg, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(msg,
+            "No marketplace integrations installed yet. Open "
+            "Settings -> Marketplace to add one, then come back here "
+            "to assign it to a tile.");
+        lv_obj_align(msg, LV_ALIGN_TOP_LEFT, 4, 80);
+        return;
+    }
+
+    static char options[2048];
+    build_slot_options(options, sizeof options);
+
+    int y = 70;
+    for (int s = 0; s < TILE_SLOT_COUNT; s++) {
+        lv_obj_t * row = lv_obj_create(p);
+        lv_obj_set_size(row, 800, 72);
+        lv_obj_align(row, LV_ALIGN_TOP_LEFT, 4, y);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x152033), 0);
+        lv_obj_set_style_radius(row, 10, 0);
+        lv_obj_set_style_pad_all(row, 8, 0);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t * lbl = lv_label_create(row);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_label_set_text(lbl, tile_slot_label(s));
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 8, 0);
+
+        lv_obj_t * dd = lv_dropdown_create(row);
+        lv_obj_set_size(dd, 480, 56);
+        lv_obj_align(dd, LV_ALIGN_RIGHT_MID, -8, 0);
+        lv_dropdown_set_options_static(dd, options);
+        lv_dropdown_set_selected(dd,
+            slot_dropdown_from_id(tile_slots_binding(s)));
+        lv_obj_set_style_text_font(dd, &lv_font_montserrat_22, 0);
+        lv_obj_add_event_cb(dd, on_tile_slot_change, LV_EVENT_VALUE_CHANGED,
+                            (void *)(intptr_t)s);
+        dd_tile_slot[s] = dd;
+
+        y += 84;
+    }
+
+    lv_obj_t * hint = lv_label_create(p);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_width(hint, 800);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(hint,
+        "Pick a marketplace integration for each right-column tile. "
+        "\"Built-in\" keeps the default content (Energy/Family/Vent/Water). "
+        "You can also long-press a tile on the home screen to pick directly.");
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y + 6);
+}
+
+/* Public entry point called by screen_home.c long-press handler. Just
+ * opens the same modal — keeps the picker UI consistent. */
+void screen_settings_open_tile_slots_modal(void) {
+    open_tile_slots_modal(NULL);
 }
 
 static void open_about_modal(lv_event_t * e) {
@@ -1900,6 +2017,13 @@ lv_obj_t * screen_settings_create(void) {
               "freetoon vs stock qt-gui", open_uimode_modal);
     make_tile(x0 + 2*(308+gap), row4, NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
               "browse + install integrations", open_marketplace);
+
+    /* Row 5 — Tile slots: assign marketplace integrations to the 4
+     * right-column home tiles. Only meaningful once something is
+     * installed; the modal explains so when empty. */
+    int row5 = row4 + 188 + 16;
+    make_tile(x0 + 0*(308+gap), row5, NULL, LV_SYMBOL_HOME, "Tiles",
+              "assign integrations to home tiles", open_tile_slots_modal);
 
     return scr_root;
 }

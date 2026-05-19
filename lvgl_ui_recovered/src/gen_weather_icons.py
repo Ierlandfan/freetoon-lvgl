@@ -231,6 +231,22 @@ def emit_all(size_px, suffix):
         ("icon_wx_snow"      + suffix, snow()),
         ("icon_wx_fog"       + suffix, fog()),
     ]
+    # Phase-specific moons — 8 named slots covering the lunar month. The
+    # runtime picks the nearest one from the current date. New (0.0) is a
+    # purely-blank disc which would render as nothing, so we draw it as a
+    # very thin crescent — slightly visible — so the slot doesn't disappear
+    # on a new-moon night. Other phases follow moon_phase() exactly.
+    moon_phases = [
+        ("icon_wx_moon_new"      + suffix, moon_phase(0.04)),
+        ("icon_wx_moon_wax_cres" + suffix, moon_phase(0.125)),
+        ("icon_wx_moon_first_q"  + suffix, moon_phase(0.25)),
+        ("icon_wx_moon_wax_gib"  + suffix, moon_phase(0.375)),
+        ("icon_wx_moon_full"     + suffix, moon_full()),
+        ("icon_wx_moon_wan_gib"  + suffix, moon_phase(0.625)),
+        ("icon_wx_moon_last_q"   + suffix, moon_phase(0.75)),
+        ("icon_wx_moon_wan_cres" + suffix, moon_phase(0.875)),
+    ]
+    icons += moon_phases
     for name, px in icons:
         with open(f"{name}.h", "w") as f:
             write(name, px, f)
@@ -334,13 +350,14 @@ def bolt_lg():
         line2(p, pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], 255, 4.4)
     return p
 
-def moon_lg():
+def moon_phase_lg(phase01):
+    """80x80 phase-aware moon. Same algorithm as moon_phase()."""
     p = blank()
     cx, cy, r = 40, 40, 24
     disc2(p, cx, cy, r, 255)
     shadow_r = int(r * 1.2)
-    # waxing gibbous default
-    offset = int(math.cos(0.30 * 2 * math.pi) * (r + 4))
+    ang = phase01 * 2 * math.pi
+    offset = int(math.cos(ang) * (r + 4))
     for y in range(cy - shadow_r - 2, cy + shadow_r + 3):
         for x in range(cx + offset - shadow_r - 2, cx + offset + shadow_r + 3):
             if 0 <= x < W and 0 <= y < H:
@@ -348,6 +365,14 @@ def moon_lg():
                 if d <= shadow_r:
                     p[y * W + x] = 0
     return p
+
+def moon_full_lg():
+    p = blank()
+    disc2(p, 40, 40, 24, 255)
+    return p
+
+def moon_lg():
+    return moon_phase_lg(0.30)
 
 def snow_lg():
     p = cloud_lg()
@@ -382,6 +407,14 @@ icons_lg = [
     ("icon_wx_thunder_lg",    thunder_lg()),
     ("icon_wx_bolt_lg",       bolt_lg()),
     ("icon_wx_moon_lg",       moon_lg()),
+    ("icon_wx_moon_new_lg",      moon_phase_lg(0.04)),
+    ("icon_wx_moon_wax_cres_lg", moon_phase_lg(0.125)),
+    ("icon_wx_moon_first_q_lg",  moon_phase_lg(0.25)),
+    ("icon_wx_moon_wax_gib_lg",  moon_phase_lg(0.375)),
+    ("icon_wx_moon_full_lg",     moon_full_lg()),
+    ("icon_wx_moon_wan_gib_lg",  moon_phase_lg(0.625)),
+    ("icon_wx_moon_last_q_lg",   moon_phase_lg(0.75)),
+    ("icon_wx_moon_wan_cres_lg", moon_phase_lg(0.875)),
     ("icon_wx_snow_lg",       snow_lg()),
     ("icon_wx_fog_lg",        fog_lg()),
 ]

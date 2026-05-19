@@ -30,6 +30,10 @@ lv_obj_t * screen_vent_advanced_create(void);
 lv_obj_t * screen_lights_create(void);
 lv_obj_t * screen_marketplace_create(void);
 
+/* Open the Tile-slots picker modal — used both by the Settings → Tiles
+ * tile and the long-press handler on the four right-column home tiles. */
+void screen_settings_open_tile_slots_modal(void);
+
 /* Called once at boot. Loads home as root. */
 void ui_init(void);
 

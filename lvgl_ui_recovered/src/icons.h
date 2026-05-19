@@ -17,6 +17,30 @@ extern const lv_img_dsc_t icon_wx_rain_heavy;
 extern const lv_img_dsc_t icon_wx_thunder;
 extern const lv_img_dsc_t icon_wx_bolt;
 extern const lv_img_dsc_t icon_wx_moon;
+extern const lv_img_dsc_t icon_wx_moon_new;
+extern const lv_img_dsc_t icon_wx_moon_wax_cres;
+extern const lv_img_dsc_t icon_wx_moon_first_q;
+extern const lv_img_dsc_t icon_wx_moon_wax_gib;
+extern const lv_img_dsc_t icon_wx_moon_full;
+extern const lv_img_dsc_t icon_wx_moon_wan_gib;
+extern const lv_img_dsc_t icon_wx_moon_last_q;
+extern const lv_img_dsc_t icon_wx_moon_wan_cres;
+extern const lv_img_dsc_t icon_wx_moon_new_lg;
+extern const lv_img_dsc_t icon_wx_moon_wax_cres_lg;
+extern const lv_img_dsc_t icon_wx_moon_first_q_lg;
+extern const lv_img_dsc_t icon_wx_moon_wax_gib_lg;
+extern const lv_img_dsc_t icon_wx_moon_full_lg;
+extern const lv_img_dsc_t icon_wx_moon_wan_gib_lg;
+extern const lv_img_dsc_t icon_wx_moon_last_q_lg;
+extern const lv_img_dsc_t icon_wx_moon_wan_cres_lg;
+
+/* Returns the current moon-phase icon for the given size variant
+ * (size=40 for forecast strip, size=80 for dim/forecast detail).
+ * Picks one of the 8 phase slots based on the current UTC date.
+ * Caller decides where to paint it — usually as the night replacement
+ * for the sun overlay on partly-cloudy nights, or as the cloud-icon
+ * slot itself on a clear-sky night. */
+const lv_img_dsc_t * moon_phase_icon(int size_px);
 extern const lv_img_dsc_t icon_wx_snow;
 extern const lv_img_dsc_t icon_wx_fog;
 

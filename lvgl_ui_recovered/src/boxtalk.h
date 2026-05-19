@@ -129,4 +129,9 @@ int boxtalk_get_rra_data(const char * uuid, const char * rra_name);
 int boxtalk_set_program(int state);
 int boxtalk_set_manual(void);
 
+/* Subscribe to an arbitrary serviceid. Used by tile_slots_init() so
+ * marketplace integrations can deliver notifies through the same parser
+ * path. Returns 0 on send success, <0 if the broker socket is down. */
+int boxtalk_subscribe_service(const char * service_id);
+
 #endif

@@ -13,6 +13,7 @@
 #include "inbox.h"
 #include "schedule.h"
 #include "settings.h"
+#include "tile_slots.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -263,6 +264,11 @@ static void handle_notify(const char* xml) {
                 toon_state.water_pressure = (v > 10.0f) ? v / 100.0f : v;
             toon_state.msg_count++;
         }
+    } else if (tile_slots_integration_by_service(sid) != NULL) {
+        /* Marketplace integration — dispatched via the manifest's value_field
+         * / subtitle_field. tile_slots_on_notify updates the latest-value
+         * cache the home-tile renderer reads on the next refresh. */
+        tile_slots_on_notify(sid, xml);
     } else if (strcmp(tail, "BoilerInfo") == 0) {
         /* Dump the *full* XML the first 3 times so we can confirm the exact
          * element names this Toon's happ_thermstat publishes. The previous
@@ -446,6 +452,22 @@ char         rrd_response_buf[16384];
 int boxtalk_send_raw_xml(const char * xml) {
     if (!xml || sock_fd < 0) return -1;
     return send_msg(xml);
+}
+
+/* Subscribe to an arbitrary BoxTalk service. Used by tile_slots_init() so
+ * each marketplace integration's serviceId reaches handle_notify(). Safe to
+ * call before connect — early calls just no-op (sock_fd<0); tile_slots_init
+ * is called again after connect to flush. */
+int boxtalk_subscribe_service(const char * service_id) {
+    if (!service_id || !service_id[0]) return -1;
+    if (sock_fd < 0) return -1;
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+        "<subscribe uuid=\"%s\" destuuid=\"\"><target uuid=\"\" "
+        "serviceid=\"%s\"></target></subscribe>",
+        OUR_UUID, service_id);
+    fprintf(stderr, "[bxt] subscribing to %s\n", service_id);
+    return send_msg(buf);
 }
 
 /* ---- Boiler control type (OpenTherm vs On/Off) ----
@@ -634,6 +656,11 @@ static void send_initial_handshake(void) {
     boxtalk_get_boiler_type();
     /* Boiler flow/return temps — BoilerInfo is query-only (no notifies). */
     boxtalk_request_boiler_refresh();
+
+    /* Marketplace integrations — broker drops subscribes across reconnect,
+     * so this runs every handshake. tile_slots_init() must already have
+     * populated the registry from main.c. */
+    tile_slots_subscribe_all();
 
     fprintf(stderr, "[bxt] handshake + subscriptions sent\n");
 }

@@ -9,6 +9,7 @@
 #include "boxtalk.h"
 #include "screens.h"
 #include "settings.h"
+#include "tile_slots.h"
 #include "update_check.h"
 #include "backlight.h"
 #include "homewizard.h"
@@ -77,6 +78,10 @@ int main(int argc, char** argv) {
     lv_indev_drv_register(&indev_drv);
 
     settings_load();
+
+    /* Marketplace registry — load before boxtalk so the handshake's
+     * tile_slots_subscribe_all() has something to subscribe to. */
+    tile_slots_init();
 
     if (boxtalk_start() != 0)
         fprintf(stderr, "[main] boxtalk_start failed\n");

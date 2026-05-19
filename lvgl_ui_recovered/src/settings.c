@@ -155,6 +155,14 @@ void settings_load(void) {
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
         else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
         else if (strcmp(k, "update_check_enabled") == 0) settings.update_check_enabled = iv;
+        else if (strcmp(k, "tile_slot_energy") == 0)
+            snprintf(settings.tile_slot_energy, sizeof settings.tile_slot_energy, "%s", v);
+        else if (strcmp(k, "tile_slot_family") == 0)
+            snprintf(settings.tile_slot_family, sizeof settings.tile_slot_family, "%s", v);
+        else if (strcmp(k, "tile_slot_vent") == 0)
+            snprintf(settings.tile_slot_vent, sizeof settings.tile_slot_vent, "%s", v);
+        else if (strcmp(k, "tile_slot_water") == 0)
+            snprintf(settings.tile_slot_water, sizeof settings.tile_slot_water, "%s", v);
     }
     fclose(f);
 
@@ -252,5 +260,9 @@ void settings_save(void) {
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
     fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fprintf(f, "update_check_enabled=%d\n", settings.update_check_enabled);
+    if (settings.tile_slot_energy[0]) fprintf(f, "tile_slot_energy=%s\n", settings.tile_slot_energy);
+    if (settings.tile_slot_family[0]) fprintf(f, "tile_slot_family=%s\n", settings.tile_slot_family);
+    if (settings.tile_slot_vent  [0]) fprintf(f, "tile_slot_vent=%s\n",   settings.tile_slot_vent);
+    if (settings.tile_slot_water [0]) fprintf(f, "tile_slot_water=%s\n",  settings.tile_slot_water);
     fclose(f);
 }

@@ -1178,6 +1178,10 @@ static void send_boot_sync(int fd) {
 /* main loop                                                             */
 /* ===================================================================== */
 static volatile sig_atomic_t g_stop = 0;
+/* Set via QUBY_DBG_RAW=1 in the env. Logs every read chunk's first
+ * 32 bytes as hex so we can see the bytes the parser actually drops.
+ * Off by default — keeps the steady-state log readable. */
+static int g_dbg_raw = 0;
 static void on_sig(int sig) { (void)sig; g_stop = 1; }
 
 static void usage(const char *p) {
@@ -1256,7 +1260,11 @@ int main(int argc, char **argv) {
     signal(SIGINT,  on_sig);
     signal(SIGTERM, on_sig);
     signal(SIGPIPE, SIG_IGN);
-    logmsg("starting in %s mode pid=%d", mode, getpid());
+    /* Optional raw-hex dump of every read chunk before parsing. Enable
+     * with QUBY_DBG_RAW=1 in the env. Default off — too chatty for
+     * steady-state operation. */
+    if (getenv("QUBY_DBG_RAW") && atoi(getenv("QUBY_DBG_RAW"))) g_dbg_raw = 1;
+    logmsg("starting in %s mode pid=%d  dbg_raw=%d", mode, getpid(), g_dbg_raw);
 
     g_pty_master = open_pty();
     if (g_pty_master < 0) return 2;
@@ -1369,6 +1377,13 @@ int main(int argc, char **argv) {
                     if (n > 0) {
                         WRITE_ALL(g_uart_fd, pbuf + plen, (size_t)n);
                         bytes_p2u += (size_t)n;
+                        if (g_dbg_raw) {
+                            char hex[3 * 32 + 1] = {0};
+                            size_t ln = (size_t)n > 32 ? 32 : (size_t)n;
+                            for (size_t i = 0; i < ln; i++)
+                                snprintf(hex + i * 3, 4, "%02x ", pbuf[plen + i]);
+                            logmsg("p>u RAW %zd B: %s", n, hex);
+                        }
                         plen += (size_t)n;
                         /* Drop 0x6A sync bytes, then re-align to next Quby
                          * header. Parse complete 7-byte frames; leave any
@@ -1405,6 +1420,13 @@ int main(int argc, char **argv) {
                     if (n > 0) {
                         WRITE_ALL(g_pty_master, ubuf + ulen, (size_t)n);
                         bytes_u2p += (size_t)n;
+                        if (g_dbg_raw) {
+                            char hex[3 * 32 + 1] = {0};
+                            size_t ln = (size_t)n > 32 ? 32 : (size_t)n;
+                            for (size_t i = 0; i < ln; i++)
+                                snprintf(hex + i * 3, 4, "%02x ", ubuf[ulen + i]);
+                            logmsg("u>p RAW %zd B: %s", n, hex);
+                        }
                         ulen += (size_t)n;
                         size_t k = 0;
                         while (k < ulen && ubuf[k] == 0x6A) k++;

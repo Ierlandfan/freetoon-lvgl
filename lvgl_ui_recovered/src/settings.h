@@ -88,6 +88,15 @@ typedef struct {
      * screen drops the corresponding rectangles entirely. The user
      * picks one or the other in Settings → Integrations. */
     int hide_offline_tiles;
+
+    /* Tile-reassignment slots (Phase 2 of marketplace). Each holds the id
+     * of an installed integration whose tile should replace the matching
+     * right-column home tile. Empty = built-in behaviour. See
+     * tile_slots.h for the dispatch model. 48 chars matches INTEG_ID_MAX. */
+    char tile_slot_energy[48];
+    char tile_slot_family[48];
+    char tile_slot_vent[48];
+    char tile_slot_water[48];
 } settings_t;
 
 #define FORECAST_AUTO   0

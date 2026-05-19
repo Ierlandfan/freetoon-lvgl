@@ -15,6 +15,7 @@
 #include "ventilation.h"
 #include "homeassistant.h"
 #include "packages.h"
+#include "tile_slots.h"
 #include "update_check.h"
 #include <stdio.h>
 #include <string.h>
@@ -122,7 +123,7 @@ static void set_forecast_icon(lv_obj_t * cloud, lv_obj_t * sun,
 
     /* Clear sky at night → moon icon, no overlay needed. */
     if (is_night && is_clear) {
-        lv_img_set_src(cloud, &icon_wx_moon);
+        lv_img_set_src(cloud, moon_phase_icon(40));
         lv_obj_set_style_img_recolor(cloud, lv_color_hex(0xe8edf2), 0);   /* moon white */
         if (sun) lv_obj_add_flag(sun, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -136,7 +137,7 @@ static void set_forecast_icon(lv_obj_t * cloud, lv_obj_t * sun,
         lv_obj_set_style_img_recolor(cloud, lv_color_hex(0xf0f4f8), 0);
         if (sun) {
             if (is_night) {
-                lv_img_set_src(sun, &icon_wx_moon);
+                lv_img_set_src(sun, moon_phase_icon(40));
                 lv_obj_set_style_img_recolor(sun, lv_color_hex(0xe8edf2), 0);
             } else {
                 lv_img_set_src(sun, weather_icon_for("a"));      /* plain sun */
@@ -354,6 +355,15 @@ static void on_program_tap(lv_event_t * e) {
     lv_obj_set_style_text_font(cancel_lbl, &lv_font_montserrat_22, 0);
     lv_obj_center(cancel_lbl);
 }
+/* Long-press on any of the four right-column tiles. We don't yet know
+ * which tile triggered this — the modal lets the user pick the slot
+ * anyway — so the handler just opens the shared picker. Cheaper UI and
+ * no fragile tile-→-slot mapping. */
+static void on_tile_longpress(lv_event_t * e) {
+    (void)e;
+    screen_settings_open_tile_slots_modal();
+}
+
 static void open_placeholder(lv_event_t * e) {
     (void)e;  /* TODO: per-tile detail screens */
 }
@@ -616,10 +626,52 @@ static void apply_offline_tile_visibility(void) {
     }
 }
 
+/* Render an integration's latest_value/subtitle into the given pair of
+ * labels. Returns 1 if a binding existed (caller should skip the built-in
+ * refresh path), 0 otherwise. */
+static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
+    const integration_meta_t * m = tile_slots_meta_for(slot);
+    if (!m) return 0;
+    if (lbl_main) {
+        const char * v = (const char *)m->latest_value;
+        if (v && v[0])
+            lv_label_set_text_fmt(lbl_main, "%s%s%s", v,
+                                  m->value_unit[0] ? " " : "",
+                                  m->value_unit);
+        else
+            lv_label_set_text_fmt(lbl_main, "%s...", m->tile_title);
+    }
+    if (lbl_sub) {
+        const char * s = (const char *)m->latest_subtitle;
+        if (s && s[0])
+            lv_label_set_text_fmt(lbl_sub, "%s%s%s", s,
+                                  m->subtitle_unit[0] ? " " : "",
+                                  m->subtitle_unit);
+        else
+            lv_label_set_text(lbl_sub, "");
+    }
+    return 1;
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
 
     apply_offline_tile_visibility();
+
+    /* Marketplace tile overrides — if a slot is bound, render the
+     * integration's data into the matching tile's labels and remember
+     * to skip the built-in refresh path further down. The vent tile's
+     * buttons/fan stay visible (no separate hide pass) — accepted UX
+     * trade-off for keeping refresh logic local. */
+    int slot_active[TILE_SLOT_COUNT] = {0};
+    slot_active[TILE_SLOT_ENERGY] = render_tile_slot(TILE_SLOT_ENERGY,
+                                                    lbl_energy_w, lbl_energy_gas);
+    slot_active[TILE_SLOT_FAMILY] = render_tile_slot(TILE_SLOT_FAMILY,
+                                                    lbl_life360_ronald, lbl_life360_caja);
+    slot_active[TILE_SLOT_VENT]   = render_tile_slot(TILE_SLOT_VENT,
+                                                    lbl_boiler_state, lbl_boiler_pressure);
+    slot_active[TILE_SLOT_WATER]  = render_tile_slot(TILE_SLOT_WATER,
+                                                    lbl_inbox_main, lbl_inbox_sub);
 
     /* Update-available banner — toggled live so the user sees it within
      * a refresh tick of the background checker finding a new release. */
@@ -819,21 +871,26 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Energy tile — live power + cumulative gas. "Today" stays blank until
        we track a midnight-baseline; intent is to show kWh-since-midnight
-       once that book-keeping lands. */
-    if (lbl_energy_w) {
-        if (hw_state.connected_p1)
-            lv_label_set_text_fmt(lbl_energy_w, "%.0f W", hw_state.power_w);
-        else
-            lv_label_set_text(lbl_energy_w, "P1 offline");
+       once that book-keeping lands. Skip when a marketplace integration
+       has taken over this slot. */
+    if (!slot_active[TILE_SLOT_ENERGY]) {
+        if (lbl_energy_w) {
+            if (hw_state.connected_p1)
+                lv_label_set_text_fmt(lbl_energy_w, "%.0f W", hw_state.power_w);
+            else
+                lv_label_set_text(lbl_energy_w, "P1 offline");
+        }
+        if (lbl_energy_gas && hw_state.connected_p1)
+            lv_label_set_text_fmt(lbl_energy_gas, "%.0f m3 gas", hw_state.gas_m3);
     }
-    if (lbl_energy_gas && hw_state.connected_p1)
-        lv_label_set_text_fmt(lbl_energy_gas, "%.0f m3 gas", hw_state.gas_m3);
 
     /* Vent tile. Top-right line combines preset + remaining ("Auto", "High",
        "Timer 25m"); bottom line combines % + rpm + source ("100 % · 695 rpm
        · vremote"). All four physical signals (preset/pct/rpm/who) on two
-       label widgets so the tile stays uncluttered. */
-    if (lbl_boiler_state) {
+       label widgets so the tile stays uncluttered. Skip the whole block
+       when a marketplace integration has taken over the slot — the labels
+       were already rewritten by render_tile_slot. */
+    if (!slot_active[TILE_SLOT_VENT] && lbl_boiler_state) {
         if (!settings.enable_vent) {
             /* Integration turned off in Settings → keep the tile visible
              * (unless hide_offline_tiles is on, in which case the whole
@@ -891,7 +948,7 @@ static void refresh_cb(lv_timer_t * t) {
             if (vent_btn_timer) lv_obj_set_style_border_width(vent_btn_timer, 0, 0);
         }
     }
-    if (lbl_boiler_pressure) {
+    if (!slot_active[TILE_SLOT_VENT] && lbl_boiler_pressure) {
         if (vent_state.connected) {
             /* Classify source into a 3-char tag so the line stays compact:
                API = HTML/vremote (toonui or HA), RF  = physical radio remote,
@@ -995,27 +1052,30 @@ static void refresh_cb(lv_timer_t * t) {
     /* Water tile: cumulative m³ on top, per-pour line below. Live L/min
      * while flowing; right after the tap closes the session total stays
      * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
-     * feedback that the pour registered. */
-    if (lbl_inbox_main) {
-        if (!settings.enable_p1_water)
-            lv_label_set_text(lbl_inbox_main, "offline");
-        else if (hw_state.connected_water)
-            lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
-        else
-            lv_label_set_text(lbl_inbox_main, "WTR offline");
-    }
-    if (lbl_inbox_sub) {
-        if (!settings.enable_p1_water || !hw_state.connected_water) {
-            lv_label_set_text(lbl_inbox_sub, "");
-        } else if (hw_state.water_lpm > 0.05f) {
-            lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
-                                  hw_state.water_lpm,
-                                  hw_state.water_session_l);
-        } else if (hw_state.water_session_l > 0) {
-            lv_label_set_text_fmt(lbl_inbox_sub, "+%.1f L just poured",
-                                  hw_state.water_session_l);
-        } else {
-            lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+     * feedback that the pour registered. Skip when a marketplace
+     * integration owns this slot. */
+    if (!slot_active[TILE_SLOT_WATER]) {
+        if (lbl_inbox_main) {
+            if (!settings.enable_p1_water)
+                lv_label_set_text(lbl_inbox_main, "offline");
+            else if (hw_state.connected_water)
+                lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+            else
+                lv_label_set_text(lbl_inbox_main, "WTR offline");
+        }
+        if (lbl_inbox_sub) {
+            if (!settings.enable_p1_water || !hw_state.connected_water) {
+                lv_label_set_text(lbl_inbox_sub, "");
+            } else if (hw_state.water_lpm > 0.05f) {
+                lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
+                                      hw_state.water_lpm,
+                                      hw_state.water_session_l);
+            } else if (hw_state.water_session_l > 0) {
+                lv_label_set_text_fmt(lbl_inbox_sub, "+%.1f L just poured",
+                                      hw_state.water_session_l);
+            } else {
+                lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+            }
         }
     }
     /* Drop + L/m indicator on the big heater tile — visible whenever a tap
@@ -1171,20 +1231,23 @@ static void refresh_cb(lv_timer_t * t) {
     /* Family tile (Life360). Name prefix + scrolling address. When HA
      * integration is off there's no poller to populate ha_state, so
      * surface that explicitly instead of leaving a pair of stale "?"s
-     * that could be mistaken for "in transit" or "out of range". */
-    if (lbl_life360_ronald) {
-        if (!settings.enable_ha)
-            lv_label_set_text(lbl_life360_ronald, "HA offline");
-        else
-            lv_label_set_text_fmt(lbl_life360_ronald, "Ronald: %s",
-                ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?");
-    }
-    if (lbl_life360_caja) {
-        if (!settings.enable_ha)
-            lv_label_set_text(lbl_life360_caja, "");
-        else
-            lv_label_set_text_fmt(lbl_life360_caja, "Caja: %s",
-                ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
+     * that could be mistaken for "in transit" or "out of range".
+     * Skip when a marketplace integration owns this slot. */
+    if (!slot_active[TILE_SLOT_FAMILY]) {
+        if (lbl_life360_ronald) {
+            if (!settings.enable_ha)
+                lv_label_set_text(lbl_life360_ronald, "HA offline");
+            else
+                lv_label_set_text_fmt(lbl_life360_ronald, "Ronald: %s",
+                    ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?");
+        }
+        if (lbl_life360_caja) {
+            if (!settings.enable_ha)
+                lv_label_set_text(lbl_life360_caja, "");
+            else
+                lv_label_set_text_fmt(lbl_life360_caja, "Caja: %s",
+                    ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
+        }
     }
 
     /* Forecast band — splat-recovery left two more copies of this
@@ -1237,27 +1300,30 @@ static void refresh_cb(lv_timer_t * t) {
     /* Water tile: cumulative m³ on top, per-pour line below. Live L/min
      * while flowing; right after the tap closes the session total stays
      * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
-     * feedback that the pour registered. */
-    if (lbl_inbox_main) {
-        if (!settings.enable_p1_water)
-            lv_label_set_text(lbl_inbox_main, "offline");
-        else if (hw_state.connected_water)
-            lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
-        else
-            lv_label_set_text(lbl_inbox_main, "WTR offline");
-    }
-    if (lbl_inbox_sub) {
-        if (!settings.enable_p1_water || !hw_state.connected_water) {
-            lv_label_set_text(lbl_inbox_sub, "");
-        } else if (hw_state.water_lpm > 0.05f) {
-            lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
-                                  hw_state.water_lpm,
-                                  hw_state.water_session_l);
-        } else if (hw_state.water_session_l > 0) {
-            lv_label_set_text_fmt(lbl_inbox_sub, "+%.1f L just poured",
-                                  hw_state.water_session_l);
-        } else {
-            lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+     * feedback that the pour registered. Skip when a marketplace
+     * integration owns this slot. */
+    if (!slot_active[TILE_SLOT_WATER]) {
+        if (lbl_inbox_main) {
+            if (!settings.enable_p1_water)
+                lv_label_set_text(lbl_inbox_main, "offline");
+            else if (hw_state.connected_water)
+                lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+            else
+                lv_label_set_text(lbl_inbox_main, "WTR offline");
+        }
+        if (lbl_inbox_sub) {
+            if (!settings.enable_p1_water || !hw_state.connected_water) {
+                lv_label_set_text(lbl_inbox_sub, "");
+            } else if (hw_state.water_lpm > 0.05f) {
+                lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
+                                      hw_state.water_lpm,
+                                      hw_state.water_session_l);
+            } else if (hw_state.water_session_l > 0) {
+                lv_label_set_text_fmt(lbl_inbox_sub, "+%.1f L just poured",
+                                      hw_state.water_session_l);
+            } else {
+                lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+            }
         }
     }
     /* Drop + L/m indicator on the big heater tile — visible whenever a tap
@@ -1326,12 +1392,16 @@ static void refresh_cb(lv_timer_t * t) {
        clobbering the real waste-pickup text written earlier in this
        refresh callback.) */
 
-    /* Water tile (replaces Inbox placeholder) — total + live l/min. */
-    if (lbl_inbox_main && hw_state.connected_water) {
-        lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
-    }
-    if (lbl_inbox_sub && hw_state.connected_water) {
-        lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min", hw_state.water_lpm);
+    /* Water tile (replaces Inbox placeholder) — total + live l/min.
+     * Splat-recovered duplicate of the earlier guarded block; same
+     * marketplace-slot guard applies here. */
+    if (!slot_active[TILE_SLOT_WATER]) {
+        if (lbl_inbox_main && hw_state.connected_water) {
+            lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+        }
+        if (lbl_inbox_sub && hw_state.connected_water) {
+            lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min", hw_state.water_lpm);
+        }
     }
 
     lv_obj_invalidate(scr_root);
@@ -1845,6 +1915,15 @@ lv_obj_t * screen_home_create(void) {
     tile_t water_t;
     make_tile(scr_root, 790, 300, 214, 130, "Water", 0x44aaff, open_placeholder, &water_t);
     tile_water = water_t.tile;
+
+    /* Long-press on any of the four right-column tiles → tile-slots picker.
+     * Same modal as Settings → Tiles. Cheap to attach; the handler only
+     * fires when LVGL's long-press timer expires (default 400 ms), so a
+     * normal tap still routes through the existing CLICKED handler. */
+    lv_obj_add_event_cb(tile_energy, on_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(tile_family, on_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(tile_vent,   on_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(tile_water,  on_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
     lbl_inbox_main = lv_label_create(water_t.tile);
     lv_obj_set_style_text_color(lbl_inbox_main, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_inbox_main, &lv_font_montserrat_28, 0);
