@@ -74,6 +74,14 @@ typedef struct {
      * into whatever /mnt/data/ui_choice selects. Default ON so a new
      * user can always escape to the stock UI by tapping a button. */
     int boot_picker_enabled;
+
+    /* Hide offline tiles on the home screen. Default 0 → tiles for
+     * disabled / disconnected integrations stay visible with an
+     * "offline" placeholder ("P1 offline" / "HA offline" / "Itho
+     * offline"). 1 → those tiles get LV_OBJ_FLAG_HIDDEN so the home
+     * screen drops the corresponding rectangles entirely. The user
+     * picks one or the other in Settings → Integrations. */
+    int hide_offline_tiles;
 } settings_t;
 
 #define FORECAST_AUTO   0

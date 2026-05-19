@@ -51,6 +51,7 @@ settings_t settings = {
     .enable_vent         = 0,
     .enable_ha           = 0,
     .boot_picker_enabled = 1,
+    .hide_offline_tiles  = 0,
 };
 
 float display_indoor_temp(float raw) {
@@ -151,6 +152,7 @@ void settings_load(void) {
         else if (strcmp(k, "enable_vent")     == 0) { settings.enable_vent     = iv; seen_vent     = 1; }
         else if (strcmp(k, "enable_ha")       == 0) { settings.enable_ha       = iv; seen_ha       = 1; }
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
+        else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
     }
     fclose(f);
 
@@ -246,5 +248,6 @@ void settings_save(void) {
     fprintf(f, "enable_vent=%d\n",     settings.enable_vent);
     fprintf(f, "enable_ha=%d\n",       settings.enable_ha);
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
+    fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fclose(f);
 }

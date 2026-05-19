@@ -115,6 +115,15 @@ static lv_obj_t * tile_img_flame;
 static lv_obj_t * tile_img_faucet;
 static lv_obj_t * tile_img_drop;
 
+/* Whole-tile pointers so refresh_cb can flip their offline labels or
+ * hide them entirely based on the matching enable_* flag +
+ * settings.hide_offline_tiles. NULL until the screen is built. */
+static lv_obj_t * tile_water    = NULL;
+static lv_obj_t * tile_family   = NULL;
+static lv_obj_t * tile_vent     = NULL;
+static lv_obj_t * tile_energy   = NULL;
+static lv_obj_t * tile_curtains = NULL;
+
 /* Smaller tile widgets */
 static lv_obj_t * lbl_air_eco2;
 static lv_obj_t * lbl_air_tvoc;
@@ -403,8 +412,40 @@ static void open_inbox(lv_event_t * e) {
 }
 
 /* ---------- refresh timer ---------- */
+/* Per-tile offline rendering. Computes whether the tile's integration is
+ * "live" right now (toggle on + remote reachable), and then either:
+ *   - hides the entire tile (settings.hide_offline_tiles=1), or
+ *   - lets the per-tile refresh below paint an "offline" placeholder
+ *     (default — keeps the layout stable, matches Energy's existing
+ *     "P1 offline" treatment).
+ * Called once per refresh tick from refresh_cb. */
+static void apply_offline_tile_visibility(void) {
+    int hide = settings.hide_offline_tiles;
+    int energy_live = settings.enable_p1_elec  && hw_state.connected_p1;
+    int water_live  = settings.enable_p1_water && hw_state.connected_water;
+    int vent_live   = settings.enable_vent     && vent_state.connected;
+    int family_live = settings.enable_ha;   /* family tile only needs the
+                                             * HA poller running; absent
+                                             * Life360 data falls through
+                                             * to "?" naturally. */
+    struct { lv_obj_t * tile; int live; } v[] = {
+        { tile_energy,   energy_live },
+        { tile_water,    water_live  },
+        { tile_vent,     vent_live   },
+        { tile_family,   family_live },
+        { tile_curtains, family_live },   /* curtains share the HA gate */
+    };
+    for (size_t i = 0; i < sizeof(v)/sizeof(v[0]); i++) {
+        if (!v[i].tile) continue;
+        if (hide && !v[i].live) lv_obj_add_flag(v[i].tile, LV_OBJ_FLAG_HIDDEN);
+        else                    lv_obj_clear_flag(v[i].tile, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+
+    apply_offline_tile_visibility();
 
     /* Expire any pending +/- temporary override once the schedule advances. */
     boxtalk_tick();
@@ -607,7 +648,17 @@ static void refresh_cb(lv_timer_t * t) {
        · vremote"). All four physical signals (preset/pct/rpm/who) on two
        label widgets so the tile stays uncluttered. */
     if (lbl_boiler_state) {
-        if (vent_state.connected) {
+        if (!settings.enable_vent) {
+            /* Integration turned off in Settings → keep the tile visible
+             * (unless hide_offline_tiles is on, in which case the whole
+             * tile is already hidden by apply_offline_tile_visibility) but
+             * make it obvious why no data is flowing. */
+            lv_label_set_text(lbl_boiler_state, "Itho offline");
+            if (vent_btn_low)   lv_obj_set_style_border_width(vent_btn_low,   0, 0);
+            if (vent_btn_high)  lv_obj_set_style_border_width(vent_btn_high,  0, 0);
+            if (vent_btn_auto)  lv_obj_set_style_border_width(vent_btn_auto,  0, 0);
+            if (vent_btn_timer) lv_obj_set_style_border_width(vent_btn_timer, 0, 0);
+        } else if (vent_state.connected) {
             /* Same snapshot trick as last_source — fan_info is a non-
              * volatile char[] written by another thread; memcpy a local
              * copy each refresh to dodge stale-cache reads. */
@@ -759,19 +810,27 @@ static void refresh_cb(lv_timer_t * t) {
      * while flowing; right after the tap closes the session total stays
      * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
      * feedback that the pour registered. */
-    if (lbl_inbox_main && hw_state.connected_water) {
-        lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+    if (lbl_inbox_main) {
+        if (!settings.enable_p1_water)
+            lv_label_set_text(lbl_inbox_main, "offline");
+        else if (hw_state.connected_water)
+            lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+        else
+            lv_label_set_text(lbl_inbox_main, "WTR offline");
     }
-    if (lbl_inbox_sub && hw_state.connected_water) {
-        if (hw_state.water_lpm > 0.05f)
+    if (lbl_inbox_sub) {
+        if (!settings.enable_p1_water || !hw_state.connected_water) {
+            lv_label_set_text(lbl_inbox_sub, "");
+        } else if (hw_state.water_lpm > 0.05f) {
             lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
                                   hw_state.water_lpm,
                                   hw_state.water_session_l);
-        else if (hw_state.water_session_l > 0)
+        } else if (hw_state.water_session_l > 0) {
             lv_label_set_text_fmt(lbl_inbox_sub, "+%.1f L just poured",
                                   hw_state.water_session_l);
-        else
+        } else {
             lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+        }
     }
     /* Drop + L/m indicator on the big heater tile — visible whenever a tap
      * is open so the user sees the flow at a glance without checking the
@@ -929,13 +988,24 @@ static void refresh_cb(lv_timer_t * t) {
             lv_label_set_text(lbl_forecast_city, city);
     }
 
-    /* Family tile (Life360). Name prefix + scrolling address. */
-    if (lbl_life360_ronald)
-        lv_label_set_text_fmt(lbl_life360_ronald, "Ronald: %s",
-            ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?");
-    if (lbl_life360_caja)
-        lv_label_set_text_fmt(lbl_life360_caja, "Caja: %s",
-            ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
+    /* Family tile (Life360). Name prefix + scrolling address. When HA
+     * integration is off there's no poller to populate ha_state, so
+     * surface that explicitly instead of leaving a pair of stale "?"s
+     * that could be mistaken for "in transit" or "out of range". */
+    if (lbl_life360_ronald) {
+        if (!settings.enable_ha)
+            lv_label_set_text(lbl_life360_ronald, "HA offline");
+        else
+            lv_label_set_text_fmt(lbl_life360_ronald, "Ronald: %s",
+                ha_state.loc_ronald[0] ? ha_state.loc_ronald : "?");
+    }
+    if (lbl_life360_caja) {
+        if (!settings.enable_ha)
+            lv_label_set_text(lbl_life360_caja, "");
+        else
+            lv_label_set_text_fmt(lbl_life360_caja, "Caja: %s",
+                ha_state.loc_caja[0]   ? ha_state.loc_caja   : "?");
+    }
 
     /* Forecast band — splat-recovery left two more copies of this
        writer further down; gate them on the same hourly/daily decision so
@@ -988,19 +1058,27 @@ static void refresh_cb(lv_timer_t * t) {
      * while flowing; right after the tap closes the session total stays
      * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
      * feedback that the pour registered. */
-    if (lbl_inbox_main && hw_state.connected_water) {
-        lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+    if (lbl_inbox_main) {
+        if (!settings.enable_p1_water)
+            lv_label_set_text(lbl_inbox_main, "offline");
+        else if (hw_state.connected_water)
+            lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+        else
+            lv_label_set_text(lbl_inbox_main, "WTR offline");
     }
-    if (lbl_inbox_sub && hw_state.connected_water) {
-        if (hw_state.water_lpm > 0.05f)
+    if (lbl_inbox_sub) {
+        if (!settings.enable_p1_water || !hw_state.connected_water) {
+            lv_label_set_text(lbl_inbox_sub, "");
+        } else if (hw_state.water_lpm > 0.05f) {
             lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
                                   hw_state.water_lpm,
                                   hw_state.water_session_l);
-        else if (hw_state.water_session_l > 0)
+        } else if (hw_state.water_session_l > 0) {
             lv_label_set_text_fmt(lbl_inbox_sub, "+%.1f L just poured",
                                   hw_state.water_session_l);
-        else
+        } else {
             lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+        }
     }
     /* Drop + L/m indicator on the big heater tile — visible whenever a tap
      * is open so the user sees the flow at a glance without checking the
@@ -1453,6 +1531,7 @@ lv_obj_t * screen_home_create(void) {
     tile_t energy_t;
     make_tile(scr_root, 790, 20, 214, 130, "Energy", 0xaa77ff,
               open_stats, &energy_t);
+    tile_energy = energy_t.tile;
     /* Compressed for the new 130-px tile: 28-pt W value (was 48), gas
      * total on the same baseline range below. */
     lbl_energy_w = lv_label_create(energy_t.tile);
@@ -1481,6 +1560,7 @@ lv_obj_t * screen_home_create(void) {
     tile_t vent;
     make_tile(scr_root, 560, 230, 220, 200, "Vent", 0x66bbdd,
               (lv_event_cb_t)open_vent, &vent);
+    tile_vent = vent.tile;
 
     /* Speed % shares the title row with the "Vent" label so the
        top-row buttons can sit cleanly below without overlap. */
@@ -1557,6 +1637,7 @@ lv_obj_t * screen_home_create(void) {
     tile_t family_t;
     make_tile(scr_root, 790, 160, 214, 130, "Family", 0xff8866,
               open_placeholder, &family_t);
+    tile_family = family_t.tile;
     /* Two scrolling labels — the formatted address ("City > Street > Num")
      * almost always exceeds the 194-px tile width, so we use
      * SCROLL_CIRCULAR to slide the full string through the label area
@@ -1585,6 +1666,7 @@ lv_obj_t * screen_home_create(void) {
 
     tile_t water_t;
     make_tile(scr_root, 790, 300, 214, 130, "Water", 0x44aaff, open_placeholder, &water_t);
+    tile_water = water_t.tile;
     lbl_inbox_main = lv_label_create(water_t.tile);
     lv_obj_set_style_text_color(lbl_inbox_main, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_inbox_main, &lv_font_montserrat_28, 0);
@@ -1612,6 +1694,7 @@ lv_obj_t * screen_home_create(void) {
            Talks to Home Assistant via REST. Shows the group state +
            battery; provides Open / Stop / Close buttons. --- */
     lv_obj_t * curt_tile = lv_obj_create(scr_root);
+    tile_curtains = curt_tile;
     lv_obj_set_size(curt_tile, 520, 44);
     lv_obj_set_pos(curt_tile, 20, 386);
     lv_obj_set_style_bg_color(curt_tile, lv_color_hex(COL_TILE_BG), 0);

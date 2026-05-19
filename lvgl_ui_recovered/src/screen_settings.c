@@ -776,6 +776,7 @@ static lv_obj_t * sw_int_p1_elec;
 static lv_obj_t * sw_int_p1_water;
 static lv_obj_t * sw_int_vent;
 static lv_obj_t * sw_int_ha;
+static lv_obj_t * sw_int_hide_offline;
 
 static void integ_dirty_hint(void) {
     if (!lbl_integ_hint) return;
@@ -801,10 +802,19 @@ static void on_int_ha(lv_event_t * e) {
     settings.enable_ha       = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     integ_dirty_hint();
 }
+/* Hide-offline-tiles toggle. Takes effect on the next refresh tick — no
+ * restart needed because apply_offline_tile_visibility() reads the flag
+ * fresh every time. Doesn't dirty the integ_hint (no restart required). */
+static void on_int_hide_offline(lv_event_t * e) {
+    settings.hide_offline_tiles =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
 
 static void open_integrations_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Integrations", 530);
+    /* Five panel_rows × 84 + 92 + 100 (hint label) ≈ 612. Bump the modal
+     * height so the hide-offline switch + hint actually fit. */
+    lv_obj_t * p = modal_open("Integrations", 620);
     int y = 70;
 
     lv_obj_t * r;
@@ -822,6 +832,10 @@ static void open_integrations_modal(lv_event_t * e) {
 
     r = panel_row(p, y, "Home Assistant (curtains, Life360)", NULL);
     sw_int_ha = row_switch(r, settings.enable_ha, on_int_ha);
+    y += 84;
+
+    r = panel_row(p, y, "Hide offline tiles entirely", NULL);
+    sw_int_hide_offline = row_switch(r, settings.hide_offline_tiles, on_int_hide_offline);
     y += 92;
 
     lbl_integ_hint = lv_label_create(p);
