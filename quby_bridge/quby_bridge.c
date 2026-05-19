@@ -44,7 +44,11 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/time.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
+#include <dirent.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -117,6 +121,11 @@ static struct {
                                 over poll_otgw refresh); 0 = OTGW-sourced. */
 } g_cache[128];
 
+/* Proxy-mode globals — defined further down where the pty/uart setup lives.
+ * Forward-declared here so publish_to_boxtalk() can branch on them. */
+extern int g_uart_fd;
+extern uint8_t g_slave_status;
+
 /* Update the cache. `from_master` should be 1 for happ_thermstat writes,
  * 0 for OTGW poll updates. Once a DID is master-owned it stays master-owned
  * until another master write changes it — poll_otgw refreshes do not
@@ -127,7 +136,21 @@ static struct {
 static void cache_set(uint8_t did, uint16_t value) {
     if (did >= 128) return;
     /* OTGW refresh path — don't clobber values the master owns. */
-    if (g_cache[did].master_owned) return;
+    if (g_cache[did].master_owned) {
+        /* DID 0 carries master-status in the HI byte (echo of what the
+         * thermostat last wrote) AND slave-status in the LO byte (the
+         * boiler's flame/fault/CHmode/DHWmode/diag flags). The lockout
+         * is correct for HI but mustn't suppress LO — otherwise
+         * happ_thermstat reads back DID 0 with slave-status == 0
+         * forever, never registers a real boiler response, and stays
+         * at connection=0 / burnerInfo=-1. Refresh only the LO byte. */
+        if (did == 0) {
+            g_cache[did].value =
+                (g_cache[did].value & 0xff00) | (value & 0x00ff);
+            g_cache[did].updated = time(NULL);
+        }
+        return;
+    }
     g_cache[did].value   = value;
     g_cache[did].updated = time(NULL);
 }
@@ -535,8 +558,18 @@ static double f88_to_double(uint16_t v) {
  * field. Skipping happens silently when the cache hasn't seen the DID yet
  * (so partial OTGW responses don't cause a flurry of NaN frames). */
 static void publish_to_boxtalk(void) {
-    if (bxt_ensure() != 0) return;
+    if (bxt_ensure() != 0) { logmsg("publish: bxt_ensure failed"); return; }
     uint16_t v;
+    /* One-line snapshot of what we'll publish — helps debug whether the
+     * cache has filled and the notify socket is healthy. */
+    {
+        uint16_t v1=0, v17=0, v25=0, v28=0;
+        int h1 = cache_get(1,&v1), h17 = cache_get(17,&v17),
+            h25 = cache_get(25,&v25), h28 = cache_get(28,&v28);
+        logmsg("publish tick: DID1=%s%04x DID17=%s%04x DID25=%s%04x DID28=%s%04x slave=%02x",
+               h1?"":"(none ",v1, h17?"":"(none ",v17,
+               h25?"":"(none ",v25, h28?"":"(none ",v28, g_slave_status);
+    }
 
     /* --- ThermostatInfo --- */
     if (cache_get(18, &v))
@@ -559,14 +592,25 @@ static void publish_to_boxtalk(void) {
      * Value matches the qt-gui mapping happ_thermstat normally emits:
      *   0=idle, 1=CH burner, 2=hot-water burner. */
     {
-        int flame  = otm_bool(g_otm_json, "flamestatus");
-        int chmod  = otm_bool(g_otm_json, "chmodus");
-        int dhwmod = otm_bool(g_otm_json, "dhwmode");
         int burnerInfo = 0;
-        if (flame == 1) {
-            if      (dhwmod == 1) burnerInfo = 2;
-            else if (chmod  == 1) burnerInfo = 1;
-            else                  burnerInfo = 1; /* flame on, no mode bit yet */
+        if (g_uart_fd >= 0) {
+            /* Proxy mode — derive from sniffed DID 0 slave-status:
+             *   bit 1 = CH-active, bit 2 = DHW-active, bit 3 = flame-on.
+             * We only call something a "burner" event when flame-on bit
+             * is set so the badge doesn't flicker on warm-up pump cycles. */
+            int flame  = (g_slave_status >> 3) & 1;
+            int chact  = (g_slave_status >> 1) & 1;
+            int dhwact = (g_slave_status >> 2) & 1;
+            if (flame) burnerInfo = dhwact ? 2 : (chact ? 1 : 1);
+        } else {
+            int flame  = otm_bool(g_otm_json, "flamestatus");
+            int chmod  = otm_bool(g_otm_json, "chmodus");
+            int dhwmod = otm_bool(g_otm_json, "dhwmode");
+            if (flame == 1) {
+                if      (dhwmod == 1) burnerInfo = 2;
+                else if (chmod  == 1) burnerInfo = 1;
+                else                  burnerInfo = 1;
+            }
         }
         bxt_notify(UUID_THERMSTAT, "ThermostatInfo",
                    "burnerInfo", burnerInfo, 1);
@@ -852,6 +896,102 @@ static int g_pty_master = -1;
 static int g_pty_slave_keeper = -1;
 static char g_pty_slave[64] = "";
 
+/* Proxy mode: the real keteladapter UART, opened *before* the bind-mount
+ * so the fd survives /dev/ttymxc0 being replaced by the pty. -1 outside
+ * proxy mode. (Forward-declared above as `extern` so publish_to_boxtalk
+ * can read it.) */
+int g_uart_fd = -1;
+/* Slave-status byte of DID 0, refreshed each time we sniff a boiler reply.
+ * Bit 1 = CH-active, bit 2 = DHW-active, bit 3 = flame-on. */
+uint8_t g_slave_status = 0;
+
+/* Open the physical /dev/ttymxc0 with the same termios happ_thermstat
+ * expects (raw, 9600 8N1). Must be called BEFORE bind_mount_tty() —
+ * after bind-mount the path resolves to the pty. */
+static int open_real_uart(void) {
+    /* If a previous bridge instance left a pty bind-mounted at TTY_PATH,
+     * opening it again would give us the pty — not the real UART. stat the
+     * path: a real i.MX UART has major 207. Anything else means there's a
+     * stale bind-mount we need to drop first. */
+    struct stat st;
+    if (stat(TTY_PATH, &st) == 0 && S_ISCHR(st.st_mode)
+        && major(st.st_rdev) != 207) {
+        logmsg("proxy: %s appears bind-mounted (major=%u rdev=%lx); lazy-umount",
+               TTY_PATH, major(st.st_rdev), (unsigned long)st.st_rdev);
+        if (umount2(TTY_PATH, MNT_DETACH) != 0)
+            logmsg("proxy: umount2 lazy failed: %s", strerror(errno));
+        /* Brief settle so the inode resolves back to the real char-dev. */
+        struct timespec ts = { 0, 100 * 1000 * 1000 };
+        nanosleep(&ts, NULL);
+    }
+    int fd = open(TTY_PATH, O_RDWR | O_NOCTTY);
+    if (fd < 0) {
+        logmsg("open real UART %s: %s", TTY_PATH, strerror(errno));
+        return -1;
+    }
+    /* Re-stat via fd to confirm we got the real UART, not a pty by accident. */
+    if (fstat(fd, &st) == 0 && major(st.st_rdev) != 207) {
+        logmsg("proxy: WRONG device — opened major=%u (expected 207). aborting.",
+               major(st.st_rdev));
+        close(fd);
+        return -1;
+    }
+    /* Empirical recipe: the kernel/driver on this Toon needs the precise
+     * stty incantation below to talk correctly to keteladapter. Setting
+     * termios via tcsetattr inside this process gave us a stuck-echo bug
+     * even with the same flag values — running stty(1) externally before
+     * opening the fd works reliably. Cheap fix, transparent to the rest.
+     *
+     * 4800 baud + -clocal is the empirically-confirmed working config
+     * from the 2026-05-18 proxy-mode rollout (the deployed binary that
+     * shipped pressure / RoomTemperature notifies to BoxTalk used these
+     * flags). The protocol-RE notes guessed 9600 from round-trip timing
+     * but the inference is wrong — running the bridge at 9600 makes the
+     * smoke test return 16 bytes of garbled framing instead of the clean
+     * 7-byte echo seen at 4800. Likewise CLOCAL on changes nothing the
+     * keteladapter cares about, and merely hides the local-RX-echo we
+     * already account for in the parser. Keep these flags pinned. */
+    system("/bin/stty -F " TTY_PATH
+           " 4800 raw -clocal -echo -echoe -echok min 0 time 2 2>/dev/null");
+    /* Log resulting state so we can compare to known-good. */
+    FILE *p = popen("/bin/stty -F " TTY_PATH " -a 2>&1 | head -n 6", "r");
+    if (p) {
+        char ln[256]; while (fgets(ln, sizeof(ln), p)) {
+            size_t L = strlen(ln); if (L && ln[L-1] == '\n') ln[L-1] = 0;
+            logmsg("stty: %s", ln);
+        }
+        pclose(p);
+    }
+    tcflush(fd, TCIOFLUSH);
+    return fd;
+}
+
+/* Send a Quby V frame on `fd`, log up to 32 bytes received within 400ms.
+ * Used as a sanity check after bind-mount: should now see keteladapter's
+ * real response (not an echo from a co-resident reader). */
+static void uart_smoke_test(int fd, const char *label) {
+    const unsigned char v[7] = { 0xc2, 0x56, 0x00, 0x00, 0x00, 0x00, 0x6a };
+    tcflush(fd, TCIOFLUSH);
+    write(fd, v, 7);
+    struct timeval start; gettimeofday(&start, NULL);
+    unsigned char rbuf[64]; size_t got = 0;
+    while (got < sizeof(rbuf)) {
+        struct timeval now; gettimeofday(&now, NULL);
+        long ms = (now.tv_sec - start.tv_sec) * 1000 + (now.tv_usec - start.tv_usec) / 1000;
+        if (ms > 400) break;
+        fd_set rfds; FD_ZERO(&rfds); FD_SET(fd, &rfds);
+        struct timeval tv = { .tv_sec = 0, .tv_usec = 50000 };
+        if (select(fd+1, &rfds, NULL, NULL, &tv) > 0) {
+            ssize_t k = read(fd, rbuf + got, sizeof(rbuf) - got);
+            if (k > 0) got += (size_t)k;
+        }
+    }
+    char hex[3*64+1] = {0}; int p = 0;
+    for (size_t i = 0; i < got; i++) p += snprintf(hex+p, sizeof(hex)-p, " %02x", rbuf[i]);
+    logmsg("proxy smoke-test (%s): wrote V, got %zu bytes:%s",
+           label, got, got ? hex : " (none)");
+}
+
 static int open_pty(void) {
     int m, s;
     if (openpty(&m, &s, g_pty_slave, NULL, NULL) != 0) {
@@ -861,17 +1001,17 @@ static int open_pty(void) {
     /* Keep the slave fd open as a "keeper" — if we close it, the pty enters
        HUP state and subsequent opens of the slave path return EIO. */
     g_pty_slave_keeper = s;
-    /* configure raw mode on master, 9600 8N1 */
+    /* configure raw mode on master, 4800 8N1 (match real keteladapter UART) */
     struct termios t;
     if (tcgetattr(m, &t) == 0) {
         cfmakeraw(&t);
-        cfsetspeed(&t, B9600);
+        cfsetspeed(&t, B4800);
         tcsetattr(m, TCSANOW, &t);
     }
     /* match on the slave side too */
     if (tcgetattr(s, &t) == 0) {
         cfmakeraw(&t);
-        cfsetspeed(&t, B9600);
+        cfsetspeed(&t, B4800);
         tcsetattr(s, TCSANOW, &t);
     }
     return m;
@@ -912,6 +1052,113 @@ static int kick_thermstat(void) {
     return pid;
 }
 
+/* Check whether the currently-running happ_thermstat has its UART fd on
+ * the bind-mounted pty (good) or directly on the kernel UART (bad). The
+ * existing kick+bind+kick sequence is racey — if init respawns
+ * happ_thermstat between the first kick and the bind-mount landing, the
+ * new happ may open /dev/ttymxc0 BEFORE it's bound, ending up on the
+ * kernel char-device. From there both happ and the bridge share the same
+ * /dev/ttymxc0 fd's underlying file — happ's writes echo back into the
+ * bridge as reads, no valid Quby frames ever parse, and the BoxTalk
+ * publish path stays silent (CV bar reads `--`, RoomTemperature stale,
+ * etc.). The symptom is identical to "boiler doesn't report it", which
+ * makes the failure invisible until someone notices the home tile.
+ *
+ * Returns:
+ *   1  happ_thermstat fd points at a pts (major 136) — bridge in place
+ *   0  happ_thermstat fd points at the kernel UART (major 207) — bind lost
+ *  -1  happ_thermstat not running yet, or no UART fd open (init still
+ *      respawning, or happ hasn't called open() yet — caller should sleep
+ *      a bit and retry rather than treating this as failure)
+ */
+static int verify_thermstat_on_pty(void) {
+    FILE *fp = popen("pidof happ_thermstat 2>/dev/null", "r");
+    if (!fp) return -1;
+    int pid = 0; fscanf(fp, "%d", &pid); pclose(fp);
+    if (pid <= 0) return -1;
+
+    char dirpath[64];
+    snprintf(dirpath, sizeof dirpath, "/proc/%d/fd", pid);
+    DIR *d = opendir(dirpath);
+    if (!d) return -1;
+
+    int saw_kernel_uart = 0, saw_pty = 0;
+    struct dirent *e;
+    while ((e = readdir(d))) {
+        if (e->d_name[0] == '.') continue;
+        char link[160];
+        snprintf(link, sizeof link, "%s/%s", dirpath, e->d_name);
+        /* stat() follows the symlink to the underlying inode — that's the
+         * char device the open() actually resolved to, which is what we
+         * need to inspect (the readlink() target is just the pathname
+         * happ asked for, "/dev/ttymxc0", regardless of bind state). */
+        struct stat st;
+        if (stat(link, &st) != 0) continue;
+        if (!S_ISCHR(st.st_mode)) continue;
+        unsigned int mj = major(st.st_rdev);
+        if (mj == 207) saw_kernel_uart = 1;   /* i.MX UART */
+        if (mj == 136) saw_pty         = 1;   /* devpts master/slave */
+    }
+    closedir(d);
+
+    if (saw_pty)         return 1;
+    if (saw_kernel_uart) return 0;
+    return -1;   /* happ has no relevant fd open yet */
+}
+
+/* Force the pty slave back into raw mode. happ_thermstat calls tcsetattr
+ * when it opens the slave, re-enabling ICANON / ECHO / IXON — which makes
+ * the kernel TTY line discipline echo every byte the bridge writes to the
+ * master right back to the master's read side. That's the "bridge sees its
+ * own writes" failure mode the original author flagged; the fix is to keep
+ * a "keeper" fd open on the slave and re-cfmakeraw whenever we suspect
+ * happ has reset the termios (startup race, runtime restart). Safe to call
+ * on every watchdog tick — tcsetattr with identical settings is a no-op. */
+static void force_pty_raw(void) {
+    if (g_pty_slave_keeper < 0) return;
+    struct termios t;
+    if (tcgetattr(g_pty_slave_keeper, &t) != 0) return;
+    /* Only act if any cooked-mode flag is set — avoids spamming the kernel
+     * with redundant tcsetattr() calls on a stable bridge. */
+    int cooked = (t.c_lflag & (ICANON | ECHO | ECHOE | ECHOK | ECHONL | ISIG))
+              || (t.c_iflag & (ICRNL | IXON | IXOFF))
+              || (t.c_oflag & OPOST);
+    if (!cooked) return;
+    cfmakeraw(&t);
+    cfsetspeed(&t, B4800);
+    if (tcsetattr(g_pty_slave_keeper, TCSANOW, &t) == 0)
+        logmsg("proxy: re-applied raw termios to pty slave "
+               "(happ_thermstat re-cooked it)");
+}
+
+/* Block until happ_thermstat's UART fd is verified to land on the pty.
+ * Kicks again on every failed verification (up to `max_attempts` rounds,
+ * 200ms apart). Returns 1 on success, 0 on giving up. Exposed so the main
+ * shuttle loop can also call it as a periodic sanity check if frame rates
+ * stay at zero — that's how a hot-path bind loss would self-heal. */
+static int wait_for_thermstat_bind(int max_attempts) {
+    for (int attempt = 1; attempt <= max_attempts; attempt++) {
+        struct timespec ts = { 0, 200 * 1000 * 1000 };
+        nanosleep(&ts, NULL);
+        int v = verify_thermstat_on_pty();
+        if (v == 1) {
+            logmsg("proxy: happ_thermstat verified on pty (attempt %d/%d)",
+                   attempt, max_attempts);
+            return 1;
+        }
+        if (v == 0) {
+            logmsg("proxy: happ_thermstat still on kernel UART — re-kicking "
+                   "(attempt %d/%d)", attempt, max_attempts);
+            kick_thermstat();
+        }
+        /* v == -1: not running yet, just keep waiting */
+    }
+    logmsg("proxy: ERROR — gave up after %d attempts, happ_thermstat never "
+           "landed on the pty. The bridge will keep running but BoxTalk "
+           "publish will stay silent until a clean restart.", max_attempts);
+    return 0;
+}
+
 static void unbind_tty(void) {
     if (umount(TTY_PATH) == 0) logmsg("unmounted %s", TTY_PATH);
 }
@@ -935,17 +1182,62 @@ static void on_sig(int sig) { (void)sig; g_stop = 1; }
 
 static void usage(const char *p) {
     fprintf(stderr,
-        "Usage: %s -m <passive|bench|active> [options]\n"
+        "Usage: %s -m <passive|bench|active|proxy> [options]\n"
         "Modes:\n"
         "  passive   open pty + poll OTGW, log frames, never reply\n"
         "  bench     reply to frames on the pty (no bind-mount)\n"
-        "  active    bind-mount pty over /dev/ttymxc0 and serve happ_thermstat\n",
+        "  active    bind-mount pty over /dev/ttymxc0 and serve happ_thermstat\n"
+        "  proxy     bind-mount pty + transparently shuttle bytes happ↔real\n"
+        "            keteladapter; sniff every frame, publish BoilerInfo +\n"
+        "            ThermostatInfo notifies to BoxTalk Hub. Heat keeps\n"
+        "            working since we never fake replies.\n",
         p);
+}
+
+/* Frame-align a byte buffer: find the next valid Quby header byte and
+ * memmove the buffer to start there. Quby headers always have bit 7 set
+ * and a recognised low-nibble (CTRL_REQ/RSP, SUB_REQ/RSP, OT_REQ/RSP).
+ * Returns the new length (could be shorter). */
+static int is_quby_header(uint8_t b) {
+    return b == HDR_CTRL_REQ || b == HDR_CTRL_RSP
+        || b == HDR_SUB_REQ  || b == HDR_SUB_RSP
+        || b == HDR_OT_REQ   || b == HDR_OT_RSP;
+}
+static size_t resync_frames(uint8_t *buf, size_t len) {
+    size_t k = 0;
+    while (k < len && !is_quby_header(buf[k])) k++;
+    if (k > 0) memmove(buf, buf + k, len - k);
+    return len - k;
+}
+
+/* Sniff a single 7-byte frame. Updates cache + slave-status from OT-Read
+ * responses. Caller is responsible for buffer being frame-aligned. */
+static void sniff_frame(const uint8_t *f) {
+    if (crc8_quby(f, 6) != f[6]) return;
+    /* OT response shape (boiler → master via keteladapter):
+     *   4d 00 <mt> <DID> <hi> <lo> <crc>
+     *   mt=0x04 → Read-Ack with valid data
+     *   mt=0x05 → Write-Ack (echoes value the master sent)
+     *   mt=0x0a → Unknown-DataId (skip)
+     * OT request shape (master → boiler, sniffed for master-side awareness):
+     *   cd 00 <mt> <DID> <hi> <lo> <crc>
+     *   mt=0x02 → Write-Data (master telling boiler); also worth caching
+     *             so DID 0/1/16/24/56 reflect the latest master state. */
+    if (f[0] == HDR_OT_RSP && f[1] == 0x00 && (f[2] == 0x04 || f[2] == 0x05)) {
+        uint8_t did = f[3];
+        uint16_t v = ((uint16_t)f[4] << 8) | f[5];
+        cache_set(did, v);
+        if (did == 0) g_slave_status = f[5];
+    } else if (f[0] == HDR_OT_REQ && f[2] == 0x02) {
+        uint8_t did = f[3];
+        uint16_t v = ((uint16_t)f[4] << 8) | f[5];
+        cache_set_master(did, v);
+    }
 }
 
 int main(int argc, char **argv) {
     const char *mode = "passive";
-    int reply = 0, do_bind = 0;
+    int reply = 0, do_bind = 0, do_proxy = 0;
     int opt;
     while ((opt = getopt(argc, argv, "m:h")) != -1) {
         switch (opt) {
@@ -956,6 +1248,7 @@ int main(int argc, char **argv) {
     if (!strcmp(mode, "passive"))      { reply = 0; do_bind = 0; }
     else if (!strcmp(mode, "bench"))   { reply = 1; do_bind = 0; }
     else if (!strcmp(mode, "active"))  { reply = 1; do_bind = 1; }
+    else if (!strcmp(mode, "proxy"))   { reply = 0; do_bind = 1; do_proxy = 1; }
     else { usage(argv[0]); return 1; }
 
     g_log = fopen(LOGFILE, "a");
@@ -968,18 +1261,221 @@ int main(int argc, char **argv) {
     g_pty_master = open_pty();
     if (g_pty_master < 0) return 2;
     expose_pty();
+
+    /* Proxy mode wants EXCLUSIVE ownership of the real UART. If happ_thermstat
+     * is alive with its own fd to /dev/ttymxc0, the kernel TTY layer makes
+     * our TX bytes appear on its RX (and vice-versa) because both opens
+     * share the same kernel char-device. We saw the result as `bridge sees
+     * its own writes echo back` and mistook it for hardware loopback.
+     * Kill happ first → open UART exclusively → bind-mount → init respawns
+     * happ onto the pty. */
+    if (do_proxy) {
+        int killed = kick_thermstat();
+        if (killed) {
+            for (int i = 0; i < 20; i++) {
+                FILE *fp = popen("pidof happ_thermstat 2>/dev/null", "r");
+                int pid = 0; if (fp) { fscanf(fp, "%d", &pid); pclose(fp); }
+                if (pid == 0) break;
+                struct timespec ts = { 0, 100 * 1000 * 1000 };
+                nanosleep(&ts, NULL);
+            }
+            logmsg("proxy: happ_thermstat released UART");
+        }
+        g_uart_fd = open_real_uart();
+        if (g_uart_fd < 0) return 4;
+        logmsg("proxy: real UART fd=%d open at %s", g_uart_fd, TTY_PATH);
+    }
+
     if (do_bind) {
         if (bind_mount_tty() != 0) return 3;
-        /* If happ_thermstat is already running, it holds an fd to the real
-           kernel UART. Kick it so init respawns into the new pty. */
+        /* Always kick happ_thermstat after bind-mount, regardless of mode.
+         * Race-fix: in proxy mode we kicked it earlier so we could open
+         * the real UART exclusively, but init may have already respawned
+         * happ_thermstat against the real UART before our bind-mount
+         * landed (symptom: stty shows `clocal` from happ's tcsetattr,
+         * bridge sees its own writes echo back, p>u stays 0). A second
+         * kick forces init to respawn happ AFTER the bind-mount is in
+         * place, so this time happ opens the pty as intended. */
         kick_thermstat();
     }
 
-    /* First poll so we have data before any read arrives */
-    poll_otgw();
+    /* Proxy mode smoke-test, run AFTER bind-mount so any respawned happ
+     * gets the pty (not the real UART) and bridge has the UART alone. */
+    if (do_proxy) {
+        struct timespec ts = { 0, 300 * 1000 * 1000 };
+        nanosleep(&ts, NULL);             /* settle bind + give happ time to re-open */
+        uart_smoke_test(g_uart_fd, "post-bind");
+
+        /* Race-proof verification — keep kicking happ_thermstat until its
+         * UART fd is observed pointing at our pty, not the kernel UART.
+         * Up to 10 × 200ms = 2 s budget; if we miss that the bridge logs
+         * a loud ERROR and continues (so the operator can see the failure
+         * in the boot log) but every later poll of the watchdog (see the
+         * shuttle loop) will also retry, so a transient bind miss
+         * self-heals once a usable happ_thermstat exists. */
+        wait_for_thermstat_bind(10);
+        /* Once happ_thermstat is verified on the pty, undo its cooked-mode
+         * termios reset so the master read side doesn't see kernel-echoed
+         * copies of every byte we write down to it. */
+        force_pty_raw();
+    }
+
+    /* In proxy mode there is no OTGW dependency — cache is filled by
+     * sniffing real keteladapter replies. The other modes still pre-fill
+     * cache via OTGW so handle_frame can serve replies immediately. */
+    if (!do_proxy) poll_otgw();
     time_t next_poll = time(NULL) + POLL_INTERVAL_S;
 
     if (reply) send_boot_sync(g_pty_master);
+
+    /* ---- proxy mode: separate shuttle loop, no fake replies ---- */
+    if (do_proxy) {
+        /* write_all retries on partial writes / EINTR so we never drop a byte
+         * mid-frame. UART at 9600 baud will frequently short-write under
+         * back-pressure; the previous bare write() lost bytes invisibly. */
+        #define WRITE_ALL(fd, buf, n) do {                          \
+            const uint8_t *_p = (buf); size_t _r = (n);             \
+            while (_r) {                                            \
+                ssize_t _k = write((fd), _p, _r);                   \
+                if (_k > 0) { _p += _k; _r -= (size_t)_k; continue; } \
+                if (_k < 0 && (errno == EINTR || errno == EAGAIN)) {\
+                    struct timespec _t = { 0, 1000000 };            \
+                    nanosleep(&_t, NULL); continue;                 \
+                }                                                   \
+                logmsg("proxy: write(%d) lost %zu bytes: %s",       \
+                       (fd), _r, strerror(errno));                  \
+                break;                                              \
+            }                                                       \
+        } while (0)
+        uint8_t pbuf[1024], ubuf[1024];
+        size_t plen = 0, ulen = 0;
+        time_t next_publish = time(NULL) + 2;
+        time_t next_stats   = time(NULL) + 10;
+        unsigned long bytes_p2u = 0, bytes_u2p = 0;
+        unsigned long frames_p = 0, frames_u = 0;
+        logmsg("proxy: shuttle loop start  pty_master=%d  uart=%d",
+               g_pty_master, g_uart_fd);
+        while (!g_stop) {
+            fd_set rfds; FD_ZERO(&rfds);
+            FD_SET(g_pty_master, &rfds);
+            FD_SET(g_uart_fd,    &rfds);
+            int mx = g_pty_master > g_uart_fd ? g_pty_master : g_uart_fd;
+            struct timeval tv = { .tv_sec = 0, .tv_usec = 200000 };
+            int s = select(mx + 1, &rfds, NULL, NULL, &tv);
+            if (s > 0) {
+                /* happ_thermstat → keteladapter (pty_master receives master writes) */
+                if (FD_ISSET(g_pty_master, &rfds) && plen < sizeof(pbuf)) {
+                    ssize_t n = read(g_pty_master, pbuf + plen, sizeof(pbuf) - plen);
+                    if (n > 0) {
+                        WRITE_ALL(g_uart_fd, pbuf + plen, (size_t)n);
+                        bytes_p2u += (size_t)n;
+                        plen += (size_t)n;
+                        /* Drop 0x6A sync bytes, then re-align to next Quby
+                         * header. Parse complete 7-byte frames; leave any
+                         * partial frame at the head of the buffer for the
+                         * next read to complete. */
+                        size_t k = 0;
+                        while (k < plen && pbuf[k] == 0x6A) k++;
+                        if (k) { memmove(pbuf, pbuf + k, plen - k); plen -= k; }
+                        plen = resync_frames(pbuf, plen);
+                        while (plen >= 7 && is_quby_header(pbuf[0])) {
+                            if (crc8_quby(pbuf, 6) == pbuf[6]) {
+                                sniff_frame(pbuf);
+                                logmsg("p>u: %02x %02x %02x %02x %02x %02x %02x",
+                                       pbuf[0], pbuf[1], pbuf[2], pbuf[3],
+                                       pbuf[4], pbuf[5], pbuf[6]);
+                                frames_p++;
+                                memmove(pbuf, pbuf + 7, plen - 7);
+                                plen -= 7;
+                            } else {
+                                /* Bad CRC — could be misalignment. Drop one
+                                 * byte and rescan. */
+                                memmove(pbuf, pbuf + 1, plen - 1);
+                                plen--;
+                                plen = resync_frames(pbuf, plen);
+                            }
+                        }
+                    } else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EIO)) {
+                        logmsg("proxy pty read: %s", strerror(errno));
+                    }
+                }
+                /* keteladapter → happ_thermstat (uart side is the slave's path) */
+                if (FD_ISSET(g_uart_fd, &rfds) && ulen < sizeof(ubuf)) {
+                    ssize_t n = read(g_uart_fd, ubuf + ulen, sizeof(ubuf) - ulen);
+                    if (n > 0) {
+                        WRITE_ALL(g_pty_master, ubuf + ulen, (size_t)n);
+                        bytes_u2p += (size_t)n;
+                        ulen += (size_t)n;
+                        size_t k = 0;
+                        while (k < ulen && ubuf[k] == 0x6A) k++;
+                        if (k) { memmove(ubuf, ubuf + k, ulen - k); ulen -= k; }
+                        ulen = resync_frames(ubuf, ulen);
+                        while (ulen >= 7 && is_quby_header(ubuf[0])) {
+                            if (crc8_quby(ubuf, 6) == ubuf[6]) {
+                                sniff_frame(ubuf);
+                                logmsg("u>p: %02x %02x %02x %02x %02x %02x %02x",
+                                       ubuf[0], ubuf[1], ubuf[2], ubuf[3],
+                                       ubuf[4], ubuf[5], ubuf[6]);
+                                frames_u++;
+                                memmove(ubuf, ubuf + 7, ulen - 7);
+                                ulen -= 7;
+                            } else {
+                                memmove(ubuf, ubuf + 1, ulen - 1);
+                                ulen--;
+                                ulen = resync_frames(ubuf, ulen);
+                            }
+                        }
+                    } else if (n == 0 || (n < 0 && errno != EAGAIN)) {
+                        logmsg("proxy uart read: %s", strerror(errno));
+                    }
+                }
+            }
+            time_t now = time(NULL);
+            if (now >= next_publish) {
+                publish_to_boxtalk();
+                next_publish = now + 2;
+            }
+            if (now >= next_stats) {
+                logmsg("proxy stats: p>u %lu B / %lu fr   u>p %lu B / %lu fr",
+                       bytes_p2u, frames_p, bytes_u2p, frames_u);
+                /* Bind-loss watchdog. Bytes flowing but zero valid Quby
+                 * frames after a full 10 s stats window means happ_thermstat
+                 * is talking to a non-pty device (kernel UART share, echo
+                 * loop). Re-verify and re-kick automatically — the same
+                 * mechanism that handles the startup race also catches
+                 * runtime regressions (e.g. someone manually restarts
+                 * happ_thermstat at the wrong moment). */
+                if (bytes_p2u > 200 && frames_p == 0) {
+                    logmsg("proxy watchdog: %lu B p>u with 0 frames — "
+                           "checking happ_thermstat fd", bytes_p2u);
+                    int v = verify_thermstat_on_pty();
+                    if (v == 0) {
+                        logmsg("proxy watchdog: bind LOST mid-run — "
+                               "re-kicking happ_thermstat");
+                        kick_thermstat();
+                        wait_for_thermstat_bind(10);
+                        force_pty_raw();
+                    } else if (v == -1) {
+                        logmsg("proxy watchdog: happ_thermstat not running");
+                    } else {
+                        /* happ is on the pty but framing is still broken —
+                         * almost always termios echo (happ re-cooked the
+                         * slave at startup). Re-flatten and try again. */
+                        logmsg("proxy watchdog: happ on pty but no valid "
+                               "Quby frames — re-raw'ing pty termios");
+                        force_pty_raw();
+                    }
+                }
+                bytes_p2u = bytes_u2p = 0;
+                frames_p  = frames_u  = 0;
+                next_stats = now + 10;
+            }
+        }
+        if (g_uart_fd >= 0) close(g_uart_fd);
+        unbind_tty();
+        logmsg("proxy: stopping");
+        return 0;
+    }
 
     uint8_t rbuf[1024]; size_t rlen = 0;
     while (!g_stop) {
