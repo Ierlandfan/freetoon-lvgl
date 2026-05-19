@@ -51,14 +51,29 @@ fi
 # Run the picker. It honours boot_picker_enabled in toonui.cfg internally
 # (skipping the 10 s screen when disabled) and just returns the rc that
 # matches the current ui_choice, so this dispatcher stays untouched.
+#
+# rc=99 means "user picked qt-gui" — a non-zero exit that `set -e` would
+# otherwise treat as a script failure and abort us before the case below
+# runs (resulting in the launcher being respawned and the picker firing
+# forever). Wrap the call so the exit status is captured cleanly.
+set +e
 "$TOONUI" --bootpick
 rc=$?
+set -e
 log "bootpick exited rc=$rc"
 
 case "$rc" in
     99)
         if [ -x "$QTGUI" ]; then
             log "exec qt-gui"
+            # qt-gui must run on the Toon's eglfs (framebuffer) Qt platform
+            # plugin, not xcb. The init env doesn't set QT_QPA_PLATFORM so
+            # the binary defaults to xcb and dies immediately ("Could not
+            # find the Qt platform plugin xcb"). /etc/profile.d/qt-env.sh
+            # exports the right values (QT_QPA_PLATFORM, evdev params,
+            # physical screen mm dimensions). Source it before exec so qt-gui
+            # gets the same environment the stock `flas` inittab row used.
+            [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
             exec "$QTGUI"
         fi
         log "qt-gui binary missing — falling back to toonui"
