@@ -458,15 +458,16 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, -50);
 
-    /* Moon phase — large pictogram on the LEFT side of the dim screen
-     * (clear-of the waste tile at top-left). Always-visible regardless
-     * of the weather code, since the lunar phase is independent of
-     * whether tonight happens to be cloudy. */
+    /* Moon phase — top-right corner. 80-px native size; sits in the
+     * empty area between the weather icon (TOP_RIGHT,-60,50) and the
+     * top of the screen. Use the same 80-px size at create *and*
+     * refresh — mismatched sizes cause LVGL to redraw at the new
+     * source size at a recomputed position that ends up off-screen. */
     dim_moon_img = lv_img_create(scr_root);
     lv_img_set_src(dim_moon_img, moon_phase_icon(80));
     lv_obj_set_style_img_recolor(dim_moon_img, lv_color_hex(0xe8edf2), 0);
     lv_obj_set_style_img_recolor_opa(dim_moon_img, 255, 0);
-    lv_obj_align(dim_moon_img, LV_ALIGN_LEFT_MID, 40, 0);
+    lv_obj_align(dim_moon_img, LV_ALIGN_TOP_RIGHT, -180, 6);
 
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
