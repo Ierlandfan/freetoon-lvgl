@@ -343,6 +343,24 @@ static void handle_query_response(const char* xml) {
             return;
         }
     }
+    /* vocSensor responses to our startup seed-query — same element names
+     * as the notify path. Keeps the home tile from showing "TVOC --" /
+     * "-- ppm" during the multi-minute window before happ emits its
+     * first change-notify. */
+    if (strcmp(tail, "vocSensor") == 0) {
+        if (elem_text_float(xml, "tvoc", &v)) {
+            toon_state.tvoc = (int)v;
+            toon_state.msg_count++;
+            fprintf(stderr, "[bxt] query response tvoc = %d\n", toon_state.tvoc);
+            return;
+        }
+        if (elem_text_float(xml, "eco2", &v)) {
+            toon_state.eco2 = (int)v;
+            toon_state.msg_count++;
+            fprintf(stderr, "[bxt] query response eco2 = %d\n", toon_state.eco2);
+            return;
+        }
+    }
     /* Boiler flow/return temps. Element name carries the variable, so match
        on it regardless of serviceid tail. Try the names seen in the binary. */
     if (elem_text_float(xml, "boilerTemps", &v) ||
@@ -594,6 +612,14 @@ static void send_initial_handshake(void) {
 
     /* Query current setpoint (not emitted as notify) */
     send_query("b822de89-ecbd-4f6f-9fd2-5cac18fc06c4", "ThermostatInfo", "CurrentSetpoint");
+    /* Seed tvoc + eco2 from the vocSensor. happ_thermstat only emits
+     * vocSensor notifies on CHANGE — and TVOC is typically stable enough
+     * that the first notify can take 5+ minutes to arrive. Without a
+     * startup query the home tile shows "TVOC --" for that whole window.
+     * The query response goes through the same parser path as the notify
+     * (handle_query_response → vocSensor branch). */
+    send_query("efbb5c4f-7b5e-4aa8-8ab5-6b5ab204ceaa", "vocSensor", "tvoc");
+    send_query("efbb5c4f-7b5e-4aa8-8ab5-6b5ab204ceaa", "vocSensor", "eco2");
     /* Query calibrated room temperature — happ_thermstat owns this value;
      * the raw hardware-sensor reading is ~3°C high so we don't use it. */
     send_query("b822de89-ecbd-4f6f-9fd2-5cac18fc06c4", "ThermostatInfo", "CurrentTemperature");
