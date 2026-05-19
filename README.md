@@ -9,9 +9,15 @@ you can also drive the house from your phone.
 
 ![Demo](docs/demo.gif)
 
-*Captured live from the device framebuffer: home idle → home with water flowing → settings tile grid → home heating + water → dim ambient with clock, fan spinning, radiator+flame and water drop all visible.*
+*9-frame loop pulled live from the device framebuffer at v0.7.4 —
+home (live CV pressure, moon-phase widget) → dim ambient → boot
+picker → buienradar radar → heater detail → schedule editor →
+graphs → settings → lights.*
 
 ![Home screen](docs/screenshots/home.png)
+
+![Boot picker](docs/screenshots/boot-picker.png)
+*The 10-second picker every boot — pick `freetoon-lvgl` or `Stock qt-gui` and the device dispatches `inittab` accordingly. Same modal lives in Settings → UI mode for in-session switching.*
 
 ## Why
 
