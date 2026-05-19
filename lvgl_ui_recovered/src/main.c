@@ -5,6 +5,7 @@
 #include "lvgl/lvgl.h"
 #include "lv_drivers/display/fbdev.h"
 #include "lv_drivers/indev/evdev.h"
+#include "bootpick.h"
 #include "boxtalk.h"
 #include "screens.h"
 #include "settings.h"
@@ -22,6 +23,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 /* Wrap evdev_read so any PR event marks activity for the idle timer. */
@@ -38,10 +40,19 @@ static lv_color_t buf1[DISP_HOR * DRAW_BUF_LINES];
 static lv_color_t buf2[DISP_HOR * DRAW_BUF_LINES];
 
 int main(int argc, char** argv) {
-    (void)argc; (void)argv;
-
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+
+    /* Boot-picker mode: ui_launcher.sh runs us with --bootpick at boot.
+     * We render only the picker screen and exit with rc 0 (freetoon)
+     * or 99 (qt-gui) so the launcher can dispatch to the chosen binary.
+     * No pollers, no full UI — keeps the picker snappy and avoids
+     * touching the BoxTalk client which would race with the real toonui
+     * we spawn right after. */
+    if (argc > 1 && strcmp(argv[1], "--bootpick") == 0) {
+        return bootpick_run();
+    }
+
     fprintf(stderr, "[main] starting toonui\n");
 
     lv_init();

@@ -92,6 +92,8 @@ QUBY_BIN="$(  pick_artefact QUBY_BIN    "$HERE/quby_bridge"   "$HERE/quby_bridge
 P1_BIN="$(    pick_artefact P1_BIN      "$HERE/p1bridge"      "$HERE/p1bridge/p1bridge")"
 TOONTAP_BIN="$(pick_artefact TOONTAP_BIN "$HERE/toontap"      "$HERE/../qt_rebuild/toontap")"
 OT_MODE_SCRIPT="$(pick_artefact OT_MODE_SCRIPT "$HERE/ot_mode_switch.sh" "$HERE/scripts/ot_mode_switch.sh")"
+UI_LAUNCHER="$(pick_artefact UI_LAUNCHER "$HERE/ui_launcher.sh" "$HERE/scripts/ui_launcher.sh")"
+COMPANION_GATE="$(pick_artefact COMPANION_GATE "$HERE/companion_gate.sh" "$HERE/scripts/companion_gate.sh")"
 if [[ -z "${PWA_DIR:-}" ]]; then
     if   [[ -f "$HERE/pwa/index.html"        ]]; then PWA_DIR="$HERE/pwa"
     elif [[ -f "$HERE/pwa_static/index.html" ]]; then PWA_DIR="$HERE/pwa_static"
@@ -103,13 +105,23 @@ SCP="sshpass -p $TOON_PASS scp -o StrictHostKeyChecking=no -o UserKnownHostsFile
 
 # Inittab rows we own. <id>:<runlevels>:<action>:<command>
 # Keep the id stable so re-runs upgrade cleanly instead of stacking.
-TOONUI_LINE="toon:345:respawn:/mnt/data/toonui >> /var/volatile/tmp/toonui.log 2>&1"
+#
+# `toon:` runs /mnt/data/ui_launcher.sh, which inspects /mnt/data/ui_choice
+# and either exec's /mnt/data/toonui (freetoon, default) or /qmf/sbin/qt-gui
+# (stock). The launcher gives a 10 s on-screen picker first, so a user
+# bricked-out of the GUI can always recover. /etc/inittab itself doesn't
+# change between modes.
+TOONUI_LINE="toon:345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
 # Default to proxy mode — shuttles bytes happ_thermstat<->keteladapter 1:1
 # AND publishes BoilerInfo to BoxTalk. Original heat path preserved, PWA
 # boiler card lit. Users can flip to off/wireless via toonui Settings UI
 # (which rewrites this row via /mnt/data/ot_mode_switch.sh).
-QUBY_LINE="qbri:345:respawn:/mnt/data/quby_bridge -m proxy >> /var/volatile/tmp/quby_bridge.log 2>&1"
-P1_LINE="p1br:345:respawn:/mnt/data/p1bridge >> /var/volatile/tmp/p1bridge.log 2>&1"
+#
+# The companion_gate.sh wrapper checks /mnt/data/ui_choice on each respawn
+# so that flipping to qt-gui silences p1bridge / quby_bridge automatically
+# (stock meteradapter / keteladapter take back over).
+QUBY_LINE="qbri:345:respawn:/mnt/data/companion_gate.sh quby_bridge /mnt/data/quby_bridge -m proxy >> /var/volatile/tmp/quby_bridge.log 2>&1"
+P1_LINE="p1br:345:respawn:/mnt/data/companion_gate.sh p1bridge /mnt/data/p1bridge >> /var/volatile/tmp/p1bridge.log 2>&1"
 
 # ----------------------------------------------------------------------
 # Helpers
@@ -140,6 +152,14 @@ check_artefacts() {
     fi
     if [[ ! -f "$OT_MODE_SCRIPT" ]]; then
         echo "  missing (required): $OT_MODE_SCRIPT (mode-switch helper)" >&2
+        missing=1
+    fi
+    if [[ ! -f "$UI_LAUNCHER" ]]; then
+        echo "  missing (required): $UI_LAUNCHER (toonui/qt-gui dispatcher)" >&2
+        missing=1
+    fi
+    if [[ ! -f "$COMPANION_GATE" ]]; then
+        echo "  missing (required): $COMPANION_GATE (companion bridge gate)" >&2
         missing=1
     fi
     if [[ ! -f "$PWA_DIR/index.html" ]]; then
@@ -200,6 +220,8 @@ do_install() {
     echo "[2/6] Pushing binaries to $TOON_HOST..."
     push_atomic "$TOONUI_BIN"   "/mnt/data/toonui"
     push_atomic "$OT_MODE_SCRIPT" "/mnt/data/ot_mode_switch.sh"
+    push_atomic "$UI_LAUNCHER"  "/mnt/data/ui_launcher.sh"
+    push_atomic "$COMPANION_GATE" "/mnt/data/companion_gate.sh"
     # p1bridge + quby_bridge are full-install only — basic install keeps the
     # stock meteradapter and skips the OT bridge entirely.
     if (( BASIC == 0 )); then
@@ -207,6 +229,11 @@ do_install() {
         [[ -x "$QUBY_BIN"    ]] && push_atomic "$QUBY_BIN"    "/mnt/data/quby_bridge"
     fi
     [[ -x "$TOONTAP_BIN" ]] && push_atomic "$TOONTAP_BIN" "/mnt/data/toontap"
+
+    # Seed /mnt/data/ui_choice if missing so the launcher picks freetoon
+    # by default. Existing file is left alone — the user's previous choice
+    # persists across upgrades.
+    remote "[ -f /mnt/data/ui_choice ] || echo freetoon > /mnt/data/ui_choice"
 
     echo "[2b/6] Pushing PWA static files to /mnt/data/pwa/..."
     remote "mkdir -p /mnt/data/pwa"
@@ -288,7 +315,7 @@ do_uninstall() {
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
 
     echo "[3/3] Removing binaries + configs + PWA + script..."
-    remote "rm -f /mnt/data/toonui /mnt/data/quby_bridge /mnt/data/p1bridge /mnt/data/toontap /mnt/data/ot_mode_switch.sh /mnt/data/vent.conf /mnt/data/p1bridge.conf"
+    remote "rm -f /mnt/data/toonui /mnt/data/quby_bridge /mnt/data/p1bridge /mnt/data/toontap /mnt/data/ot_mode_switch.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/ui_choice /mnt/data/vent.conf /mnt/data/p1bridge.conf"
     remote "rm -rf /mnt/data/pwa"
 
     reload_init

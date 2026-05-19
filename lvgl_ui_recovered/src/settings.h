@@ -67,6 +67,13 @@ typedef struct {
     int enable_p1_water;
     int enable_vent;
     int enable_ha;
+
+    /* Boot-picker — when 1, the launcher-spawned `toonui --bootpick`
+     * shows a 10 s "freetoon vs stock qt-gui" picker before dispatching.
+     * When 0 the picker short-circuits and the launcher boots straight
+     * into whatever /mnt/data/ui_choice selects. Default ON so a new
+     * user can always escape to the stock UI by tapping a button. */
+    int boot_picker_enabled;
 } settings_t;
 
 #define FORECAST_AUTO   0

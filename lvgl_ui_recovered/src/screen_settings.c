@@ -600,6 +600,171 @@ static void open_presets_modal(lv_event_t * e) {
     }
 }
 
+/* ====================== UI mode modal =======================
+ * Lets the user flip between freetoon-lvgl and the stock Eneco qt-gui,
+ * and toggle the 10-second boot picker. Switching to qt-gui requires a
+ * confirmation tap because it triggers an exit-and-respawn — the user
+ * sees their UI vanish immediately.
+ *
+ * The mode is persisted in /mnt/data/ui_choice (consumed by
+ * ui_launcher.sh on the next boot); the picker toggle lives in
+ * toonui.cfg via settings.boot_picker_enabled. */
+#define UI_CHOICE_PATH "/mnt/data/ui_choice"
+
+static lv_obj_t * lbl_uimode_current;
+static lv_obj_t * sw_uimode_picker;
+static lv_obj_t * confirm_uimode = NULL;
+
+static int read_ui_choice(void) {
+    FILE * f = fopen(UI_CHOICE_PATH, "r");
+    if (!f) return 0;   /* default: freetoon */
+    char buf[32] = {0};
+    if (fgets(buf, sizeof(buf), f)) {
+        char * nl = strchr(buf, '\n'); if (nl) *nl = 0;
+    }
+    fclose(f);
+    if (strcmp(buf, "qt-gui") == 0 || strcmp(buf, "qtgui") == 0 || strcmp(buf, "stock") == 0)
+        return 1;
+    return 0;
+}
+
+static void write_ui_choice(int qtgui) {
+    FILE * f = fopen(UI_CHOICE_PATH, "w");
+    if (!f) return;
+    fprintf(f, "%s\n", qtgui ? "qt-gui" : "freetoon");
+    fclose(f);
+}
+
+static void on_uimode_picker(lv_event_t * e) {
+    settings.boot_picker_enabled =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+
+static void uimode_confirm_dismiss(void) {
+    if (confirm_uimode) { lv_obj_del_async(confirm_uimode); confirm_uimode = NULL; }
+}
+
+/* Yes-tap: flip /mnt/data/ui_choice to qt-gui, save settings, then kill
+ * ourselves. ui_launcher.sh respawns toonui --bootpick, the picker shows
+ * qt-gui as the new default, 10 s later (or immediately if picker is
+ * off) the launcher exec's /qmf/sbin/qt-gui. */
+static void on_uimode_confirm_yes(lv_event_t * e) {
+    (void)e;
+    write_ui_choice(1);
+    settings_save();
+    uimode_confirm_dismiss();
+    /* Give the LVGL frame a beat to flush the dismissal animation, then
+     * bail. Init respawns us via the launcher within ~1 s. */
+    fprintf(stderr, "[uimode] switching to qt-gui — exiting\n");
+    fflush(NULL);
+    _exit(0);
+}
+
+static void on_uimode_confirm_no(lv_event_t * e) {
+    (void)e;
+    uimode_confirm_dismiss();
+}
+
+static void on_uimode_to_qtgui(lv_event_t * e) {
+    (void)e;
+    /* Layered modal — same shape as the boiler-type confirm dialog so the
+     * UX matches. Red border + warning tone since flipping out of
+     * freetoon mid-session is disruptive. */
+    confirm_uimode = lv_obj_create(cur_modal);
+    lv_obj_remove_style_all(confirm_uimode);
+    lv_obj_set_size(confirm_uimode, 1024, 600);
+    lv_obj_set_pos(confirm_uimode, 0, 0);
+    lv_obj_set_style_bg_color(confirm_uimode, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(confirm_uimode, LV_OPA_70, 0);
+    lv_obj_clear_flag(confirm_uimode, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(confirm_uimode, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * dlg = lv_obj_create(confirm_uimode);
+    lv_obj_set_size(dlg, 760, 380);
+    lv_obj_center(dlg);
+    lv_obj_set_style_bg_color(dlg, lv_color_hex(0x2a1c1c), 0);
+    lv_obj_set_style_border_color(dlg, lv_color_hex(0xcc5544), 0);
+    lv_obj_set_style_border_width(dlg, 2, 0);
+    lv_obj_set_style_radius(dlg, 16, 0);
+    lv_obj_set_style_pad_all(dlg, 24, 0);
+    lv_obj_clear_flag(dlg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(dlg, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * dt = lv_label_create(dlg);
+    lv_obj_set_style_text_font(dt, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(dt, lv_color_hex(0xffcc66), 0);
+    lv_label_set_text(dt, "Switch to stock qt-gui?");
+    lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t * body = lv_label_create(dlg);
+    lv_obj_set_style_text_font(body, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(body, lv_color_hex(0xddddee), 0);
+    lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(body, 712);
+    lv_label_set_text(body,
+        "The freetoon UI will exit and the original Eneco UI takes "
+        "over within about a second. Our companion bridges (p1bridge, "
+        "quby_bridge) go idle so stock meteradapter / keteladapter "
+        "remain in charge. To come back, tap the freetoon button in "
+        "the boot picker (or hold the touch top-right for 10 s during "
+        "the qt-gui boot).");
+    lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, 56);
+
+    lv_obj_t * b_no = lv_btn_create(dlg);
+    lv_obj_set_size(b_no, 220, 64);
+    lv_obj_align(b_no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(b_no, lv_color_hex(0x44556a), 0);
+    lv_obj_set_style_radius(b_no, 12, 0);
+    lv_obj_add_event_cb(b_no, on_uimode_confirm_no, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * b_no_l = lv_label_create(b_no);
+    lv_label_set_text(b_no_l, "Cancel");
+    lv_obj_set_style_text_font(b_no_l, &lv_font_montserrat_22, 0);
+    lv_obj_center(b_no_l);
+
+    lv_obj_t * b_yes = lv_btn_create(dlg);
+    lv_obj_set_size(b_yes, 300, 64);
+    lv_obj_align(b_yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(b_yes, lv_color_hex(0xcc5544), 0);
+    lv_obj_set_style_radius(b_yes, 12, 0);
+    lv_obj_add_event_cb(b_yes, on_uimode_confirm_yes, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * b_yes_l = lv_label_create(b_yes);
+    lv_label_set_text(b_yes_l, "Switch to qt-gui");
+    lv_obj_set_style_text_font(b_yes_l, &lv_font_montserrat_22, 0);
+    lv_obj_center(b_yes_l);
+}
+
+static void open_uimode_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("UI mode", 440);
+    int y = 70;
+
+    lv_obj_t * r;
+
+    r = panel_row(p, y, "Current UI", &lbl_uimode_current);
+    lv_label_set_text(lbl_uimode_current,
+        read_ui_choice() ? "stock qt-gui" : "freetoon-lvgl");
+    y += 84;
+
+    r = panel_row(p, y, "Boot picker (10 s at boot)", NULL);
+    sw_uimode_picker = row_switch(r, settings.boot_picker_enabled, on_uimode_picker);
+    y += 84;
+
+    /* Switch-to-qt-gui button. Lives below the rows because tapping it
+     * fires a destructive action — keep it visually distinct from the
+     * benign panel rows. */
+    lv_obj_t * b_switch = lv_btn_create(p);
+    lv_obj_set_size(b_switch, 800, 64);
+    lv_obj_align(b_switch, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_style_bg_color(b_switch, lv_color_hex(0x6a3a2a), 0);
+    lv_obj_set_style_radius(b_switch, 12, 0);
+    lv_obj_add_event_cb(b_switch, on_uimode_to_qtgui, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bsw_l = lv_label_create(b_switch);
+    lv_label_set_text(bsw_l, "Switch to stock qt-gui...");
+    lv_obj_set_style_text_font(bsw_l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(bsw_l, lv_color_hex(0xffffff), 0);
+    lv_obj_center(bsw_l);
+}
+
 /* ==================== Integrations modal ====================
  * Runtime on/off switches for the optional integrations. Toggles persist
  * to /mnt/data/toonui.cfg via modal_close → settings_save, but the
@@ -1704,10 +1869,13 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(x0 + 2*(308+gap), row3, NULL, LV_SYMBOL_EYE_CLOSE, "Clean",
               "30 s screen lock to wipe", open_clean_modal);
 
-    /* Row 4 — Integrations (default-off in basic install, opt-in via switches). */
+    /* Row 4 — Integrations + UI mode. Below the 600 px viewport so the
+     * scrollbar appears; the screen is now LV_DIR_VER-scrollable above. */
     int row4 = row3 + 188 + 16;   /* tile height + a small gap */
     make_tile(x0 + 0*(308+gap), row4, NULL, LV_SYMBOL_PLUS, "Integrations",
               "P1 / water / vent / HA", open_integrations_modal);
+    make_tile(x0 + 1*(308+gap), row4, NULL, LV_SYMBOL_POWER, "UI mode",
+              "freetoon vs stock qt-gui", open_uimode_modal);
 
     return scr_root;
 }
