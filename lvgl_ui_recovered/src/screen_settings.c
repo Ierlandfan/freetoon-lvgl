@@ -16,6 +16,7 @@
  */
 #include "screens.h"
 #include "settings.h"
+#include "weather.h"
 #include "backlight.h"
 #include "boxtalk.h"
 #include "icons.h"
@@ -85,10 +86,24 @@ static lv_obj_t * ta_wx_id   = NULL;
 static lv_obj_t * lbl_wx_status = NULL;
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
-    if (ta_wx_city) snprintf(settings.weather_location,
-                             sizeof settings.weather_location,
-                             "%s", lv_textarea_get_text(ta_wx_city));
-    if (ta_wx_id) {
+    int city_changed = 0;
+    if (ta_wx_city) {
+        const char * c = lv_textarea_get_text(ta_wx_city);
+        city_changed = strcmp(c, settings.weather_location) != 0;
+        snprintf(settings.weather_location,
+                 sizeof settings.weather_location, "%s", c);
+    }
+    /* City is authoritative: a changed name auto-resolves the Buienradar id via
+     * Open-Meteo geocoding. The id field is only honoured as a manual override
+     * when the city is unchanged. */
+    if (city_changed && settings.weather_location[0]) {
+        int gid = weather_geocode(settings.weather_location);
+        if (gid > 0) settings.weather_location_id = gid;
+        if (ta_wx_id) {
+            char idbuf[12]; snprintf(idbuf, sizeof idbuf, "%d", settings.weather_location_id);
+            lv_textarea_set_text(ta_wx_id, idbuf);
+        }
+    } else if (ta_wx_id) {
         int id = atoi(lv_textarea_get_text(ta_wx_id));
         if (id > 0) settings.weather_location_id = id;
     }

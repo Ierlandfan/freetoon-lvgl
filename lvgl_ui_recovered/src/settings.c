@@ -110,7 +110,12 @@ void settings_load(void) {
     char line[128];
     while (fgets(line, sizeof(line), f)) {
         char k[64], v[64];
-        if (sscanf(line, "%63[^=]=%63s", k, v) != 2) continue;
+        /* Value runs to end-of-line, not the first space: city names like
+         * "Sint Pancras" must survive (%63s would truncate to "Sint"). */
+        if (sscanf(line, "%63[^=]=%63[^\n]", k, v) != 2) continue;
+        /* Trim a trailing CR (CRLF cfg files) so values stay clean. */
+        size_t vlen = strlen(v);
+        if (vlen && v[vlen - 1] == '\r') v[vlen - 1] = 0;
         int iv = atoi(v);
         if      (strcmp(k, "auto_dim_enabled")  == 0) settings.auto_dim_enabled  = iv;
         else if (strcmp(k, "auto_dim_seconds")  == 0) settings.auto_dim_seconds  = iv;

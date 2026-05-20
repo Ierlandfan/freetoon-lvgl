@@ -293,6 +293,40 @@ static int fetch_radar_image(void) {
     return (rc == 0) ? 0 : -1;
 }
 
+/* Resolve a city name to a Buienradar/GeoNames location id via the free
+ * Open-Meteo geocoding API (no key). Buienradar's /forecast/<id> uses GeoNames
+ * ids, and Open-Meteo returns the same id, so the first result drops straight
+ * into settings.weather_location_id. Returns the id, or 0 if not found.
+ * The city is percent-encoded (http_fetch rejects spaces/quotes), so a name
+ * like "Sint Pancras" is looked up safely. */
+int weather_geocode(const char * city) {
+    if (!city || !city[0]) return 0;
+    char enc[160]; size_t o = 0;
+    for (const char * p = city; *p && o + 4 < sizeof enc; p++) {
+        unsigned char c = (unsigned char)*p;
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_') {
+            enc[o++] = (char)c;
+        } else {
+            snprintf(enc + o, 4, "%%%02X", c);
+            o += 3;
+        }
+    }
+    enc[o] = 0;
+    char url[256];
+    snprintf(url, sizeof url,
+        "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=nl&format=json",
+        enc);
+    static char body[4096];
+    if (http_fetch(url, body, sizeof body) != 0) return 0;
+    /* First "id": in the response is the top result's GeoNames id. */
+    const char * p = strstr(body, "\"id\":");
+    if (!p) return 0;
+    int id = atoi(p + 5);
+    fprintf(stderr, "[wx] geocode '%s' -> id %d\n", city, id);
+    return id;
+}
+
 static void * wx_thread(void * arg) {
     (void)arg;
     static char body[64 * 1024];

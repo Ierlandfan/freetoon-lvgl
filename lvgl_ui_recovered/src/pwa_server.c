@@ -22,6 +22,7 @@
 #include "homeassistant.h"
 #include "schedule.h"
 #include "settings.h"
+#include "weather.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -779,7 +780,6 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "show_dim_weather", &iv))   settings.show_dim_weather = !!iv;
     if (extract_int(body, "show_dim_waste", &iv))     settings.show_dim_waste = !!iv;
     if (extract_int(body, "dim_waste_lead_days", &iv))settings.dim_waste_lead_days = iv < 0 ? 0 : (iv > 7 ? 7 : iv);
-    if (extract_int(body, "weather_location_id", &iv))settings.weather_location_id = iv;
     if (extract_int(body, "forecast_mode", &iv))      settings.forecast_mode = iv;
     if (extract_int(body, "mqtt_port", &iv))          settings.mqtt_port = iv;
     if (extract_int(body, "enable_p1_elec", &iv))     settings.enable_p1_elec = !!iv;
@@ -792,8 +792,22 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "boot_picker_enabled", &iv))settings.boot_picker_enabled = !!iv;
     if (extract_int(body, "update_check_enabled", &iv))settings.update_check_enabled = !!iv;
     if (extract_int(body, "mqtt_enabled", &iv))       settings.mqtt_enabled = !!iv;
-    if (extract_str(body, "weather_location", sv, sizeof sv))
-        snprintf(settings.weather_location, sizeof settings.weather_location, "%s", sv);
+    /* City name is authoritative: when it changes, auto-resolve the Buienradar
+     * location id (Open-Meteo geocoding). Only fall back to a manually-entered
+     * id when the city is unchanged, so the id field still allows an override. */
+    {
+        int city_changed = 0;
+        if (extract_str(body, "weather_location", sv, sizeof sv)) {
+            city_changed = strcmp(sv, settings.weather_location) != 0;
+            snprintf(settings.weather_location, sizeof settings.weather_location, "%s", sv);
+        }
+        if (city_changed && settings.weather_location[0]) {
+            int gid = weather_geocode(settings.weather_location);
+            if (gid > 0) settings.weather_location_id = gid;
+        } else if (extract_int(body, "weather_location_id", &iv) && iv > 0) {
+            settings.weather_location_id = iv;
+        }
+    }
     if (extract_str(body, "ot_bridge_mode", sv, sizeof sv))
         snprintf(settings.ot_bridge_mode, sizeof settings.ot_bridge_mode, "%s", sv);
     if (extract_str(body, "otgw_host", sv, sizeof sv))
@@ -829,7 +843,7 @@ static const char SETTINGS_HTML[] =
 "['show_dim_weather','Weather on dim','b'],['show_dim_waste','Waste on dim','b'],"
 "['dim_waste_lead_days','Waste lead days (0-7)','n'],"
 "['Weather','h'],"
-"['weather_location','Location name','t'],['weather_location_id','Buienradar id','n'],"
+"['weather_location','City (auto-resolves id)','t'],['weather_location_id','Buienradar id (auto)','n'],"
 "['forecast_mode','Forecast (0 auto/1 hourly/2 daily)','n'],"
 "['Heating','h'],"
 "['ot_bridge_mode','OT bridge (off/proxy/wireless)','t'],['otgw_host','OTGW host','t'],"

@@ -48,4 +48,8 @@ extern weather_state_t weather_state;
 
 int weather_start(void);
 
+/* Resolve a city name to a Buienradar/GeoNames location id (Open-Meteo
+ * geocoding). Returns the id or 0 if not found. */
+int weather_geocode(const char * city);
+
 #endif
