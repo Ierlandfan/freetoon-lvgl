@@ -40,7 +40,7 @@ ALL_SRC       := $(APP_SRC) $(LVGL_SRC) $(LVDRV_SRC)
 OBJ           := $(patsubst %.c,$(BUILDDIR)/%.o,$(ALL_SRC))
 
 .PHONY: all clean
-all: $(BUILDDIR)/$(OUT)
+all: $(BUILDDIR)/$(OUT) $(BUILDDIR)/fbvnc_input
 
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -49,6 +49,13 @@ $(BUILDDIR)/%.o: %.c
 $(BUILDDIR)/$(OUT): $(OBJ)
 	@mkdir -p $(dir $@)
 	$(LD) $^ -o $@ $(LDFLAGS)
+
+# Standalone VNC touch-injection bridge (no LVGL deps). Shipped alongside
+# toonui so VNC gives full control on the multi-touch screen.
+$(BUILDDIR)/fbvnc_input: fbvnc_input.c
+	@mkdir -p $(dir $@)
+	$(CC) --sysroot=$(SYSROOT) -O2 -Wall -Wextra -o $@ $<
+	$(CROSS)strip $@
 
 # Pull in header-dep files (.d) emitted by -MMD so changes to .h trigger rebuild.
 -include $(OBJ:.o=.d)

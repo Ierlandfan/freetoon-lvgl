@@ -21,6 +21,19 @@ INPUT=/mnt/data/fbvnc_input
 PASSFILE=/mnt/data/toonvnc.plain
 LOG=/tmp/x11vnc.log
 
+# Prefer the system x11vnc; fall back to the bundled copy. The Toon's opkg
+# feed (feed.hae.int) is VPN-only, so the installer ships x11vnc + its libs
+# under /mnt/data/x11vnc-bundle and we run it with LD_LIBRARY_PATH.
+X11VNC=/usr/bin/x11vnc
+if [ ! -x "$X11VNC" ]; then
+  if [ -x /mnt/data/x11vnc-bundle/bin/x11vnc ]; then
+    X11VNC=/mnt/data/x11vnc-bundle/bin/x11vnc
+    export LD_LIBRARY_PATH="/mnt/data/x11vnc-bundle/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  else
+    X11VNC=x11vnc
+  fi
+fi
+
 case "${1:-start}" in
   stop)
     pkill -x x11vnc 2>/dev/null && echo "x11vnc stopped" || echo "x11vnc not running"
@@ -53,7 +66,7 @@ case "${1:-start}" in
     else
       AUTH="-nopw"
     fi
-    /usr/bin/x11vnc \
+    "$X11VNC" \
       -rawfb map:/dev/fb0@1024x600x32 \
       $PIPE \
       -rfbport $PORT -forever -shared -nocursor \
@@ -81,7 +94,7 @@ case "${1:-start}" in
     fi
     # exec replaces the shell with x11vnc, so init sees x11vnc directly
     # (clean `pkill -x x11vnc` from the existing stop/restart actions).
-    exec /usr/bin/x11vnc \
+    exec "$X11VNC" \
       -rawfb map:/dev/fb0@1024x600x32 \
       $PIPE \
       -rfbport $PORT -forever -shared -nocursor \
