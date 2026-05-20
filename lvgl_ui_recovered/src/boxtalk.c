@@ -920,6 +920,13 @@ static void* http_poll_thread(void* arg) {
                concurrent client changed it (cloud, web). Value is centi-°C. */
             int sp = parse_json_int(body, "currentSetpoint", 0);
             if (sp > 0) toon_state.setpoint = sp / 100.0f;
+            /* Calibrated room temperature, centi-°C. The notify/query path
+             * filters by a hardcoded thermostat subdevice UUID that only
+             * matches one Toon, so on every other device indoor_temp stayed 0
+             * (home tile + PWA showed "--"). This HTTP field is the canonical
+             * happ_thermstat value and is device-agnostic. */
+            int ct = parse_json_int(body, "currentTemp", 0);
+            if (ct > 0) toon_state.indoor_temp = ct / 100.0f;
             /* OpenTherm health for the Heating settings modal. */
             toon_state.modulation_level = parse_json_int(body, "currentModulationLevel", toon_state.modulation_level);
             toon_state.ot_comm_error    = parse_json_int(body, "otCommError", toon_state.ot_comm_error);

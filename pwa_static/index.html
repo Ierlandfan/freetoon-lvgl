@@ -68,7 +68,11 @@
 <body>
 <header>
   <h1>Toon — Woonkamer</h1>
-  <span id="conn">…</span>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="conn">…</span>
+    <a id="settings-link" href="/settings" title="Instellingen"
+       style="text-decoration:none;font-size:20px;color:#88aabb">⚙</a>
+  </div>
 </header>
 <main>
   <div class="card">
@@ -109,7 +113,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="card-curtains" style="display:none">
     <h2>Curtains</h2>
     <div class="row"><span id="ct-st">--</span><span class="v" id="ct-bat">--%</span></div>
     <div class="ct-ctl">

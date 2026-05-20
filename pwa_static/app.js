@@ -29,8 +29,15 @@ function render(s) {
   if (s.dhw_on) b += '<span class="badge dhw">warm water</span>';
   $('badges').innerHTML = b;
 
-  $('ct-st').textContent  = s.curtain_state + ' (' + s.curtain_pos + '%)';
-  $('ct-bat').textContent = 'bat ' + s.curtain_battery + '%';
+  // Curtains come via Home Assistant; only show the card when a curtain
+  // device is actually reporting (otherwise it's an empty "  (0%)" card on
+  // Toons without curtains / with HA offline).
+  const hasCurtain = s.curtain_state && s.curtain_state.length > 0;
+  $('card-curtains').style.display = hasCurtain ? '' : 'none';
+  if (hasCurtain) {
+    $('ct-st').textContent  = s.curtain_state + ' (' + s.curtain_pos + '%)';
+    $('ct-bat').textContent = 'bat ' + s.curtain_battery + '%';
+  }
 
   document.querySelectorAll('.progs button').forEach(b => {
     b.classList.toggle('active', parseInt(b.dataset.p, 10) === s.program_state);
