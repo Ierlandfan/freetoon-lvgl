@@ -116,20 +116,24 @@ done
 [ -S "$SOCKET" ] || die "tailscaled didn't open $SOCKET — check /var/volatile/tmp/tailscaled.log"
 
 # Bring up.
-if [ -z "${AUTHKEY:-}" ]; then
-    log "no AUTHKEY set — tailscaled is running, but the device isn't joined yet."
-    log "join later with: $TSC up --auth-key=tskey-... --hostname=$(hostname 2>/dev/null || echo toon)"
-    exit 0
-fi
 HN="${HOSTNAME:-$(hostname 2>/dev/null || echo toon)}"
-log "joining tailnet as '$HN'"
-"$TSC" --socket="$SOCKET" up \
-    --auth-key="$AUTHKEY" \
-    --hostname="$HN" \
-    --accept-routes=false \
-    --advertise-tags=tag:toon \
-    --ssh \
-    || die "tailscale up failed — see log"
+if [ -z "${AUTHKEY:-}" ]; then
+    # Interactive join: tailscale prints a login.tailscale.com URL and blocks
+    # until the device is approved in a browser. Run under `ssh -t` so the
+    # URL streams to the operator's terminal live.
+    log "joining tailnet as '$HN' — OPEN THE URL BELOW IN YOUR BROWSER:"
+    "$TSC" --socket="$SOCKET" up --hostname="$HN" --ssh \
+        || die "tailscale up failed — see log"
+else
+    log "joining tailnet as '$HN' with auth-key (unattended)"
+    "$TSC" --socket="$SOCKET" up \
+        --auth-key="$AUTHKEY" \
+        --hostname="$HN" \
+        --accept-routes=false \
+        --advertise-tags=tag:toon \
+        --ssh \
+        || die "tailscale up failed — see log"
+fi
 
 log "done. Tailscale IP:"
 "$TSC" --socket="$SOCKET" ip -4 || true
