@@ -13,6 +13,7 @@ typedef struct {
     int    n;
     double samples[STATS_MAX_SAMPLES];   /* value per slot (NaN for null) */
     char   labels[STATS_MAX_SAMPLES][20]; /* "DD-MM HH:MM" short label */
+    char   year2[STATS_MAX_SAMPLES][3];   /* 2-digit year ("26") for the Year view */
     double min, max;
 } stats_series_t;
 

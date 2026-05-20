@@ -56,24 +56,36 @@ static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 static double g_bar_val[64];
 static char   g_bar_label[64][8];
 static int    g_bar_count = 0;
-static int    g_xmajor    = 2;   /* number of X tick labels currently drawn */
 
-/* X-axis label override. LVGL hands us each tick ordinal (0..major-1); we
- * map it to a bucket index and copy that bucket's short label. */
-static void chart_draw_x_label(lv_event_t * e) {
-    lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
-    if (!dsc) return;
-    if (dsc->text == NULL || dsc->text_length < 2) return;
-    if (dsc->id != LV_CHART_AXIS_PRIMARY_X) return;
-    if (g_bar_count <= 0 || g_xmajor < 2) { dsc->text[0] = 0; return; }
-    int ord = dsc->value;
-    if (ord < 0) ord = 0;
-    if (ord > g_xmajor - 1) ord = g_xmajor - 1;
-    int idx = ord * (g_bar_count - 1) / (g_xmajor - 1);
-    if (idx < 0) idx = 0;
-    if (idx >= g_bar_count) idx = g_bar_count - 1;
-    snprintf(dsc->text, dsc->text_length, "%s", g_bar_label[idx]);
+/* Manual X-axis labels under the chart (lv_chart's own tick labels never
+ * rendered reliably for bars). Up to 12 evenly-spaced bar labels. */
+#define XLBL_COUNT 12
+static lv_obj_t * g_xlbl[XLBL_COUNT] = {0};
+/* Chart plot geometry — chart is 700x300 at TOP_RIGHT -30,235; the Y tick
+ * labels (draw_size 60) inset the plot on the left. Tuned to bar centers. */
+#define PLOT_L 360
+#define PLOT_R 986
+#define XLBL_Y 540
+
+static void place_x_labels(void) {
+    for (int i = 0; i < XLBL_COUNT; i++)
+        if (g_xlbl[i]) lv_obj_add_flag(g_xlbl[i], LV_OBJ_FLAG_HIDDEN);
+    if (g_bar_count <= 0) return;
+    int shown = g_bar_count < XLBL_COUNT ? g_bar_count : XLBL_COUNT;
+    double plot_w = PLOT_R - PLOT_L;
+    for (int k = 0; k < shown; k++) {
+        int b = (g_bar_count <= XLBL_COUNT) ? k
+              : (shown > 1 ? k * (g_bar_count - 1) / (shown - 1) : 0);
+        double cx = PLOT_L + (b + 0.5) * plot_w / g_bar_count;
+        if (!g_xlbl[k]) continue;
+        lv_label_set_text(g_xlbl[k], g_bar_label[b]);
+        lv_obj_set_width(g_xlbl[k], 58);
+        lv_obj_set_style_text_align(g_xlbl[k], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(g_xlbl[k], (int)(cx - 29), XLBL_Y);
+        lv_obj_clear_flag(g_xlbl[k], LV_OBJ_FLAG_HIDDEN);
+    }
 }
+
 
 /* Per-period: which logger + rra + time window + how many samples.
  *
@@ -116,13 +128,21 @@ static int load_for_period(void) {
                 series2.n = 0;
             }
             return stats_fetch(m->cum_logger, "10yrdays", MONTH, 31, &series);
-        case PERIOD_YEAR:
+        case PERIOD_YEAR: {
+            /* One-year window at daily resolution. hcb_rrd's socket path
+             * returns all-zero for multi-year windows (it spreads the samples
+             * too thin over the archive span), so we cap at 365 d / 365 daily
+             * samples — the proven-working query. render_chart buckets the
+             * daily deltas into one bar per calendar month (labelled mon-yy),
+             * so the Year view fills in month-by-month as history accrues.
+             * NB: a logger only shows as far back as it actually has data. */
             if (m->cum_logger_extra) {
                 stats_fetch(m->cum_logger_extra, "10yrdays", YEAR, 365, &series2);
             } else {
                 series2.n = 0;
             }
             return stats_fetch(m->cum_logger, "10yrdays", YEAR, 365, &series);
+        }
     }
     return -1;
 }
@@ -142,19 +162,22 @@ static void style_period_tab(int i, int sel) {
     lv_obj_set_style_border_width(tab_period_btns[i], sel ? 2 : 1, 0);
 }
 
-/* Diff a cumulative series in place to per-sample deltas (Wh / mL),
- * dropping the cross-tariff artefact jumps above `cap`. */
+/* Diff a cumulative series in place to per-sample usage deltas (Wh / mL).
+ * Diffs against the previous *real* (non-NaN) sample, skipping NaN gaps —
+ * crucial when a wide window returns the real readings scattered among NaN
+ * slots (otherwise every reading sits next to a NaN and all deltas vanish).
+ * Drops the cross-tariff artefact jumps above `cap`. */
 static void diff_in_place(stats_series_t * s, int n, double cap) {
-    for (int i = n - 1; i > 0; i--) {
-        if (!isnan(s->samples[i]) && !isnan(s->samples[i-1]) &&
-            s->samples[i] >= s->samples[i-1]) {
-            double d = s->samples[i] - s->samples[i-1];
-            s->samples[i] = (d > cap) ? NAN : d;
-        } else {
-            s->samples[i] = NAN;
-        }
+    double prev = NAN;   /* previous real cumulative reading */
+    for (int i = 0; i < n; i++) {
+        double v = s->samples[i];
+        if (isnan(v)) continue;            /* leave NaN slots, keep prev */
+        if (isnan(prev)) { s->samples[i] = NAN; prev = v; continue; }
+        double d = (v >= prev) ? (v - prev) : NAN;
+        if (!isnan(d) && d > cap) d = NAN;
+        s->samples[i] = d;
+        prev = v;
     }
-    if (n > 0) s->samples[0] = NAN;
 }
 
 static void render_chart(void) {
@@ -199,18 +222,25 @@ static void render_chart(void) {
                                  "jul","aug","sep","okt","nov","dec"};
 
     if (selected_period == PERIOD_YEAR) {
-        /* Group consecutive samples by calendar month (MM = label chars 3-4),
-         * summing usage → one bar per month, chronological. */
-        int cur_mm = -1;
+        /* Group consecutive samples by calendar month+year, summing usage →
+         * one bar per month across all available history. Label "mon-yy"
+         * (e.g. "may-26") so the displayed year is unambiguous. */
+        int cur_mm = -1; char cur_yy[3] = "";
         for (int i = 0; i < n && g_bar_count < 64; i++) {
             if (isnan(series.samples[i])) continue;
             const char * lab = series.labels[i];
             int mm = (lab[3]-'0')*10 + (lab[4]-'0');
-            if (mm != cur_mm) {
+            const char * yy = series.year2[i];
+            if (mm != cur_mm || strncmp(yy, cur_yy, 2) != 0) {
                 cur_mm = mm;
+                cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
                 g_bar_val[g_bar_count] = 0;
-                snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0],
-                         "%s", (mm >= 1 && mm <= 12) ? mon[mm] : "?");
+                if (mm >= 1 && mm <= 12 && yy[0])
+                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%s-%s", mon[mm], yy);
+                else if (mm >= 1 && mm <= 12)
+                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%s", mon[mm]);
+                else
+                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "?");
                 g_bar_count++;
             }
             g_bar_val[g_bar_count-1] += series.samples[i];
@@ -262,10 +292,8 @@ static void render_chart(void) {
         cs->y_points[i] = (i < g_bar_count) ? (lv_coord_t)g_bar_val[i]
                                             : LV_CHART_POINT_NONE;
 
-    /* X tick labels: one per bar up to 12, otherwise a representative subset. */
-    g_xmajor = g_bar_count; if (g_xmajor > 12) g_xmajor = 12; if (g_xmajor < 2) g_xmajor = 2;
-    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 6, 0, g_xmajor, 0, true, 30);
     lv_chart_refresh(chart);
+    place_x_labels();
 
     /* Caption + headline value. */
     const metric_t * m = &metrics[selected_metric];
@@ -413,16 +441,25 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_pad_column(chart, 3, LV_PART_MAIN);
     /* Y axis tick labels — 5 major divisions, draw_size 60 reserves space. */
     lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y, 8, 4, 5, 2, true, 60);
-    /* X axis tick labels via the DRAW_PART hook — count is set per-render
-     * to match the bucket count (set_axis_tick re-called in render_chart). */
-    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 6, 0, 2, 0, true, 30);
-    lv_obj_add_event_cb(chart, chart_draw_x_label, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    /* X axis: short tick marks only, no built-in labels — we draw our own
+     * labels (place_x_labels) under the chart since lv_chart's bar tick
+     * labels never rendered reliably. */
+    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 6, 0, 2, 0, false, 14);
     lv_obj_set_style_bg_color(chart, lv_color_hex(0x1a2a44), 0);
     lv_obj_set_style_border_color(chart, lv_color_hex(0x335577), 0);
     lv_obj_set_style_border_width(chart, 1, 0);
     lv_obj_set_style_radius(chart, 12, 0);
     cs = lv_chart_add_series(chart, lv_color_hex(metrics[0].color),
                              LV_CHART_AXIS_PRIMARY_Y);
+
+    /* Manual X-axis label widgets under the chart. */
+    for (int i = 0; i < XLBL_COUNT; i++) {
+        g_xlbl[i] = lv_label_create(scr_root);
+        lv_obj_set_style_text_color(g_xlbl[i], lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(g_xlbl[i], &lv_font_montserrat_14, 0);
+        lv_label_set_text(g_xlbl[i], "");
+        lv_obj_add_flag(g_xlbl[i], LV_OBJ_FLAG_HIDDEN);
+    }
 
     reload_and_render();
     return scr_root;
