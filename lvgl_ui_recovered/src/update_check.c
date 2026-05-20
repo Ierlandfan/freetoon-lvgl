@@ -91,7 +91,14 @@ static int is_newer_than_build(const char * tag) {
     const char * b = BUILD_VERSION;
     if (*t == 'v') t++;
     if (*b == 'v') b++;
-    return strcmp(t, b) != 0;
+    /* Compare only the release-tag base, ignoring any `git describe` suffix
+     * ("-3-gabc123") or "-dirty" marker on the running build — otherwise a
+     * build made from the tagged commit with a dirty submodule (very common
+     * here) reports "v0.8.7-dirty" and falsely flags itself as out of date
+     * against the "v0.8.7" release. */
+    size_t tn = strcspn(t, "-");
+    size_t bn = strcspn(b, "-");
+    return (tn != bn) || strncmp(t, b, tn) != 0;
 }
 
 void update_check_now(void) {
