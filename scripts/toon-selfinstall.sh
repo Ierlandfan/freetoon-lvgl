@@ -80,6 +80,18 @@ if [ ! -x /usr/bin/x11vnc ] && ! which x11vnc >/dev/null 2>&1 \
     fi
 fi
 
+# 2d) PWA static assets — the phone web UI + settings page that pwa_server
+# serves on :10081. The API/settings endpoints work without these, but the
+# installable app at "/" 404s until index.html/app.js/etc. exist under
+# /mnt/data/pwa. Shipped as a tarball; always refresh so app updates land.
+if dl pwa.tgz "$TMP/pwa.tgz" \
+   && [ "$(wc -c < "$TMP/pwa.tgz" 2>/dev/null || echo 0)" -gt 1000 ]; then
+    mkdir -p "$DEST/pwa"
+    if tar xzf "$TMP/pwa.tgz" -C "$DEST/pwa" 2>/dev/null; then
+        say "installed PWA assets -> $DEST/pwa"
+    fi
+fi
+
 # 3) swap the binary (back up the old one).
 [ -f "$DEST/toonui" ] && cp "$DEST/toonui" "$DEST/toonui.bak"
 cp "$TMP/toonui" "$DEST/toonui"
