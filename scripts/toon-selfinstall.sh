@@ -92,6 +92,22 @@ if dl pwa.tgz "$TMP/pwa.tgz" \
     fi
 fi
 
+# 2e) Open the PWA port (10081) in the stock Toon firewall. The HCB-INPUT
+# chain in /etc/default/iptables.conf accepts only 22/80 and drops the rest,
+# so pwa_server's phone UI is unreachable on the LAN. Add a persistent ACCEPT
+# (survives reboot) and apply it live now. ui_launcher.sh also re-adds it each
+# boot in case a firmware update rewrites the conf.
+FW=/etc/default/iptables.conf
+if [ -f "$FW" ] && ! grep -q 'dport 10081' "$FW"; then
+    if sed -i '/--dport 80 --tcp-flags/a -A HCB-INPUT -p tcp -m tcp --dport 10081 --tcp-flags SYN,RST,ACK SYN -j ACCEPT' "$FW" 2>/dev/null; then
+        say "opened PWA port 10081 in $FW"
+    fi
+fi
+if [ -x /usr/sbin/iptables ]; then
+    /usr/sbin/iptables -C HCB-INPUT -p tcp --dport 10081 -j ACCEPT 2>/dev/null \
+        || /usr/sbin/iptables -I HCB-INPUT 1 -p tcp --dport 10081 -j ACCEPT 2>/dev/null || true
+fi
+
 # 3) swap the binary (back up the old one).
 [ -f "$DEST/toonui" ] && cp "$DEST/toonui" "$DEST/toonui.bak"
 cp "$TMP/toonui" "$DEST/toonui"

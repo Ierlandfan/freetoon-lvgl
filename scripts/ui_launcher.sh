@@ -22,6 +22,19 @@ LOG=/var/volatile/tmp/ui_launcher.log
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
+# Expose the PWA (pwa_server :10081) on the LAN. The stock Toon firewall's
+# HCB-INPUT chain drops all inbound TCP except 22/80, so the phone UI is
+# unreachable otherwise. Re-add the ACCEPT every boot (idempotent, inserted
+# before the chain's trailing DROP) since a firmware update can rewrite
+# /etc/default/iptables.conf. `|| true` so a firewall hiccup never aborts the
+# launcher under `set -e` and leaves the device UI-less.
+if [ -x /usr/sbin/iptables ]; then
+    /usr/sbin/iptables -C HCB-INPUT -p tcp --dport 10081 -j ACCEPT 2>/dev/null \
+        || /usr/sbin/iptables -I HCB-INPUT 1 -p tcp --dport 10081 -j ACCEPT 2>/dev/null \
+        || true
+    log "ensured PWA port 10081 open in firewall"
+fi
+
 # Read the persisted preference; default to freetoon when missing/garbled
 # so a fresh basic-install boots into our UI without configuring anything.
 read_choice() {
