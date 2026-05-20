@@ -67,7 +67,9 @@ fi
 # VPN-only, so `opkg install x11vnc` won't work on a home Toon; instead we
 # ship a bundle (x11vnc + libssl/libcrypto/libjpeg) and run it firmware-safe
 # from /mnt/data with LD_LIBRARY_PATH. Only installed when no system x11vnc.
-if ! command -v x11vnc >/dev/null 2>&1 && [ ! -x "$DEST/x11vnc-bundle/bin/x11vnc" ]; then
+# NB: the Toon's busybox sh has no `command` builtin — use which + path checks.
+if [ ! -x /usr/bin/x11vnc ] && ! which x11vnc >/dev/null 2>&1 \
+   && [ ! -x "$DEST/x11vnc-bundle/bin/x11vnc" ]; then
     if dl x11vnc-bundle.tgz "$TMP/x11vnc-bundle.tgz" \
        && [ "$(wc -c < "$TMP/x11vnc-bundle.tgz" 2>/dev/null || echo 0)" -gt 100000 ]; then
         mkdir -p "$DEST/x11vnc-bundle"
@@ -107,7 +109,7 @@ fi
 
 # 4b) VNC respawn row — only if x11vnc + the input bridge are present, so VNC
 # gives full control (not view-only). Idempotent.
-if { command -v x11vnc >/dev/null 2>&1 || [ -x "$DEST/x11vnc-bundle/bin/x11vnc" ]; } \
+if { [ -x /usr/bin/x11vnc ] || which x11vnc >/dev/null 2>&1 || [ -x "$DEST/x11vnc-bundle/bin/x11vnc" ]; } \
    && [ -x "$DEST/toonvnc.sh" ] && [ -x "$DEST/fbvnc_input" ]; then
     VROW="vncs:345:respawn:$DEST/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
     if ! grep -qF "$VROW" /etc/inittab 2>/dev/null; then
