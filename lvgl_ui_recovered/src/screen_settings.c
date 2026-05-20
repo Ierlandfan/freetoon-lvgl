@@ -2001,7 +2001,7 @@ lv_obj_t * screen_settings_create(void) {
     #define GX(i) (MX + ((i) % COLS) * (SETT_TILE_W + GAPX))
     #define GY(i) (TOP + ((i) / COLS) * (SETT_TILE_H + GAPY))
     int n = 0;
-    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, "Display",
+    make_tile(GX(n), GY(n), &icon_wx_sun, NULL, "Display",
               "dim, timeout, brightness", open_display_modal); n++;
     make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, "Weather",
               "weather on dim", open_weather_modal); n++;
