@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <ifaddrs.h>
@@ -342,7 +343,7 @@ static void heating_tick(void) {
     if (lbl_boiler_ot) {
         if (toon_state.boiler_type == 0) {
             lv_label_set_text_fmt(lbl_boiler_ot, "Modulation %d%%   -   OT link %s",
-                                  toon_state.modulation_level,
+                                  (int)toon_state.modulation_level,
                                   toon_state.ot_comm_error ? "ERROR" : "OK");
         } else {
             lv_label_set_text(lbl_boiler_ot, "");
