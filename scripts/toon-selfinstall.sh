@@ -87,19 +87,22 @@ chmod +x "$DEST/toonui"
 rm -rf "$TMP"
 say "installed $(ls -l "$DEST/toonui" | awk '{print $5}') bytes -> $DEST/toonui"
 
-# 4) Take over the framebuffer from the stock qt-gui launcher (idempotent).
-# The stock GUI runs from a 'toon:'/'flas:' inittab row that directly execs
-# /qmf/sbin/qt-gui. We replace that with ui_launcher.sh, which OWNS the
-# framebuffer and still runs qt-gui itself when ui_choice says so — so the two
-# never fight. Without this, a stock Toon keeps launching qt-gui alongside us.
+# 4) Take over the framebuffer from the stock GUI launcher (idempotent).
+# Different Toon firmwares launch qt-gui from different inittab rows:
+#   toon:/flas: -> /qmf/sbin/qt-gui directly,  or
+#   qtqt:       -> /usr/bin/startqt  (which execs qt-gui; TSC-modified Toons).
+# So we strip GUI-launcher rows by COMMAND (startqt / qt-gui / tenant-selection)
+# not just by label, and install ui_launcher.sh as the single owner — it still
+# runs qt-gui itself via the boot picker / ui_choice, so the two never fight.
+GUI_RE='/usr/bin/startqt|/qmf/sbin/qt-gui|qt-tenant-selection|inittabwrap qt-gui'
 ROW="toon:345:respawn:$DEST/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
 if [ -f "$DEST/ui_launcher.sh" ]; then
     NEED=0
     grep -qF "$ROW" /etc/inittab 2>/dev/null || NEED=1
-    grep -qE '/qmf/sbin/qt-gui|inittabwrap qt-gui' /etc/inittab 2>/dev/null && NEED=1
+    grep -qE "$GUI_RE" /etc/inittab 2>/dev/null && NEED=1
     if [ "$NEED" = 1 ]; then
-        say "taking over the GUI inittab row from stock qt-gui"
-        grep -vE '^toon:|^flas:|/qmf/sbin/qt-gui|inittabwrap qt-gui' /etc/inittab \
+        say "taking over the GUI inittab row from the stock launcher"
+        grep -vE "^toon:|^flas:|^qtqt:|$GUI_RE" /etc/inittab \
             > /etc/inittab.new \
             && echo "$ROW" >> /etc/inittab.new \
             && mv -f /etc/inittab.new /etc/inittab
