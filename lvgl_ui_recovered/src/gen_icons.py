@@ -47,17 +47,18 @@ def flame_alpha(x, y):
     cx = W_FLAME / 2.0 - 0.5
     # vertical normalized position 0..1 from top to bottom
     t = y / (H_FLAME - 1)
-    # Half-width profile: gentle widening on top, bulge near 0.75, narrowing back
-    if t < 0.85:
-        # main flame body — a soft parabola
-        half = (W_FLAME / 2.0 - 1.5) * math.sqrt(t / 0.85)
+    # Clean symmetric flame teardrop: a sharp point at the top, swelling to
+    # a rounded belly around t=0.7, then tucking back in at the base. No
+    # flicker "wiggle" (it just made the 32px render look lumpy/asymmetric).
+    maxhalf = W_FLAME / 2.0 - 1.5
+    if t < 0.7:
+        # upper body — smooth widening from the tip (slightly more than a
+        # straight line so the point reads as a flame, not a triangle)
+        half = maxhalf * math.pow(t / 0.7, 0.8)
     else:
-        # rounded bottom — semicircle for the last 15%
-        r = (1.0 - t) / 0.15      # 1 at t=.85, 0 at t=1
-        half = (W_FLAME / 2.0 - 1.5) * math.sqrt(max(0.0, r))
-    # Add a small wave to suggest flame flicker
-    wiggle = 0.4 * math.sin(t * math.pi * 3.0)
-    half += wiggle
+        # lower body — round the belly back in toward a flat-ish base
+        r = (t - 0.7) / 0.3            # 0 at belly, 1 at base
+        half = maxhalf * math.sqrt(max(0.0, 1.0 - 0.55 * r * r))
     d = abs(x - cx) - half
     # Anti-aliased edge: alpha falls linearly from 255 (d<=-1) to 0 (d>=1)
     if d <= -1:    return 255
