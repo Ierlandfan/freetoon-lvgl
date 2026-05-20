@@ -63,6 +63,21 @@ if dl fbvnc_input "$TMP/fbvnc_input"; then
     fi
 fi
 
+# 2c) x11vnc — required for VNC. The Toon's opkg feed (feed.hae.int) is
+# VPN-only, so `opkg install x11vnc` won't work on a home Toon; instead we
+# ship a bundle (x11vnc + libssl/libcrypto/libjpeg) and run it firmware-safe
+# from /mnt/data with LD_LIBRARY_PATH. Only installed when no system x11vnc.
+if ! command -v x11vnc >/dev/null 2>&1 && [ ! -x "$DEST/x11vnc-bundle/bin/x11vnc" ]; then
+    if dl x11vnc-bundle.tgz "$TMP/x11vnc-bundle.tgz" \
+       && [ "$(wc -c < "$TMP/x11vnc-bundle.tgz" 2>/dev/null || echo 0)" -gt 100000 ]; then
+        mkdir -p "$DEST/x11vnc-bundle"
+        if tar xzf "$TMP/x11vnc-bundle.tgz" -C "$DEST/x11vnc-bundle" 2>/dev/null; then
+            chmod +x "$DEST/x11vnc-bundle/bin/x11vnc" 2>/dev/null || true
+            say "installed bundled x11vnc -> $DEST/x11vnc-bundle"
+        fi
+    fi
+fi
+
 # 3) swap the binary (back up the old one).
 [ -f "$DEST/toonui" ] && cp "$DEST/toonui" "$DEST/toonui.bak"
 cp "$TMP/toonui" "$DEST/toonui"
@@ -92,7 +107,8 @@ fi
 
 # 4b) VNC respawn row — only if x11vnc + the input bridge are present, so VNC
 # gives full control (not view-only). Idempotent.
-if command -v x11vnc >/dev/null 2>&1 && [ -x "$DEST/toonvnc.sh" ] && [ -x "$DEST/fbvnc_input" ]; then
+if { command -v x11vnc >/dev/null 2>&1 || [ -x "$DEST/x11vnc-bundle/bin/x11vnc" ]; } \
+   && [ -x "$DEST/toonvnc.sh" ] && [ -x "$DEST/fbvnc_input" ]; then
     VROW="vncs:345:respawn:$DEST/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
     if ! grep -qF "$VROW" /etc/inittab 2>/dev/null; then
         say "enabling VNC (full control via fbvnc_input bridge) on :5900"
