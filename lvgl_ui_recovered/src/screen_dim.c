@@ -442,6 +442,26 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr_root, on_wake_tap, LV_EVENT_CLICKED, NULL);
 
+    /* freetoon "ft" badge — same top-left corner + styling as the home screen,
+     * for visual continuity. Non-clickable on purpose: a tap anywhere on the
+     * dim screen should wake it, so the badge must let the press fall through
+     * to the screen-wide wake handler (no CLICKABLE flag). */
+    {
+        lv_obj_t * logo = lv_obj_create(scr_root);
+        lv_obj_remove_style_all(logo);
+        lv_obj_set_size(logo, 40, 40);
+        lv_obj_align(logo, LV_ALIGN_TOP_LEFT, 8, 6);
+        lv_obj_set_style_bg_color(logo, lv_color_hex(0x2e6e9e), 0);
+        lv_obj_set_style_bg_opa(logo, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(logo, 12, 0);
+        lv_obj_clear_flag(logo, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * logo_lbl = lv_label_create(logo);
+        lv_label_set_text(logo_lbl, "ft");
+        lv_obj_set_style_text_color(logo_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(logo_lbl, &lv_font_montserrat_22, 0);
+        lv_obj_center(logo_lbl);
+    }
+
     /* Clock — custom 96pt Montserrat (digits + ':' + space only,
        generated via lv_font_conv into lv_font_montserrat_96_custom.c). */
     lbl_clock = lv_label_create(scr_root);
@@ -458,16 +478,17 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, -50);
 
-    /* Moon phase — top-right corner. 80-px native size; sits in the
-     * empty area between the weather icon (TOP_RIGHT,-60,50) and the
-     * top of the screen. Use the same 80-px size at create *and*
-     * refresh — mismatched sizes cause LVGL to redraw at the new
-     * source size at a recomputed position that ends up off-screen. */
+    /* Moon phase — paired with the weather icon to form one tidy "sky" cluster
+     * in the top-right, instead of floating orphaned in the gap between the
+     * clock and the corner. Sits just left of the weather icon (TOP_RIGHT,
+     * -60,50) on the same baseline. Keep the 80-px size identical at create
+     * *and* refresh — mismatched sizes make LVGL redraw at a recomputed
+     * position that ends up off-screen. */
     dim_moon_img = lv_img_create(scr_root);
     lv_img_set_src(dim_moon_img, moon_phase_icon(80));
     lv_obj_set_style_img_recolor(dim_moon_img, lv_color_hex(0xe8edf2), 0);
     lv_obj_set_style_img_recolor_opa(dim_moon_img, 255, 0);
-    lv_obj_align(dim_moon_img, LV_ALIGN_TOP_RIGHT, -180, 6);
+    lv_obj_align(dim_moon_img, LV_ALIGN_TOP_RIGHT, -150, 52);
 
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
