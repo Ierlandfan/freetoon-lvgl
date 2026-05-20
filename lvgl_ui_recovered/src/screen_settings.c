@@ -1896,10 +1896,24 @@ static void on_mqtt_apply_click(lv_event_t * e) {
         "Applied — subscriber reconnecting with new settings.");
 }
 
+static void on_mqtt_enabled_change(lv_event_t * e) {
+    settings.mqtt_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+
 static void open_mqtt_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("MQTT", 760);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
+
+    /* Enabled toggle — lets MQTT be turned off entirely (the broker subscriber
+     * otherwise always runs whenever a host is configured). */
+    lv_obj_t * r_en = panel_row(p, y, "MQTT enabled", NULL);
+    row_switch(r_en, settings.mqtt_enabled, on_mqtt_enabled_change);
+    y += 82;
 
     /* Host */
     lv_obj_t * lbl_h = lv_label_create(p);

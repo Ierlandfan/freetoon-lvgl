@@ -303,7 +303,7 @@ void mqtt_client_restart(void) {
 }
 
 static int subscriber_session(void) {
-    if (!settings.mqtt_host[0]) { sleep(5); return 0; }
+    if (!settings.mqtt_enabled || !settings.mqtt_host[0]) { sleep(5); return 0; }
     char err[128] = "";
     int port = settings.mqtt_port ? settings.mqtt_port : 1883;
     int s = mqtt_open_sock(settings.mqtt_host, port, 6, err, sizeof(err));

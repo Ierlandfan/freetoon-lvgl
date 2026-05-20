@@ -744,7 +744,7 @@ static int handle_settings_get(int fd) {
         "\"show_dim_waste\":%d,\"dim_waste_lead_days\":%d,"
         "\"weather_location\":\"%s\",\"weather_location_id\":%d,"
         "\"forecast_mode\":%d,\"ot_bridge_mode\":\"%s\",\"otgw_host\":\"%s\","
-        "\"mqtt_host\":\"%s\",\"mqtt_port\":%d,\"mqtt_user\":\"%s\","
+        "\"mqtt_enabled\":%d,\"mqtt_host\":\"%s\",\"mqtt_port\":%d,\"mqtt_user\":\"%s\","
         "\"enable_p1_elec\":%d,\"enable_p1_water\":%d,\"enable_vent\":%d,"
         "\"enable_ha\":%d,\"enable_zwave\":%d,\"vnc_enabled\":%d,"
         "\"hide_offline_tiles\":%d,\"boot_picker_enabled\":%d,"
@@ -756,7 +756,7 @@ static int handle_settings_get(int fd) {
         settings.show_dim_waste, settings.dim_waste_lead_days,
         settings.weather_location, settings.weather_location_id,
         settings.forecast_mode, settings.ot_bridge_mode, settings.otgw_host,
-        settings.mqtt_host, settings.mqtt_port, settings.mqtt_user,
+        settings.mqtt_enabled, settings.mqtt_host, settings.mqtt_port, settings.mqtt_user,
         settings.enable_p1_elec, settings.enable_p1_water, settings.enable_vent,
         settings.enable_ha, settings.enable_zwave, settings.vnc_enabled,
         settings.hide_offline_tiles, settings.boot_picker_enabled,
@@ -791,6 +791,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "hide_offline_tiles", &iv)) settings.hide_offline_tiles = !!iv;
     if (extract_int(body, "boot_picker_enabled", &iv))settings.boot_picker_enabled = !!iv;
     if (extract_int(body, "update_check_enabled", &iv))settings.update_check_enabled = !!iv;
+    if (extract_int(body, "mqtt_enabled", &iv))       settings.mqtt_enabled = !!iv;
     if (extract_str(body, "weather_location", sv, sizeof sv))
         snprintf(settings.weather_location, sizeof settings.weather_location, "%s", sv);
     if (extract_str(body, "ot_bridge_mode", sv, sizeof sv))
@@ -833,6 +834,7 @@ static const char SETTINGS_HTML[] =
 "['Heating','h'],"
 "['ot_bridge_mode','OT bridge (off/proxy/wireless)','t'],['otgw_host','OTGW host','t'],"
 "['MQTT','h'],"
+"['mqtt_enabled','MQTT enabled','b'],"
 "['mqtt_host','Broker host','t'],['mqtt_port','Port','n'],['mqtt_user','User','t'],"
 "['Integrations','h'],"
 "['enable_p1_elec','P1 electricity','b'],['enable_p1_water','P1 water','b'],"

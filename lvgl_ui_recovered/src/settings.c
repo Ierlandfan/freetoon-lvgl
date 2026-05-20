@@ -40,7 +40,9 @@ settings_t settings = {
      * proxy is robust if the startup race is avoided. The bridge's
      * kick_thermstat + verify_thermstat_on_pty + force_pty_raw logic
      * handles re-entry. */
-    .ot_bridge_mode      = "proxy",
+    /* Default OFF: the quby_bridge proxy ships disabled, so claiming "proxy"
+     * before the user enables it misrepresents the running state. */
+    .ot_bridge_mode      = "off",
     .otgw_host           = "192.168.99.21",
     .otgw_user           = "",
     .otgw_pass           = "",
@@ -48,6 +50,7 @@ settings_t settings = {
      * after the upgrade keeps the banner subscriber alive without manual
      * config. User edits in Settings → MQTT take precedence and survive
      * a reboot. */
+    .mqtt_enabled        = 1,
     .mqtt_host           = "192.168.3.101",
     .mqtt_port           = 1883,
     .mqtt_user           = "brakero1",
@@ -143,6 +146,7 @@ void settings_load(void) {
         else if (strcmp(k, "otgw_pass")         == 0)
             snprintf(settings.otgw_pass,
                      sizeof settings.otgw_pass, "%s", v);
+        else if (strcmp(k, "mqtt_enabled")      == 0) settings.mqtt_enabled = iv;
         else if (strcmp(k, "mqtt_host")         == 0)
             snprintf(settings.mqtt_host, sizeof settings.mqtt_host, "%s", v);
         else if (strcmp(k, "mqtt_port")         == 0) settings.mqtt_port = iv;
@@ -170,6 +174,9 @@ void settings_load(void) {
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
         else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
         else if (strcmp(k, "update_check_enabled") == 0) settings.update_check_enabled = iv;
+        else if (strcmp(k, "vnc_enabled")     == 0) settings.vnc_enabled = iv;
+        else if (strcmp(k, "vnc_pass")        == 0)
+            snprintf(settings.vnc_pass, sizeof settings.vnc_pass, "%s", v);
         else if (strcmp(k, "tile_slot_energy") == 0)
             snprintf(settings.tile_slot_energy, sizeof settings.tile_slot_energy, "%s", v);
         else if (strcmp(k, "tile_slot_family") == 0)
@@ -263,6 +270,7 @@ void settings_save(void) {
     fprintf(f, "otgw_host=%s\n",           settings.otgw_host);
     fprintf(f, "otgw_user=%s\n",           settings.otgw_user);
     fprintf(f, "otgw_pass=%s\n",           settings.otgw_pass);
+    fprintf(f, "mqtt_enabled=%d\n",        settings.mqtt_enabled);
     fprintf(f, "mqtt_host=%s\n",           settings.mqtt_host);
     fprintf(f, "mqtt_port=%d\n",           settings.mqtt_port);
     fprintf(f, "mqtt_user=%s\n",           settings.mqtt_user);

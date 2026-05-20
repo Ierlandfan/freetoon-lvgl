@@ -49,6 +49,7 @@ typedef struct {
      * Topics: filter strings the subscriber listens on; each new PUBLISH
      * triggers a banner with topic+payload. Cap of 8 keeps the settings
      * file small and the topic-select UI digestible. */
+    int  mqtt_enabled;           /* 0/1 — run the MQTT banner subscriber */
     char mqtt_host[64];
     int  mqtt_port;              /* 1883 default */
     char mqtt_user[32];
