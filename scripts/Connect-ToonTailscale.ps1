@@ -112,7 +112,7 @@ function Find-HostsOnPort80 {
     $jobs = foreach ($i in 1..254) {
         $ps = [powershell]::Create()
         $ps.RunspacePool = $pool
-        [void]$ps.AddScript($probe).AddArgument("$Prefix.$i")
+        [void]$ps.AddScript($probe).AddArgument(("{0}.{1}" -f $Prefix, $i))
         [pscustomobject]@{ PS = $ps; Handle = $ps.BeginInvoke() }
     }
     $open = foreach ($j in $jobs) {
@@ -145,7 +145,7 @@ function Find-Toons {
         Write-Err "could not detect your LAN subnet — use -Subnet 192.168.x or -ToonIp."
         return @()
     }
-    Write-Log "scanning ${sub}.0/24 for a Toon (port 80 + HCB fingerprint) ..."
+    Write-Log ("scanning {0}.0/24 for a Toon (port 80 + HCB fingerprint) ..." -f $sub)
     $open = Find-HostsOnPort80 -Prefix $sub
     $found = foreach ($ip in $open) { if (Test-IsToon $ip) { $ip } }
     return @($found)
