@@ -1590,14 +1590,20 @@ static void open_clean_modal(lv_event_t * e) {
 }
 
 /* One category tile: icon (optional), big title, caption. */
+/* Compact category tile — 4 fit per row. Was 308x188 with 28pt fonts
+ * (only 3-wide and overflowed the screen badly); now 232x104 with 20pt
+ * title so the whole grid fits in ~4 rows with minimal scrolling. */
+#define SETT_TILE_W 232
+#define SETT_TILE_H 104
 static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
                       const char * title, const char * caption, lv_event_cb_t cb) {
     lv_obj_t * tile = lv_btn_create(scr_root);
-    lv_obj_set_size(tile, 308, 188);
+    lv_obj_set_size(tile, SETT_TILE_W, SETT_TILE_H);
     lv_obj_set_pos(tile, x, y);
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x1a2a44), 0);
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x24385c), LV_STATE_PRESSED);
-    lv_obj_set_style_radius(tile, 16, 0);
+    lv_obj_set_style_radius(tile, 12, 0);
+    lv_obj_set_style_pad_all(tile, 6, 0);
     lv_obj_add_event_cb(tile, cb, LV_EVENT_CLICKED, NULL);
 
     if (icon) {
@@ -1605,26 +1611,29 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
         lv_img_set_src(im, icon);
         lv_obj_set_style_img_recolor(im, lv_color_hex(0x9fc4e6), 0);
         lv_obj_set_style_img_recolor_opa(im, 255, 0);
-        lv_obj_align(im, LV_ALIGN_TOP_MID, 0, 18);
+        lv_obj_align(im, LV_ALIGN_TOP_MID, 0, 6);
     } else if (sym) {
         lv_obj_t * s = lv_label_create(tile);
-        lv_obj_set_style_text_font(s, &lv_font_montserrat_28, 0);
+        lv_obj_set_style_text_font(s, &lv_font_montserrat_22, 0);
         lv_obj_set_style_text_color(s, lv_color_hex(0x9fc4e6), 0);
         lv_label_set_text(s, sym);
-        lv_obj_align(s, LV_ALIGN_TOP_MID, 0, 26);
+        lv_obj_align(s, LV_ALIGN_TOP_MID, 0, 8);
     }
 
     lv_obj_t * t = lv_label_create(tile);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
     lv_label_set_text(t, title);
-    lv_obj_align(t, LV_ALIGN_CENTER, 0, 14);
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, 8);
 
     lv_obj_t * c = lv_label_create(tile);
-    lv_obj_set_style_text_font(c, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(c, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(c, lv_color_hex(0x7d97b5), 0);
+    lv_obj_set_width(c, SETT_TILE_W - 16);
+    lv_label_set_long_mode(c, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(c, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(c, caption);
-    lv_obj_align(c, LV_ALIGN_BOTTOM_MID, 0, -14);
+    lv_obj_align(c, LV_ALIGN_BOTTOM_MID, 0, -6);
 }
 
 /* ===================================================================== */
@@ -1983,47 +1992,43 @@ lv_obj_t * screen_settings_create(void) {
     lv_label_set_text(title, "Settings");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 30);
 
-    /* 7 category tiles. About moves to row3 left to keep its info on screen
-     * without overlapping rows 1-2 (each tile is 188px tall, row2 ends
-     * at y=514, so row3 at y=520 ends at y=708 — partially off-screen,
-     * but only the bottom 108px of About is clipped which is acceptable
-     * since it's a label-only diagnostic page; users tap title area). */
-    int x0 = 25, gap = 22, row1 = 120, row2 = 326, row3 = 520;
-    make_tile(x0 + 0*(308+gap), row1, &icon_wx_cloud, NULL, "Display",
-              "dim, timeout, brightness", open_display_modal);
-    make_tile(x0 + 1*(308+gap), row1, &icon_wx_cloud, NULL, "Weather",
-              "weather on dim screen", open_weather_modal);
-    make_tile(x0 + 2*(308+gap), row1, &icon_trash, NULL, "Waste",
-              "pickup alerts on dim", open_waste_modal);
-    make_tile(x0 + 0*(308+gap), row2, &icon_flame, NULL, "Heating",
-              "temp offset, boiler type", open_heating_modal);
-    make_tile(x0 + 1*(308+gap), row2, NULL, LV_SYMBOL_GPS, "OT Bridge",
-              "off / proxy / wireless", open_otbridge_modal);
-    make_tile(x0 + 2*(308+gap), row2, NULL, LV_SYMBOL_WIFI, "MQTT",
-              "broker + topics", open_mqtt_modal);
-    make_tile(x0 + 0*(308+gap), row3, &icon_radiator, NULL, "Presets",
-              "Comfort/Home/Sleep/Away setpoints", open_presets_modal);
-    make_tile(x0 + 1*(308+gap), row3, NULL, LV_SYMBOL_LIST, "About",
-              "status & diagnostics", open_about_modal);
-    make_tile(x0 + 2*(308+gap), row3, NULL, LV_SYMBOL_EYE_CLOSE, "Clean",
-              "30 s screen lock to wipe", open_clean_modal);
-
-    /* Row 4 — Integrations + UI mode. Below the 600 px viewport so the
-     * scrollbar appears; the screen is now LV_DIR_VER-scrollable above. */
-    int row4 = row3 + 188 + 16;   /* tile height + a small gap */
-    make_tile(x0 + 0*(308+gap), row4, NULL, LV_SYMBOL_PLUS, "Integrations",
-              "P1 / water / vent / HA", open_integrations_modal);
-    make_tile(x0 + 1*(308+gap), row4, NULL, LV_SYMBOL_POWER, "UI mode",
-              "freetoon vs stock qt-gui", open_uimode_modal);
-    make_tile(x0 + 2*(308+gap), row4, NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
-              "browse + install integrations", open_marketplace);
-
-    /* Row 5 — Tile slots: assign marketplace integrations to the 4
-     * right-column home tiles. Only meaningful once something is
-     * installed; the modal explains so when empty. */
-    int row5 = row4 + 188 + 16;
-    make_tile(x0 + 0*(308+gap), row5, NULL, LV_SYMBOL_HOME, "Tiles",
-              "assign integrations to home tiles", open_tile_slots_modal);
+    /* Category tiles in a compact 4-column grid. 232x104 each, so 4 rows
+     * of 4 (13 tiles) fit in ~4 rows starting below the header — the first
+     * ~3.5 rows are on-screen and the rest is a short scroll. Placement is
+     * index-driven via the GX macro so adding a tile doesn't need manual
+     * row/column arithmetic. */
+    const int COLS = 4, MX = 20, TOP = 112, GAPX = 14, GAPY = 12;
+    #define GX(i) (MX + ((i) % COLS) * (SETT_TILE_W + GAPX))
+    #define GY(i) (TOP + ((i) / COLS) * (SETT_TILE_H + GAPY))
+    int n = 0;
+    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, "Display",
+              "dim, timeout, brightness", open_display_modal); n++;
+    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, "Weather",
+              "weather on dim", open_weather_modal); n++;
+    make_tile(GX(n), GY(n), &icon_trash, NULL, "Waste",
+              "pickup alerts", open_waste_modal); n++;
+    make_tile(GX(n), GY(n), &icon_flame, NULL, "Heating",
+              "offset, boiler type", open_heating_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
+              "off / proxy / wireless", open_otbridge_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "MQTT",
+              "broker + topics", open_mqtt_modal); n++;
+    make_tile(GX(n), GY(n), &icon_radiator, NULL, "Presets",
+              "scheme setpoints", open_presets_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "About",
+              "status & diagnostics", open_about_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, "Clean",
+              "30 s screen lock", open_clean_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, "Integrations",
+              "P1 / water / vent / HA", open_integrations_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, "UI mode",
+              "freetoon vs qt-gui", open_uimode_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
+              "install integrations", open_marketplace); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Tiles",
+              "assign home tiles", open_tile_slots_modal); n++;
+    #undef GX
+    #undef GY
 
     return scr_root;
 }
