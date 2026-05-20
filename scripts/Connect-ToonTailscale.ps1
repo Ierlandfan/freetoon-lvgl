@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    One-click Tailscale bring-up for an Eneco Toon — native PowerShell port.
+    One-click Tailscale bring-up for an Eneco Toon - native PowerShell port.
 
 .DESCRIPTION
     Run on a Windows laptop on the SAME LAN as the Toon. Auto-discovers the
@@ -21,7 +21,7 @@
     Optional Tailscale auth-key (tskey-auth-...) for an unattended join.
     Generate at https://login.tailscale.com/admin/settings/keys (reusable +
     ephemeral recommended). If omitted, the join is interactive: a
-    login.tailscale.com URL is printed — open it and approve the device.
+    login.tailscale.com URL is printed - open it and approve the device.
 
 .PARAMETER TsHostname
     Name shown in the Tailscale admin console. Default: the Toon's hostname.
@@ -112,7 +112,7 @@ function Find-HostsOnPort80 {
     $jobs = foreach ($i in 1..254) {
         $ps = [powershell]::Create()
         $ps.RunspacePool = $pool
-        [void]$ps.AddScript($probe).AddArgument(("{0}.{1}" -f $Prefix, $i))
+        [void]$ps.AddScript($probe).AddArgument(($Prefix + "." + $i))
         [pscustomobject]@{ PS = $ps; Handle = $ps.BeginInvoke() }
     }
     $open = foreach ($j in $jobs) {
@@ -142,10 +142,10 @@ function Test-IsToon {
 function Find-Toons {
     $sub = Get-LanSubnet
     if (-not $sub) {
-        Write-Err "could not detect your LAN subnet — use -Subnet 192.168.x or -ToonIp."
+        Write-Err "could not detect your LAN subnet - use -Subnet 192.168.x or -ToonIp."
         return @()
     }
-    Write-Log ("scanning {0}.0/24 for a Toon (port 80 + HCB fingerprint) ..." -f $sub)
+    Write-Log ("scanning " + $sub + ".0/24 for a Toon (port 80 + HCB fingerprint) ...")
     $open = Find-HostsOnPort80 -Prefix $sub
     $found = foreach ($ip in $open) { if (Test-IsToon $ip) { $ip } }
     return @($found)
@@ -195,7 +195,7 @@ if ($Uninstall) {
 
 Write-Log "connecting to $User@$ToonIp (you'll be asked for the SSH password) ..."
 if (-not $AuthKey) {
-    Write-Log "interactive join: a login.tailscale.com URL will appear below — open it in your browser."
+    Write-Log "interactive join: a login.tailscale.com URL will appear below - open it in your browser."
 }
 $remote = "curl -fsSL -o /tmp/ts.sh '$RawUrl' && AUTHKEY='$AuthKey' HOSTNAME='$TsHostname' TS_VERSION='$TsVersion' sh /tmp/ts.sh"
 & ssh @sshCommon $remote
