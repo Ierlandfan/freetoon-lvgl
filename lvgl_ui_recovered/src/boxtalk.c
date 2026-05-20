@@ -260,8 +260,13 @@ static void handle_notify(const char* xml) {
          * whatever indoor_temp got seeded with at boot and drifted out of
          * date. Accept both centi-°C (happ's internal: "1889") and °C
          * already-decimalised, since some firmwares use the larger value. */
-        if (strcmp(src_uuid, UUID_THERMSTAT) == 0 &&
-            elem_text_float(xml, "currentTemp", &v)) {
+        /* Accept currentTemp from any ThermostatInfo publisher — that service
+         * is happ_thermstat's own calibrated room temp. (The uncalibrated
+         * hardware sensor publishes TemperatureSensor, a different service, so
+         * there's no risk of picking it up here.) The previous hardcoded
+         * src_uuid filter matched only one Toon, leaving indoor_temp at 0 (and
+         * the PWA/home tile showing "--") on every other device. */
+        if (elem_text_float(xml, "currentTemp", &v)) {
             toon_state.indoor_temp = (v > 80.0f) ? v / 100.0f : v;
             toon_state.msg_count++;
         }
@@ -920,11 +925,14 @@ static void* http_poll_thread(void* arg) {
                concurrent client changed it (cloud, web). Value is centi-°C. */
             int sp = parse_json_int(body, "currentSetpoint", 0);
             if (sp > 0) toon_state.setpoint = sp / 100.0f;
-            /* Calibrated room temperature, centi-°C. The notify/query path
-             * filters by a hardcoded thermostat subdevice UUID that only
-             * matches one Toon, so on every other device indoor_temp stayed 0
-             * (home tile + PWA showed "--"). This HTTP field is the canonical
-             * happ_thermstat value and is device-agnostic. */
+            /* Calibrated room temperature (centi-°C). happ_thermstat only
+             * exposes this reliably via getThermostatInfo — verified on a
+             * second Toon that it neither emits a ThermostatInfo currentTemp
+             * notify nor answers a CurrentTemperature query addressed to the
+             * (device-specific) thermostat UUID. The notify/query path stays as
+             * a belt-and-braces seed for Toons that do publish it; this HTTP
+             * field is the device-agnostic source, read from a poll we already
+             * make every 3s for setpoint/burner/modulation. */
             int ct = parse_json_int(body, "currentTemp", 0);
             if (ct > 0) toon_state.indoor_temp = ct / 100.0f;
             /* OpenTherm health for the Heating settings modal. */
