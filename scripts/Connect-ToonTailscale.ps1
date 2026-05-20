@@ -145,7 +145,7 @@ function Find-Toons {
         Write-Err "could not detect your LAN subnet — use -Subnet 192.168.x or -ToonIp."
         return @()
     }
-    Write-Log "scanning $sub.0/24 for a Toon (port 80 + HCB fingerprint) ..."
+    Write-Log "scanning ${sub}.0/24 for a Toon (port 80 + HCB fingerprint) ..."
     $open = Find-HostsOnPort80 -Prefix $sub
     $found = foreach ($ip in $open) { if (Test-IsToon $ip) { $ip } }
     return @($found)
