@@ -128,6 +128,15 @@ int stats_fetch(const char * logger_name, const char * rra,
             strncpy(series->labels[series->n], dt, sizeof(series->labels[0]) - 1);
             series->labels[series->n][sizeof(series->labels[0]) - 1] = 0;
         }
+        /* 2-digit year from "DD-MM-YYYY..." (positions 8-9). Used by the Year
+         * view to bucket/label across multiple calendar years. */
+        if (klen >= 10) {
+            series->year2[series->n][0] = dt[8];
+            series->year2[series->n][1] = dt[9];
+            series->year2[series->n][2] = 0;
+        } else {
+            series->year2[series->n][0] = 0;
+        }
         if (!isnan(val)) {
             if (val < series->min) series->min = val;
             if (val > series->max) series->max = val;

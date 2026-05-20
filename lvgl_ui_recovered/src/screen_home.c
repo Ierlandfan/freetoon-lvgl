@@ -18,6 +18,8 @@
 #include "tile_slots.h"
 #include "update_check.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
 #include <string.h>
 #include <time.h>
 
@@ -203,6 +205,8 @@ static lv_obj_t * tile_curtains = NULL;
 static lv_obj_t * update_banner     = NULL;
 static lv_obj_t * update_banner_lbl = NULL;
 static lv_obj_t * update_modal      = NULL;
+static lv_obj_t * about_status_lbl  = NULL;   /* live status line inside the modal */
+static char       skipped_version[UPDATE_VERSION_MAX] = "";  /* banner suppressed for this ver */
 
 /* Smaller tile widgets */
 static lv_obj_t * lbl_air_eco2;
@@ -375,11 +379,39 @@ static void open_placeholder(lv_event_t * e) {
  * looking at stale notes, since refresh_cb sees that and rebuilds). */
 static void on_update_modal_close(lv_event_t * e) {
     (void)e;
+    about_status_lbl = NULL;
     if (update_modal) { lv_obj_del_async(update_modal); update_modal = NULL; }
 }
-static void on_update_banner_click(lv_event_t * e) {
+
+/* Run the on-device self-installer detached, so it survives toonui being
+ * killed mid-update (init respawns the new binary via ui_launcher). */
+static void do_install_now(lv_event_t * e) {
     (void)e;
-    if (!g_update_state.available) return;
+    if (about_status_lbl)
+        lv_label_set_text(about_status_lbl, "Installing... the screen will restart shortly.");
+    system("setsid sh -c 'sleep 1; curl -fsSL "
+           "https://github.com/Ierlandfan/freetoon-lvgl/releases/latest/download/toon-selfinstall.sh "
+           "| sh' >/var/volatile/tmp/selfinstall.log 2>&1 &");
+}
+
+/* Skip this version — suppress the banner until a newer release appears. */
+static void do_skip_version(lv_event_t * e) {
+    snprintf(skipped_version, sizeof skipped_version, "%s", g_update_state.latest_version);
+    on_update_modal_close(e);
+}
+
+static void * check_thread(void * arg) { (void)arg; update_check_now(); return NULL; }
+static void do_check_updates(lv_event_t * e) {
+    (void)e;
+    if (about_status_lbl) lv_label_set_text(about_status_lbl, "Checking for updates...");
+    pthread_t t;
+    if (pthread_create(&t, NULL, check_thread, NULL) == 0) pthread_detach(t);
+}
+
+/* About / Update modal — opened by the logo (always) and the update banner.
+ * Shows version, status, release notes, and Check / Install / Skip actions. */
+static void open_about_modal(lv_event_t * e) {
+    (void)e;
     if (update_modal) { lv_obj_del_async(update_modal); update_modal = NULL; }
 
     update_modal = lv_obj_create(scr_root);
@@ -393,76 +425,109 @@ static void on_update_banner_click(lv_event_t * e) {
     lv_obj_add_event_cb(update_modal, on_update_modal_close, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * panel = lv_obj_create(update_modal);
-    lv_obj_set_size(panel, 860, 520);
+    lv_obj_set_size(panel, 760, 470);
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_radius(panel, 18, 0);
-    lv_obj_set_style_pad_all(panel, 20, 0);
-    lv_obj_set_scroll_dir(panel, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(panel, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_all(panel, 22, 0);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);   /* swallow taps */
+
+    /* Logo mark + title */
+    lv_obj_t * mark = lv_obj_create(panel);
+    lv_obj_set_size(mark, 46, 46);
+    lv_obj_align(mark, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(mark, lv_color_hex(0x2e6e9e), 0);
+    lv_obj_set_style_radius(mark, 12, 0);
+    lv_obj_set_style_border_width(mark, 0, 0);
+    lv_obj_clear_flag(mark, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t * mk = lv_label_create(mark);
+    lv_obj_set_style_text_color(mk, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(mk, &lv_font_montserrat_28, 0);
+    lv_label_set_text(mk, "ft");
+    lv_obj_center(mk);
 
     lv_obj_t * t = lv_label_create(panel);
     lv_obj_set_style_text_font(t, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
-    lv_label_set_text_fmt(t, "Update %s available",
-                          g_update_state.latest_version);
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 0);
+    lv_label_set_text(t, "freetoon");
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 60, 2);
 
-    /* Current vs available */
-    lv_obj_t * sub = lv_label_create(panel);
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(sub, lv_color_hex(0x88aabb), 0);
-    lv_label_set_text_fmt(sub, "running %s   ->   %s", BUILD_VERSION,
-                          g_update_state.latest_version);
-    lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 4, 42);
+    lv_obj_t * ver = lv_label_create(panel);
+    lv_obj_set_style_text_font(ver, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(ver, lv_color_hex(0x88aabb), 0);
+    lv_label_set_text_fmt(ver, "%s  -  beta", BUILD_VERSION);
+    lv_obj_align(ver, LV_ALIGN_TOP_LEFT, 60, 34);
 
-    /* Install command — re-run the same install.sh that put toonui on
-     * the device; v0.7.x is upgrade-safe (existing toonui.cfg preserved). */
-    lv_obj_t * cmd_box = lv_obj_create(panel);
-    lv_obj_set_size(cmd_box, 820, 80);
-    lv_obj_align(cmd_box, LV_ALIGN_TOP_LEFT, 0, 80);
-    lv_obj_set_style_bg_color(cmd_box, lv_color_hex(0x0e1a2a), 0);
-    lv_obj_set_style_border_width(cmd_box, 0, 0);
-    lv_obj_set_style_radius(cmd_box, 10, 0);
-    lv_obj_set_style_pad_all(cmd_box, 10, 0);
-    lv_obj_clear_flag(cmd_box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t * cmd = lv_label_create(cmd_box);
-    lv_obj_set_style_text_font(cmd, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(cmd, lv_color_hex(0xddddee), 0);
-    lv_label_set_long_mode(cmd, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(cmd, 800);
-    lv_label_set_text(cmd,
-        "curl -fsSL "
-        "https://github.com/Ierlandfan/freetoon-lvgl/releases/latest/"
-        "download/freetoon-lvgl-armhf.tar.gz | tar xz && "
-        "cd freetoon-lvgl-*/ && TOON_HOST=192.168.x.x ./install.sh");
+    /* Live status line (updated by refresh_cb while open). */
+    about_status_lbl = lv_label_create(panel);
+    lv_obj_set_style_text_font(about_status_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(about_status_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_width(about_status_lbl, 716);
+    lv_label_set_long_mode(about_status_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_align(about_status_lbl, LV_ALIGN_TOP_LEFT, 0, 70);
 
-    /* Release notes (truncated to fit). */
-    lv_obj_t * notes = lv_label_create(panel);
+    /* Release notes (scrollable area). */
+    lv_obj_t * notesbox = lv_obj_create(panel);
+    lv_obj_set_size(notesbox, 716, 230);
+    lv_obj_align(notesbox, LV_ALIGN_TOP_LEFT, 0, 110);
+    lv_obj_set_style_bg_color(notesbox, lv_color_hex(0x0e1a2a), 0);
+    lv_obj_set_style_border_width(notesbox, 0, 0);
+    lv_obj_set_style_radius(notesbox, 10, 0);
+    lv_obj_set_style_pad_all(notesbox, 12, 0);
+    lv_obj_set_scroll_dir(notesbox, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(notesbox, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_t * notes = lv_label_create(notesbox);
     lv_obj_set_style_text_font(notes, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(notes, lv_color_hex(0xc8d4e0), 0);
     lv_label_set_long_mode(notes, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(notes, 820);
-    if (g_update_state.release_notes[0])
-        lv_label_set_text(notes, g_update_state.release_notes);
-    else
-        lv_label_set_text(notes, "(no release notes available)");
-    lv_obj_align(notes, LV_ALIGN_TOP_LEFT, 4, 180);
+    lv_obj_set_width(notes, 690);
+    lv_label_set_text(notes, g_update_state.release_notes[0]
+                      ? g_update_state.release_notes
+                      : "Release notes appear here after a check finds a new version.");
+
+    /* Button row. */
+    lv_obj_t * b_check = lv_btn_create(panel);
+    lv_obj_set_size(b_check, 220, 56);
+    lv_obj_align(b_check, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(b_check, lv_color_hex(0x2a4060), 0);
+    lv_obj_add_event_cb(b_check, do_check_updates, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cl = lv_label_create(b_check);
+    lv_obj_set_style_text_font(cl, &lv_font_montserrat_18, 0);
+    lv_label_set_text(cl, "Check for updates"); lv_obj_center(cl);
+
+    if (g_update_state.available) {
+        lv_obj_t * b_inst = lv_btn_create(panel);
+        lv_obj_set_size(b_inst, 170, 56);
+        lv_obj_align(b_inst, LV_ALIGN_BOTTOM_LEFT, 232, 0);
+        lv_obj_set_style_bg_color(b_inst, lv_color_hex(0x2e6e3a), 0);
+        lv_obj_add_event_cb(b_inst, do_install_now, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * il = lv_label_create(b_inst);
+        lv_obj_set_style_text_font(il, &lv_font_montserrat_22, 0);
+        lv_label_set_text(il, "Install now"); lv_obj_center(il);
+
+        lv_obj_t * b_skip = lv_btn_create(panel);
+        lv_obj_set_size(b_skip, 120, 56);
+        lv_obj_align(b_skip, LV_ALIGN_BOTTOM_LEFT, 412, 0);
+        lv_obj_set_style_bg_color(b_skip, lv_color_hex(0x6a5424), 0);
+        lv_obj_add_event_cb(b_skip, do_skip_version, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * sl = lv_label_create(b_skip);
+        lv_obj_set_style_text_font(sl, &lv_font_montserrat_22, 0);
+        lv_label_set_text(sl, "Skip"); lv_obj_center(sl);
+    }
 
     lv_obj_t * x = lv_btn_create(panel);
-    lv_obj_set_size(x, 100, 44);
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, 4, -4);
+    lv_obj_set_size(x, 120, 56);
+    lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
-    lv_obj_set_style_radius(x, 10, 0);
     lv_obj_add_event_cb(x, on_update_modal_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
-    lv_label_set_text(xl, "Close");
-    lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(xl, &lv_font_montserrat_18, 0);
-    lv_obj_center(xl);
+    lv_obj_set_style_text_font(xl, &lv_font_montserrat_22, 0);
+    lv_label_set_text(xl, "Close"); lv_obj_center(xl);
 }
+/* Keep the old name as an alias for the banner's click handler. */
+static void on_update_banner_click(lv_event_t * e) { open_about_modal(e); }
 
 static void open_vent(lv_event_t * e) {
     (void)e;
@@ -677,13 +742,26 @@ static void refresh_cb(lv_timer_t * t) {
     /* Update-available banner — toggled live so the user sees it within
      * a refresh tick of the background checker finding a new release. */
     if (update_banner && update_banner_lbl) {
-        if (g_update_state.available) {
+        int skipped = (skipped_version[0] &&
+                       strcmp(skipped_version, g_update_state.latest_version) == 0);
+        if (g_update_state.available && !skipped) {
             lv_label_set_text_fmt(update_banner_lbl, "%s available  -  tap for details",
                                   g_update_state.latest_version);
             lv_obj_clear_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
         }
+    }
+    /* Live status line inside the About/Update modal (if open). */
+    if (about_status_lbl) {
+        if (g_update_state.available)
+            lv_label_set_text_fmt(about_status_lbl, "Update %s available",
+                                  g_update_state.latest_version);
+        else if (g_update_state.last_check_epoch)
+            lv_label_set_text(about_status_lbl, g_update_state.last_check_ok
+                              ? "You're on the latest release." : "Update check failed - check internet.");
+        else
+            lv_label_set_text(about_status_lbl, "Tap \"Check for updates\".");
     }
 
     /* Expire any pending +/- temporary override once the schedule advances. */
@@ -2217,6 +2295,24 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_style_text_color(l, lv_color_hex(0xffcc44), 0);
         lv_obj_set_style_text_font(l, &lv_font_montserrat_18, 0);
         lv_obj_center(l);
+    }
+
+    /* freetoon logo badge — leftmost of the top-right cluster (before the
+     * lights + settings icons). Tap → About / version / updates modal. */
+    {
+        lv_obj_t * logo = lv_btn_create(scr_root);
+        lv_obj_set_size(logo, 44, 44);
+        lv_obj_align(logo, LV_ALIGN_TOP_RIGHT, -112, 4);
+        lv_obj_set_style_bg_color(logo, lv_color_hex(0x2e6e9e), 0);
+        lv_obj_set_style_bg_color(logo, lv_color_hex(0x3a86bf), LV_STATE_PRESSED);
+        lv_obj_set_style_radius(logo, 12, 0);
+        lv_obj_set_ext_click_area(logo, 14);
+        lv_obj_add_event_cb(logo, open_about_modal, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * logo_lbl = lv_label_create(logo);
+        lv_label_set_text(logo_lbl, "ft");
+        lv_obj_set_style_text_color(logo_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(logo_lbl, &lv_font_montserrat_22, 0);
+        lv_obj_center(logo_lbl);
     }
 
     /* Gear in the very top-right corner of the screen. */
