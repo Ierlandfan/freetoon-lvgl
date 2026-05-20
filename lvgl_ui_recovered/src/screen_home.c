@@ -209,8 +209,6 @@ static lv_obj_t * about_status_lbl  = NULL;   /* live status line inside the mod
 static char       skipped_version[UPDATE_VERSION_MAX] = "";  /* banner suppressed for this ver */
 
 /* Smaller tile widgets */
-static lv_obj_t * lbl_air_eco2;
-static lv_obj_t * lbl_air_tvoc;
 static lv_obj_t * lbl_humid_val;       /* removed widget — kept as NULL for old refs */
 static lv_obj_t * lbl_energy_w;
 static lv_obj_t * lbl_energy_gas;
@@ -218,7 +216,6 @@ static lv_obj_t * lbl_energy_today;
 static lv_obj_t * lbl_boiler_state;
 static lv_obj_t * lbl_boiler_pressure;
 static lv_obj_t * vent_fan_img = NULL;
-static lv_obj_t * vent_fan_wrap = NULL;
 static int        vent_anim_period_ms = -1;
 
 static lv_timer_t * refresh_timer = NULL;
@@ -919,7 +916,8 @@ static void refresh_cb(lv_timer_t * t) {
     /* Waste tile (top + next-up rows). Each row gets the icon and accent
        colour for its type label. */
     if (lbl_waste_date && lbl_waste_type) {
-        waste_pickup_t p1 = {{0}}, p2 = {{0}};
+        waste_pickup_t p1, p2;
+        memset(&p1, 0, sizeof p1); memset(&p2, 0, sizeof p2);
         int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
         if (n >= 1) {
             int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
@@ -2297,12 +2295,12 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_center(l);
     }
 
-    /* freetoon logo badge — leftmost of the top-right cluster (before the
-     * lights + settings icons). Tap → About / version / updates modal. */
+    /* freetoon logo badge — top-left corner, above the clock/date. Tap →
+     * About / version / updates modal. */
     {
         lv_obj_t * logo = lv_btn_create(scr_root);
-        lv_obj_set_size(logo, 44, 44);
-        lv_obj_align(logo, LV_ALIGN_TOP_RIGHT, -112, 4);
+        lv_obj_set_size(logo, 40, 40);
+        lv_obj_align(logo, LV_ALIGN_TOP_LEFT, 8, 6);
         lv_obj_set_style_bg_color(logo, lv_color_hex(0x2e6e9e), 0);
         lv_obj_set_style_bg_color(logo, lv_color_hex(0x3a86bf), LV_STATE_PRESSED);
         lv_obj_set_style_radius(logo, 12, 0);

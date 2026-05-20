@@ -86,7 +86,7 @@ static int mqtt_open_sock(const char * host, int port,
                           int timeout_s, char * err, size_t errsz) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) { if (err) snprintf(err, errsz, "socket: %s", strerror(errno)); return -1; }
-    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(port) };
+    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(port), .sin_addr = {0} };
     a.sin_addr.s_addr = inet_addr(host);
     if (a.sin_addr.s_addr == INADDR_NONE) {
         struct hostent * he = gethostbyname(host);

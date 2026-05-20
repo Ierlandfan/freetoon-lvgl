@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/time.h>
 
 #define PWA_PORT  10081
 #define PWA_ROOT  "/mnt/data/pwa"
@@ -311,7 +312,7 @@ static int handle_schedule_post(int fd, const char * body) {
     if (schedule_save() != 0)
         return send_status(fd, 502, "Bad Gateway", "{\"err\":\"save\"}");
     char ok[64];
-    int n = snprintf(ok, sizeof(ok), "{\"ok\":1,\"count\":%d}", schedule_count);
+    snprintf(ok, sizeof(ok), "{\"ok\":1,\"count\":%d}", schedule_count);
     return send_status(fd, 200, "OK", ok);
 }
 

@@ -372,7 +372,7 @@ static void poll_once(void) {
                 if (p > 0 && p < bat_min) bat_min = p;
             }
         }
-        if (id == CURTAIN_RIGHT) break;
+        if (strcmp(id, CURTAIN_RIGHT) == 0) break;
     }
     ha_state.curtain_battery = bat_min;
 }
