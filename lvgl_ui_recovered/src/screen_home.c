@@ -230,6 +230,9 @@ static lv_obj_t * update_banner_lbl = NULL;
 static lv_obj_t * update_modal      = NULL;
 static lv_obj_t * about_status_lbl  = NULL;   /* live status line inside the modal */
 static char       skipped_version[UPDATE_VERSION_MAX] = "";  /* banner suppressed for this ver */
+static int        update_minimized = 0;   /* dismissed → shown as an envelope icon */
+static int        install_pinned   = 0;   /* freeze the modal status line during install/result */
+static lv_obj_t * update_env_btn   = NULL; /* minimized-update envelope (top-right) */
 
 /* Smaller tile widgets */
 static lv_obj_t * lbl_humid_val;       /* removed widget — kept as NULL for old refs */
@@ -421,13 +424,31 @@ static void open_placeholder(lv_event_t * e) {
 static void on_update_modal_close(lv_event_t * e) {
     (void)e;
     about_status_lbl = NULL;
+    install_pinned = 0;
     if (update_modal) { lv_obj_del_async(update_modal); update_modal = NULL; }
+}
+
+/* True when the running build already matches the latest release tag (base,
+ * ignoring any `git describe` suffix) — i.e. there's nothing to install. */
+static int update_already_installed(void) {
+    const char * t = g_update_state.latest_version;
+    if (!t[0]) return 0;
+    size_t tn = strcspn(t, "-");
+    size_t bn = strcspn(BUILD_VERSION, "-");
+    return tn == bn && strncmp(t, BUILD_VERSION, tn) == 0;
 }
 
 /* Run the on-device self-installer detached, so it survives toonui being
  * killed mid-update (init respawns the new binary via ui_launcher). */
 static void do_install_now(lv_event_t * e) {
     (void)e;
+    install_pinned = 1;   /* stop refresh_cb from overwriting the status line */
+    if (update_already_installed()) {
+        if (about_status_lbl)
+            lv_label_set_text_fmt(about_status_lbl,
+                "Already on %s - nothing to install.", BUILD_VERSION);
+        return;
+    }
     if (about_status_lbl)
         lv_label_set_text(about_status_lbl, "Installing... the screen will restart shortly.");
     system("setsid sh -c 'sleep 1; curl -fsSL "
@@ -438,6 +459,13 @@ static void do_install_now(lv_event_t * e) {
 /* Skip this version — suppress the banner until a newer release appears. */
 static void do_skip_version(lv_event_t * e) {
     snprintf(skipped_version, sizeof skipped_version, "%s", g_update_state.latest_version);
+    update_minimized = 0;
+    on_update_modal_close(e);
+}
+
+/* Dismiss → minimize the update notice to an envelope icon (re-openable). */
+static void do_dismiss_to_envelope(lv_event_t * e) {
+    update_minimized = 1;
     on_update_modal_close(e);
 }
 
@@ -530,32 +558,41 @@ static void open_about_modal(lv_event_t * e) {
 
     /* Button row. */
     lv_obj_t * b_check = lv_btn_create(panel);
-    lv_obj_set_size(b_check, 220, 56);
+    lv_obj_set_size(b_check, 180, 56);
     lv_obj_align(b_check, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_color(b_check, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_check, do_check_updates, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(b_check);
     lv_obj_set_style_text_font(cl, &lv_font_montserrat_18, 0);
-    lv_label_set_text(cl, "Check for updates"); lv_obj_center(cl);
+    lv_label_set_text(cl, "Check"); lv_obj_center(cl);
 
     if (g_update_state.available) {
         lv_obj_t * b_inst = lv_btn_create(panel);
-        lv_obj_set_size(b_inst, 170, 56);
-        lv_obj_align(b_inst, LV_ALIGN_BOTTOM_LEFT, 232, 0);
+        lv_obj_set_size(b_inst, 150, 56);
+        lv_obj_align(b_inst, LV_ALIGN_BOTTOM_LEFT, 188, 0);
         lv_obj_set_style_bg_color(b_inst, lv_color_hex(0x2e6e3a), 0);
         lv_obj_add_event_cb(b_inst, do_install_now, LV_EVENT_CLICKED, NULL);
         lv_obj_t * il = lv_label_create(b_inst);
-        lv_obj_set_style_text_font(il, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(il, &lv_font_montserrat_18, 0);
         lv_label_set_text(il, "Install now"); lv_obj_center(il);
 
         lv_obj_t * b_skip = lv_btn_create(panel);
-        lv_obj_set_size(b_skip, 120, 56);
-        lv_obj_align(b_skip, LV_ALIGN_BOTTOM_LEFT, 412, 0);
+        lv_obj_set_size(b_skip, 96, 56);
+        lv_obj_align(b_skip, LV_ALIGN_BOTTOM_LEFT, 346, 0);
         lv_obj_set_style_bg_color(b_skip, lv_color_hex(0x6a5424), 0);
         lv_obj_add_event_cb(b_skip, do_skip_version, LV_EVENT_CLICKED, NULL);
         lv_obj_t * sl = lv_label_create(b_skip);
-        lv_obj_set_style_text_font(sl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(sl, &lv_font_montserrat_18, 0);
         lv_label_set_text(sl, "Skip"); lv_obj_center(sl);
+
+        lv_obj_t * b_dis = lv_btn_create(panel);
+        lv_obj_set_size(b_dis, 130, 56);
+        lv_obj_align(b_dis, LV_ALIGN_BOTTOM_LEFT, 450, 0);
+        lv_obj_set_style_bg_color(b_dis, lv_color_hex(0x33445a), 0);
+        lv_obj_add_event_cb(b_dis, do_dismiss_to_envelope, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * dl = lv_label_create(b_dis);
+        lv_obj_set_style_text_font(dl, &lv_font_montserrat_18, 0);
+        lv_label_set_text(dl, LV_SYMBOL_ENVELOPE " Dismiss"); lv_obj_center(dl);
     }
 
     lv_obj_t * x = lv_btn_create(panel);
@@ -889,16 +926,24 @@ static void refresh_cb(lv_timer_t * t) {
     if (update_banner && update_banner_lbl) {
         int skipped = (skipped_version[0] &&
                        strcmp(skipped_version, g_update_state.latest_version) == 0);
-        if (g_update_state.available && !skipped) {
+        int relevant = g_update_state.available && !skipped;
+        if (!relevant) update_minimized = 0;   /* reset once it's gone */
+        /* Banner when relevant + not minimized; envelope when minimized. */
+        if (relevant && !update_minimized) {
             lv_label_set_text_fmt(update_banner_lbl, "%s available  -  tap for details",
                                   g_update_state.latest_version);
             lv_obj_clear_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
         }
+        if (update_env_btn) {
+            if (relevant && update_minimized) lv_obj_clear_flag(update_env_btn, LV_OBJ_FLAG_HIDDEN);
+            else                              lv_obj_add_flag(update_env_btn, LV_OBJ_FLAG_HIDDEN);
+        }
     }
-    /* Live status line inside the About/Update modal (if open). */
-    if (about_status_lbl) {
+    /* Live status line inside the About/Update modal (if open) — frozen while
+     * an install/result message is pinned. */
+    if (about_status_lbl && !install_pinned) {
         if (g_update_state.available)
             lv_label_set_text_fmt(about_status_lbl, "Update %s available",
                                   g_update_state.latest_version);
@@ -2609,6 +2654,23 @@ lv_obj_t * screen_home_create(void) {
     lv_label_set_text(update_banner_lbl, "Update available");
     lv_obj_center(update_banner_lbl);
     lv_obj_add_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
+
+    /* Minimized-update envelope — shown (green) when the user dismisses the
+     * update banner; tap re-opens the update modal. Sits left of the inbox
+     * envelope. Hidden until dismissed. */
+    update_env_btn = lv_btn_create(scr_root);
+    lv_obj_set_size(update_env_btn, 44, 44);
+    lv_obj_align(update_env_btn, LV_ALIGN_TOP_RIGHT, -118, 4);
+    lv_obj_set_style_bg_color(update_env_btn, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_radius(update_env_btn, 22, 0);
+    lv_obj_set_ext_click_area(update_env_btn, 14);
+    lv_obj_add_event_cb(update_env_btn, open_about_modal, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * uenv = lv_label_create(update_env_btn);
+    lv_label_set_text(uenv, LV_SYMBOL_ENVELOPE);
+    lv_obj_set_style_text_color(uenv, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(uenv, &lv_font_montserrat_18, 0);
+    lv_obj_center(uenv);
+    lv_obj_add_flag(update_env_btn, LV_OBJ_FLAG_HIDDEN);
 
     envelope_btn = lv_btn_create(scr_root);
     lv_obj_set_size(envelope_btn, 44, 44);
