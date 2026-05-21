@@ -1543,6 +1543,29 @@ static void on_home_gesture_to_lights(lv_event_t * e) {
     open_lights_backend();
 }
 
+/* Collapsible lights handle: idles as a slim half-circle tab peeking from the
+ * left edge, expands into a horizontal "Lights" button while pressed, and
+ * opens the lights backend on release. */
+static lv_obj_t * lights_handle     = NULL;
+static lv_obj_t * lights_handle_lbl = NULL;
+
+static void lights_handle_set(bool open) {
+    if (!lights_handle) return;
+    lv_obj_set_size(lights_handle, open ? 132 : 22, open ? 56 : 64);
+    lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 2 : -10, 0);
+    lv_obj_set_style_radius(lights_handle, open ? 16 : LV_RADIUS_CIRCLE, 0);
+    if (open) lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+    else      lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+}
+static void on_lights_handle(lv_event_t * e) {
+    switch (lv_event_get_code(e)) {
+        case LV_EVENT_PRESSED:                            lights_handle_set(true);  break;
+        case LV_EVENT_RELEASED: case LV_EVENT_PRESS_LOST: lights_handle_set(false); break;
+        case LV_EVENT_CLICKED:  lights_handle_set(false); open_lights_backend();    break;
+        default: break;
+    }
+}
+
 static void on_home_gesture(lv_event_t * e) {
     (void)e;
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
@@ -2356,23 +2379,30 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_center(logo_lbl);
     }
 
-    /* Lights quick-button — left edge, vertically centred. Opens the lights
-     * backend (Domoticz if enabled, else Home Assistant). Same target as the
-     * swipe-right gesture, but discoverable. */
+    /* Lights handle — a slim half-circle tab on the left edge that auto-hides.
+     * Touch it and it expands into a horizontal "Lights" button; releasing
+     * opens the lights backend (Domoticz if enabled, else Home Assistant).
+     * Same target as the swipe-right gesture, but discoverable. */
     {
-        lv_obj_t * lb = lv_btn_create(scr_root);
-        lv_obj_set_size(lb, 50, 92);
-        lv_obj_align(lb, LV_ALIGN_LEFT_MID, 2, 0);
-        lv_obj_set_style_bg_color(lb, lv_color_hex(0x2a4060), 0);
-        lv_obj_set_style_bg_color(lb, lv_color_hex(0x3a5688), LV_STATE_PRESSED);
-        lv_obj_set_style_radius(lb, 14, 0);
-        lv_obj_set_ext_click_area(lb, 12);
-        lv_obj_add_event_cb(lb, on_home_gesture_to_lights, LV_EVENT_CLICKED, NULL);
-        lv_obj_t * ll = lv_label_create(lb);
-        lv_obj_set_style_text_color(ll, lv_color_hex(0xffe08a), 0);
-        lv_obj_set_style_text_font(ll, &lv_font_montserrat_28, 0);
-        lv_label_set_text(ll, LV_SYMBOL_CHARGE);   /* lightbulb-ish; freetoon has no bulb glyph */
-        lv_obj_center(ll);
+        lights_handle = lv_btn_create(scr_root);
+        lv_obj_set_size(lights_handle, 22, 64);
+        lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -10, 0);
+        lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x2a4060), 0);
+        lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x3a5688), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(lights_handle, LV_OPA_70, 0);
+        lv_obj_set_style_radius(lights_handle, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_pad_all(lights_handle, 0, 0);
+        lv_obj_set_ext_click_area(lights_handle, 18);   /* easy to grab while slim */
+        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESSED,    NULL);
+        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_RELEASED,   NULL);
+        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESS_LOST, NULL);
+        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_CLICKED,    NULL);
+        lights_handle_lbl = lv_label_create(lights_handle);
+        lv_obj_set_style_text_color(lights_handle_lbl, lv_color_hex(0xffe08a), 0);
+        lv_obj_set_style_text_font(lights_handle_lbl, &lv_font_montserrat_22, 0);
+        lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE " Lights");
+        lv_obj_center(lights_handle_lbl);
+        lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);   /* shown only while expanded */
     }
 
     /* Gear in the very top-right corner of the screen. */
