@@ -65,6 +65,7 @@ settings_t settings = {
     .enable_p1_water     = 0,
     .enable_vent         = 0,
     .enable_ha           = 0,
+    .enable_domoticz     = 0,
     .boot_picker_enabled = 1,
     .hide_offline_tiles  = 0,
     .update_check_enabled = 1,
@@ -183,6 +184,13 @@ void settings_load(void) {
         else if (strcmp(k, "enable_p1_water") == 0) { settings.enable_p1_water = iv; seen_p1_water = 1; }
         else if (strcmp(k, "enable_vent")     == 0) { settings.enable_vent     = iv; seen_vent     = 1; }
         else if (strcmp(k, "enable_ha")       == 0) { settings.enable_ha       = iv; seen_ha       = 1; }
+        else if (strcmp(k, "enable_domoticz") == 0) settings.enable_domoticz = iv;
+        else if (strcmp(k, "domoticz_host")   == 0)
+            snprintf(settings.domoticz_host, sizeof settings.domoticz_host, "%s", v);
+        else if (strcmp(k, "domoticz_user")   == 0)
+            snprintf(settings.domoticz_user, sizeof settings.domoticz_user, "%s", v);
+        else if (strcmp(k, "domoticz_pass")   == 0)
+            snprintf(settings.domoticz_pass, sizeof settings.domoticz_pass, "%s", v);
         else if (strcmp(k, "enable_zwave")    == 0) settings.enable_zwave = iv;
         else if (strcmp(k, "energy_source")   == 0) settings.energy_source = iv;
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
@@ -300,6 +308,10 @@ void settings_save(void) {
     fprintf(f, "enable_p1_water=%d\n", settings.enable_p1_water);
     fprintf(f, "enable_vent=%d\n",     settings.enable_vent);
     fprintf(f, "enable_ha=%d\n",       settings.enable_ha);
+    fprintf(f, "enable_domoticz=%d\n", settings.enable_domoticz);
+    fprintf(f, "domoticz_host=%s\n",   settings.domoticz_host);
+    fprintf(f, "domoticz_user=%s\n",   settings.domoticz_user);
+    fprintf(f, "domoticz_pass=%s\n",   settings.domoticz_pass);
     fprintf(f, "enable_zwave=%d\n",    settings.enable_zwave);
     fprintf(f, "energy_source=%d\n",   settings.energy_source);
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);

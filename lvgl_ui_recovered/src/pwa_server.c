@@ -750,6 +750,7 @@ static int handle_settings_get(int fd) {
         "\"mqtt_enabled\":%d,\"mqtt_host\":\"%s\",\"mqtt_port\":%d,\"mqtt_user\":\"%s\","
         "\"enable_p1_elec\":%d,\"enable_p1_water\":%d,\"enable_vent\":%d,"
         "\"enable_ha\":%d,\"enable_zwave\":%d,\"vnc_enabled\":%d,"
+        "\"enable_domoticz\":%d,\"domoticz_host\":\"%s\",\"domoticz_user\":\"%s\","
         "\"hide_offline_tiles\":%d,\"boot_picker_enabled\":%d,"
         "\"update_check_enabled\":%d"
         "}",
@@ -764,6 +765,7 @@ static int handle_settings_get(int fd) {
         settings.mqtt_enabled, settings.mqtt_host, settings.mqtt_port, settings.mqtt_user,
         settings.enable_p1_elec, settings.enable_p1_water, settings.enable_vent,
         settings.enable_ha, settings.enable_zwave, settings.vnc_enabled,
+        settings.enable_domoticz, settings.domoticz_host, settings.domoticz_user,
         settings.hide_offline_tiles, settings.boot_picker_enabled,
         settings.update_check_enabled);
     char hdr[160];
@@ -797,6 +799,13 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "enable_p1_water", &iv))    settings.enable_p1_water = !!iv;
     if (extract_int(body, "enable_vent", &iv))        settings.enable_vent = !!iv;
     if (extract_int(body, "enable_ha", &iv))          settings.enable_ha = !!iv;
+    if (extract_int(body, "enable_domoticz", &iv))    settings.enable_domoticz = !!iv;
+    if (extract_str(body, "domoticz_host", sv, sizeof sv))
+        snprintf(settings.domoticz_host, sizeof settings.domoticz_host, "%s", sv);
+    if (extract_str(body, "domoticz_user", sv, sizeof sv))
+        snprintf(settings.domoticz_user, sizeof settings.domoticz_user, "%s", sv);
+    if (extract_str(body, "domoticz_pass", sv, sizeof sv))
+        snprintf(settings.domoticz_pass, sizeof settings.domoticz_pass, "%s", sv);
     if (extract_int(body, "enable_zwave", &iv))       settings.enable_zwave = !!iv;
     if (extract_int(body, "vnc_enabled", &iv))        settings.vnc_enabled = !!iv;
     if (extract_int(body, "hide_offline_tiles", &iv)) settings.hide_offline_tiles = !!iv;
@@ -866,6 +875,9 @@ static const char SETTINGS_HTML[] =
 "['Integrations','h'],"
 "['enable_p1_elec','P1 electricity','b'],['enable_p1_water','P1 water','b'],"
 "['enable_vent','Ventilation','b'],['enable_ha','Home Assistant','b'],['enable_zwave','Z-Wave control','b'],"
+"['Domoticz','h'],"
+"['enable_domoticz','Domoticz enabled','b'],['domoticz_host','Domoticz host (ip:port)','t'],"
+"['domoticz_user','Domoticz user (opt)','t'],"
 "['Display options','h'],"
 "['vnc_enabled','VNC server','b'],['hide_offline_tiles','Hide offline tiles','b'],"
 "['boot_picker_enabled','Boot picker','b'],['update_check_enabled','Update check','b']"

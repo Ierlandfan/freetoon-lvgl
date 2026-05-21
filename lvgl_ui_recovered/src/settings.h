@@ -75,6 +75,14 @@ typedef struct {
     int enable_vent;
     int enable_ha;
 
+    /* Domoticz — alternative to HA for lights + blinds (for users who run
+     * Domoticz). Talks to its JSON API at domoticz_host ("ip:port"); optional
+     * basic-auth user/pass. */
+    int  enable_domoticz;
+    char domoticz_host[64];
+    char domoticz_user[32];
+    char domoticz_pass[48];
+
     /* Z-Wave control — gates the Settings → Z-Wave management screen's
      * write actions (include/exclude/on-off/rename). Default 0. Flipping it
      * on also writes <supportControl>1</supportControl> into the stock

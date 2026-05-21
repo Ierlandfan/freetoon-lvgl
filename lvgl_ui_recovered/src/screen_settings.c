@@ -942,6 +942,11 @@ static void open_adapters(lv_event_t * e) {
     ui_push(screen_adapters_create());
 }
 
+static void open_domoticz(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_domoticz_create());
+}
+
 /* WiFi tile-tap: push the WiFi scan/connect/status screen. */
 static void open_wifi(lv_event_t * e) {
     (void)e;
@@ -2266,6 +2271,8 @@ lv_obj_t * screen_settings_create(void) {
               "scan & connect", open_wifi); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, "Adapters",
               "meter & boiler", open_adapters); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
+              "lights & blinds", open_domoticz); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, "Restart UI",
               "reload settings", open_restart_confirm); n++;
     #undef GX
