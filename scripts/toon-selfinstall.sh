@@ -47,10 +47,13 @@ if [ "$SZ" -lt 500000 ]; then
     rm -rf "$TMP"; exit 1
 fi
 
-# 2) helper scripts — install only if missing so we never clobber local edits.
+# 2) helper scripts — always refresh. These are freetoon's own plumbing
+# (launcher, VNC, OT-mode, companion gate); they ship bug fixes (e.g. the
+# framebuffer-offset VNC fix, the firewall port-open), so a re-run of the
+# installer must update them rather than keep a stale copy.
 for s in ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh; do
-    if [ ! -f "$DEST/$s" ]; then
-        dl "$s" "$TMP/$s" && cp "$TMP/$s" "$DEST/$s" && chmod +x "$DEST/$s"
+    if dl "$s" "$TMP/$s" && [ -s "$TMP/$s" ]; then
+        cp "$TMP/$s" "$DEST/$s" && chmod +x "$DEST/$s"
     fi
 done
 
