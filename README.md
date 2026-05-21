@@ -132,10 +132,13 @@ when qt-gui is the active UI.
 
 Browse + one-tap install of third-party integrations from
 [freetoon-integrations](https://github.com/Ierlandfan/freetoon-integrations).
-Each integration is a C daemon that publishes data on BoxTalk; toonui
-picks it up via its existing subscribe path. Phase 2 (in flight) will
-add tap-to-reassign so the user binds any installed integration to any
-home-tile slot.
+Each integration is a small daemon that publishes data on BoxTalk; toonui
+picks it up via its existing subscribe path, and Settings → Tiles binds any
+installed integration to any home-tile slot.
+
+**Want to build one?** See **[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)** —
+the developer guide: manifest format, the BoxTalk publish protocol, a minimal
+C daemon, cross-compiling, and how to publish to the catalog.
 
 ## Architecture
 
