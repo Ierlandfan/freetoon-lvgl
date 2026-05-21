@@ -1689,6 +1689,9 @@ static void on_page1_slot(lv_event_t * e) {
     (void)e;
     screen_settings_open_tile_slots_modal();
 }
+void screen_home_reset_to_main(void) {
+    if (home_tile_page != 0) home_show_page(0);
+}
 static void on_home_gesture_to_lights(lv_event_t * e) {
     (void)e;
     open_lights_backend();
