@@ -6,6 +6,7 @@
  * Tap a tile to navigate to its detail screen.
  */
 #include "screens.h"
+#include "inbox.h"
 #include "boxtalk.h"
 #include "icons.h"
 #include "homewizard.h"
@@ -939,6 +940,25 @@ static void refresh_cb(lv_timer_t * t) {
         if (update_env_btn) {
             if (relevant && update_minimized) lv_obj_clear_flag(update_env_btn, LV_OBJ_FLAG_HIDDEN);
             else                              lv_obj_add_flag(update_env_btn, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    /* Inbox envelope — show it whenever happ_usermsg has messages; the red
+     * badge carries the unread count. The inbox model is fed live by the
+     * BoxTalk notifications subscription (inbox_parse_dataset). */
+    if (envelope_btn && envelope_badge && envelope_badge_lbl) {
+        if (inbox_count > 0) {
+            lv_obj_clear_flag(envelope_btn, LV_OBJ_FLAG_HIDDEN);
+            if (inbox_unread > 0) {
+                if (inbox_unread > 9) lv_label_set_text(envelope_badge_lbl, "9+");
+                else                  lv_label_set_text_fmt(envelope_badge_lbl, "%d", inbox_unread);
+                lv_obj_clear_flag(envelope_badge, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(envelope_badge, LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            lv_obj_add_flag(envelope_btn,   LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(envelope_badge, LV_OBJ_FLAG_HIDDEN);
         }
     }
     /* Live status line inside the About/Update modal (if open) — frozen while
