@@ -2384,7 +2384,7 @@ lv_obj_t * screen_home_create(void) {
     for (int i = 0; i < 2; i++) {
         home_dot[i] = lv_obj_create(scr_root);
         lv_obj_set_size(home_dot[i], 10, 10);
-        lv_obj_set_pos(home_dot[i], 966 + i * 18, 435);   /* top-right, off the ticker row */
+        lv_obj_set_pos(home_dot[i], 966 + i * 18, 461);   /* on the location row, right — off the ticker */
         lv_obj_set_style_radius(home_dot[i], LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(home_dot[i], lv_color_hex(0xffffff), 0);
         lv_obj_set_style_border_width(home_dot[i], 0, 0);
@@ -2466,14 +2466,15 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_forecast_city, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_forecast_city, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_forecast_city, settings.weather_location);
-    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 431);
+    /* Location sits BELOW the ticker, as the forecast's header line. */
+    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 457);
 
-    /* News ticker — full-width strip on its own row directly above the
-     * forecast band. Tap opens the headline list + QR. */
+    /* News ticker — full-width strip at the top of the bottom band, above the
+     * location + forecast. Tap opens the headline list + QR. */
     news_ticker = lv_label_create(scr_root);
     lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(news_ticker, 1000);
-    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 12, 454);
+    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 12, 432);
     lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);
     lv_obj_set_style_text_font(news_ticker, &lv_font_montserrat_18, 0);
     lv_label_set_text(news_ticker, "");
