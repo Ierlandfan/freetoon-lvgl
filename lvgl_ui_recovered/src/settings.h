@@ -140,6 +140,11 @@ typedef struct {
     int  tile_rotate_seconds;          /* 3..120 */
     char tile_rotate_members[256];     /* "id1,id2,id3" */
 
+    /* Newsreader — built-in RSS ticker above the forecast on the home screen.
+     * Tapping a headline shows a QR to open the article on your phone. */
+    int  news_enabled;
+    char news_rss_url[256];
+
     /* Client mode — this Toon is a "slave" that mirrors a master Toon over
      * its PWA HTTP API instead of talking to local HCB daemons. When 1, all
      * local integrations (BoxTalk, P1, meteradapter, weather, waste, vent,

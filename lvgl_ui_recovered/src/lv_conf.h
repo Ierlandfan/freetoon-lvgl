@@ -660,7 +660,7 @@
 #define LV_USE_GIF 1   /* Buienradar radar map is a GIF89a animation, not PNG. */
 
 /*QR code library*/
-#define LV_USE_QRCODE 0
+#define LV_USE_QRCODE 1
 
 /*FreeType library*/
 #define LV_USE_FREETYPE 0

@@ -108,6 +108,8 @@ int main(int argc, char** argv) {
         extern int domoticz_start(void);
         if (domoticz_start() != 0)
             fprintf(stderr, "[main] domoticz_start failed\n");
+        extern int news_start(void);
+        news_start();
     }
     if (healthcheck_start() != 0)
         fprintf(stderr, "[main] healthcheck_start failed\n");

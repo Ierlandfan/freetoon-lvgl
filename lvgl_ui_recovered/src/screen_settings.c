@@ -92,6 +92,8 @@ static lv_obj_t * ta_rotate_secs  = NULL;
 static lv_obj_t * rotate_cb[16]   = {0};
 static char       rotate_cb_id[16][48];
 static int        rotate_cb_count = 0;
+static lv_obj_t * sw_news      = NULL;
+static lv_obj_t * ta_news_url  = NULL;
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
     int city_changed = 0;
@@ -1168,6 +1170,60 @@ static void open_wifi(lv_event_t * e) {
     ui_push(screen_wifi_create());
 }
 
+/* Newsreader: enable + RSS feed URL. */
+static void on_news_apply(lv_event_t * e) {
+    (void)e;
+    if (sw_news) settings.news_enabled = lv_obj_has_state(sw_news, LV_STATE_CHECKED) ? 1 : 0;
+    if (ta_news_url) {
+        const char * u = lv_textarea_get_text(ta_news_url);
+        snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", u ? u : "");
+    }
+    settings_save();
+    open_restart_confirm(NULL);   /* the fetch thread starts on restart */
+}
+static void open_news_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Newsreader", 460);
+    int y = 70;
+
+    lv_obj_t * r = panel_row(p, y, "News ticker on home screen", NULL);
+    sw_news = row_switch(r, settings.news_enabled, NULL);
+    y += 90;
+
+    lv_obj_t * lbl = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lbl, "RSS feed URL:");
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_news_url = lv_textarea_create(p);
+    lv_obj_set_size(ta_news_url, 800, 44);
+    lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, 4, y + 34);
+    lv_textarea_set_one_line(ta_news_url, true);
+    lv_textarea_set_text(ta_news_url, settings.news_rss_url);
+    y += 100;
+
+    lv_obj_t * hint = lv_label_create(p);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(hint, 800);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(hint,
+        "Headlines scroll above the forecast; tap them to get a QR code that "
+        "opens the article on your phone. Any RSS/Atom feed works "
+        "(default: NOS Nieuws).");
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y);
+
+    lv_obj_t * btn = lv_btn_create(p);
+    lv_obj_set_size(btn, 220, 50);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_add_event_cb(btn, on_news_apply, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bl = lv_label_create(btn);
+    lv_label_set_text(bl, "Apply & restart");
+    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(bl);
+}
+
 static void open_uimode_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("UI mode", 440);
@@ -1345,6 +1401,23 @@ static void on_tile_slot_change(lv_event_t * e) {
     tile_slots_bind(slot, slot_dropdown_to_id(idx));
 }
 
+static void on_modal_to_marketplace(lv_event_t * e) {
+    modal_close(e);                       /* tears down this modal (async) */
+    ui_push(screen_marketplace_create()); /* then open the marketplace */
+}
+static lv_obj_t * marketplace_button(lv_obj_t * parent) {
+    lv_obj_t * b = lv_btn_create(parent);
+    lv_obj_set_size(b, 250, 50);
+    lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, -4, -8);
+    lv_obj_set_style_bg_color(b, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(b, on_modal_to_marketplace, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * l = lv_label_create(b);
+    lv_label_set_text(l, LV_SYMBOL_DOWNLOAD "  Open Marketplace");
+    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_center(l);
+    return b;
+}
+
 static void open_tile_slots_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("Tile slots", 500);
@@ -1356,10 +1429,11 @@ static void open_tile_slots_modal(lv_event_t * e) {
         lv_obj_set_width(msg, 800);
         lv_label_set_long_mode(msg, LV_LABEL_LONG_WRAP);
         lv_label_set_text(msg,
-            "No marketplace integrations installed yet. Open "
-            "Settings -> Marketplace to add one, then come back here "
-            "to assign it to a tile.");
+            "No marketplace integrations installed yet. Open the "
+            "Marketplace to add one, then come back here to assign it "
+            "to a tile.");
         lv_obj_align(msg, LV_ALIGN_TOP_LEFT, 4, 80);
+        marketplace_button(p);
         return;
     }
 
@@ -1409,13 +1483,13 @@ static void open_tile_slots_modal(lv_event_t * e) {
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_width(hint, 800);
+    lv_obj_set_width(hint, 540);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint,
         "Energy/Family/Vent/Water are the page-1 tiles; \"Page 2\" slots show on "
-        "the swipe page. \"Built-in\" keeps the default content. You can also "
-        "long-press a tile on the home screen to pick directly.");
+        "the swipe page. \"Built-in\" keeps the default content.");
     lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+    marketplace_button(p);
 }
 
 /* Public entry point called by screen_home.c long-press handler. Just
@@ -2502,6 +2576,8 @@ lv_obj_t * screen_settings_create(void) {
               "mirror a master Toon", open_client_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, "Auto-rotate",
               "cycle a tile's content", open_rotate_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Newsreader",
+              "RSS headlines ticker", open_news_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, "Restart UI",
               "reload settings", open_restart_confirm); n++;
     #undef GX
