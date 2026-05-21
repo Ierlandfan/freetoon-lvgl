@@ -40,8 +40,19 @@ APP_SRC       := main.c boxtalk.c ui_stack.c screen_home.c screen_thermostat.c \
 ALL_SRC       := $(APP_SRC) $(LVGL_SRC) $(LVDRV_SRC)
 OBJ           := $(patsubst %.c,$(BUILDDIR)/%.o,$(ALL_SRC))
 
+# Make doesn't track -D flag changes, so changing BUILD_VERSION alone won't
+# recompile the files that bake it in (update_check.c, screen_home.c) — that
+# produced mismatched version stamps in a binary. Stamp the value into a file
+# that's rewritten only when it changes, and make those objects depend on it.
+VERFILE := $(BUILDDIR)/.buildver
+$(shell mkdir -p $(BUILDDIR); [ "$$(cat $(VERFILE) 2>/dev/null)" = "$(BUILD_VERSION)" ] || printf '%s' "$(BUILD_VERSION)" > $(VERFILE))
+
 .PHONY: all clean
 all: $(BUILDDIR)/$(OUT) $(BUILDDIR)/fbvnc_input
+
+# Recompile the version-bearing objects whenever BUILD_VERSION changes
+# (placed after `all` so it doesn't hijack the default goal).
+$(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o: $(VERFILE)
 
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
