@@ -2384,7 +2384,7 @@ lv_obj_t * screen_home_create(void) {
     for (int i = 0; i < 2; i++) {
         home_dot[i] = lv_obj_create(scr_root);
         lv_obj_set_size(home_dot[i], 10, 10);
-        lv_obj_set_pos(home_dot[i], 775 + i * 18, 437);
+        lv_obj_set_pos(home_dot[i], 966 + i * 18, 435);   /* top-right, off the ticker row */
         lv_obj_set_style_radius(home_dot[i], LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(home_dot[i], lv_color_hex(0xffffff), 0);
         lv_obj_set_style_border_width(home_dot[i], 0, 0);
@@ -2466,14 +2466,14 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_forecast_city, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_forecast_city, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_forecast_city, settings.weather_location);
-    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 428);
+    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 431);
 
-    /* News ticker — scrolls RSS headlines to the right of the city line,
-     * just above the forecast band. Tap opens the headline list + QR. */
+    /* News ticker — full-width strip on its own row directly above the
+     * forecast band. Tap opens the headline list + QR. */
     news_ticker = lv_label_create(scr_root);
     lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_set_width(news_ticker, 430);   /* ends before the page dots at x≈770 */
-    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 320, 432);
+    lv_obj_set_width(news_ticker, 1000);
+    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 12, 454);
     lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);
     lv_obj_set_style_text_font(news_ticker, &lv_font_montserrat_18, 0);
     lv_label_set_text(news_ticker, "");
@@ -2488,8 +2488,8 @@ lv_obj_t * screen_home_create(void) {
            header above; height shrunk to match so the bottom edge stays
            flush with the screen. --- */
     forecast_box = lv_obj_create(scr_root);
-    lv_obj_set_size(forecast_box, 1004, 128);
-    lv_obj_set_pos(forecast_box, 10, 462);
+    lv_obj_set_size(forecast_box, 1004, 116);
+    lv_obj_set_pos(forecast_box, 10, 480);
     lv_obj_set_style_bg_color(forecast_box, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_radius(forecast_box, 12, 0);
     lv_obj_set_style_border_width(forecast_box, 0, 0);
