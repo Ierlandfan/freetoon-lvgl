@@ -1464,7 +1464,7 @@ static lv_obj_t * lbl_wireless = NULL;
 static const char * mode_label(const char * m) {
     /* Hyphens (not em-dashes): Montserrat at this size lacks the em-dash
      * glyph and would render it as a missing-glyph square. */
-    if (strcmp(m, "off")      == 0) return "Off - keteladapter direct, no bridge";
+    if (strcmp(m, "off")      == 0) return "Direct - keteladapter is the OT master (original qt-gui behaviour, no bridge script)";
     if (strcmp(m, "wireless") == 0) return "Wireless - bridge fakes Quby, OTGW drives boiler";
     return                             "Proxy - bridge sniffs Quby, native heat path preserved";
 }
@@ -1594,7 +1594,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     const struct { lv_obj_t ** btn_slot; lv_obj_t ** lbl_slot;
                    const char * caption;
                    lv_event_cb_t cb; int x; } picks[] = {
-        { &btn_off,      &lbl_off,      "Off",      on_mode_off_click,      120 },
+        { &btn_off,      &lbl_off,      "Direct",   on_mode_off_click,      120 },
         { &btn_proxy,    &lbl_proxy,    "Proxy",    on_mode_proxy_click,    270 },
         { &btn_wireless, &lbl_wireless, "Wireless", on_mode_wireless_click, 470 },
     };
