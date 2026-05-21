@@ -21,6 +21,7 @@
 #include "boxtalk.h"
 #include "icons.h"
 #include "tile_slots.h"
+#include "news.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,8 +93,9 @@ static lv_obj_t * ta_rotate_secs  = NULL;
 static lv_obj_t * rotate_cb[16]   = {0};
 static char       rotate_cb_id[16][48];
 static int        rotate_cb_count = 0;
-static lv_obj_t * sw_news      = NULL;
-static lv_obj_t * ta_news_url  = NULL;
+static lv_obj_t * sw_news         = NULL;
+static lv_obj_t * ta_news_url     = NULL;
+static lv_obj_t * lbl_news_status = NULL;
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
     int city_changed = 0;
@@ -1181,9 +1183,17 @@ static void on_news_apply(lv_event_t * e) {
     settings_save();
     open_restart_confirm(NULL);   /* the fetch thread starts on restart */
 }
+static void on_news_test(lv_event_t * e) {
+    (void)e;
+    if (!ta_news_url || !lbl_news_status) return;
+    lv_label_set_text(lbl_news_status, "Testen...");
+    char msg[160];
+    news_test_feed(lv_textarea_get_text(ta_news_url), msg, sizeof msg);
+    lv_label_set_text(lbl_news_status, msg);
+}
 static void open_news_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Newsreader", 460);
+    lv_obj_t * p = modal_open("Newsreader", 470);
     int y = 70;
 
     lv_obj_t * r = panel_row(p, y, "News ticker on home screen", NULL);
@@ -1196,11 +1206,28 @@ static void open_news_modal(lv_event_t * e) {
     lv_label_set_text(lbl, "RSS feed URL:");
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
     ta_news_url = lv_textarea_create(p);
-    lv_obj_set_size(ta_news_url, 800, 44);
+    lv_obj_set_size(ta_news_url, 640, 44);
     lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, 4, y + 34);
     lv_textarea_set_one_line(ta_news_url, true);
     lv_textarea_set_text(ta_news_url, settings.news_rss_url);
-    y += 100;
+
+    lv_obj_t * tbtn = lv_btn_create(p);
+    lv_obj_set_size(tbtn, 150, 44);
+    lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, 656, y + 34);
+    lv_obj_set_style_bg_color(tbtn, lv_color_hex(0x33445a), 0);
+    lv_obj_add_event_cb(tbtn, on_news_test, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, "Test");
+    lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0); lv_obj_center(tl);
+    y += 86;
+
+    lbl_news_status = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_news_status, lv_color_hex(0x9fc4e6), 0);
+    lv_obj_set_style_text_font(lbl_news_status, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(lbl_news_status, 800);
+    lv_label_set_long_mode(lbl_news_status, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(lbl_news_status, "");
+    lv_obj_align(lbl_news_status, LV_ALIGN_TOP_LEFT, 4, y);
+    y += 30;
 
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);

@@ -161,6 +161,43 @@ int news_start(void) {
     return 0;
 }
 
+int news_test_feed(const char * url, char * msg, size_t msgsz) {
+    if (!url_ok(url)) { snprintf(msg, msgsz, "Ongeldige URL (http/https, geen spaties)"); return -1; }
+    char cmd[400];
+    snprintf(cmd, sizeof cmd,
+        "curl -s -L -m 12 -A 'freetoon-news/1.0' '%s' 2>/dev/null", url);
+    FILE * f = popen(cmd, "r");
+    if (!f) { snprintf(msg, msgsz, "Kon curl niet starten"); return -1; }
+    static char buf[131072];
+    size_t got = fread(buf, 1, sizeof buf - 1, f);
+    pclose(f);
+    buf[got] = 0;
+    if (got < 32) { snprintf(msg, msgsz, "Geen data ontvangen"); return -1; }
+
+    /* Count items + grab the first title. */
+    int n = 0;
+    char first[NEWS_TITLE_MAX] = "";
+    const char * p = buf; const char * end = buf + got;
+    while (1) {
+        const char * it = memmem(p, end - p, "<item", 5);
+        if (!it) it = memmem(p, end - p, "<entry", 6);
+        if (!it) break;
+        const char * it_end = memmem(it, end - it, "</item", 6);
+        if (!it_end) it_end = memmem(it, end - it, "</entry", 7);
+        if (!it_end) it_end = end;
+        char title[NEWS_TITLE_MAX];
+        if (tag_text(it, it_end, "title", title, sizeof title) == 0 && title[0]) {
+            if (n == 0) snprintf(first, sizeof first, "%s", title);
+            n++;
+        }
+        p = it_end + 1;
+        if (p >= end) break;
+    }
+    if (n == 0) { snprintf(msg, msgsz, "Geen koppen gevonden (geen RSS/Atom?)"); return 0; }
+    snprintf(msg, msgsz, "OK: %d koppen. Eerste: %.80s", n, first);
+    return n;
+}
+
 int news_count(void) {
     pthread_mutex_lock(&g_mtx);
     int c = g_count;

@@ -845,7 +845,7 @@ static void refresh_cb(lv_timer_t * t) {
     /* News ticker text — rebuild only when the lead headline changes (every
      * ~15 min) so the scroll animation isn't reset each second. */
     if (news_ticker) {
-        if (settings.news_enabled && news_count() > 0) {
+        if (settings.news_enabled && news_count() > 0 && home_tile_page == 0) {
             lv_obj_clear_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
             static char last_first[NEWS_TITLE_MAX] = "";
             char t0[NEWS_TITLE_MAX], l0[NEWS_LINK_MAX];
@@ -1674,10 +1674,14 @@ static void home_show_page(int n) {
     if (n == 0) {
         for (int i = 0; i < 5; i++) if (p0[i]) lv_obj_clear_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
         if (home_page1) lv_obj_add_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
+        /* ticker belongs to page 0 — show it again (if news is on) */
+        if (news_ticker && settings.news_enabled) lv_obj_clear_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
         apply_offline_tile_visibility();   /* re-hide offline tiles after un-hiding */
     } else {
         for (int i = 0; i < 5; i++) if (p0[i]) lv_obj_add_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
         if (home_page1) lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
+        /* hide the page-0 ticker so it doesn't draw over the page-2 slots */
+        if (news_ticker) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
     }
     home_set_dot(n);
 }
@@ -2468,8 +2472,8 @@ lv_obj_t * screen_home_create(void) {
      * just above the forecast band. Tap opens the headline list + QR. */
     news_ticker = lv_label_create(scr_root);
     lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_set_width(news_ticker, 680);
-    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 320, 430);
+    lv_obj_set_width(news_ticker, 430);   /* ends before the page dots at x≈770 */
+    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 320, 432);
     lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);
     lv_obj_set_style_text_font(news_ticker, &lv_font_montserrat_18, 0);
     lv_label_set_text(news_ticker, "");
@@ -2484,8 +2488,8 @@ lv_obj_t * screen_home_create(void) {
            header above; height shrunk to match so the bottom edge stays
            flush with the screen. --- */
     forecast_box = lv_obj_create(scr_root);
-    lv_obj_set_size(forecast_box, 1004, 144);
-    lv_obj_set_pos(forecast_box, 10, 448);
+    lv_obj_set_size(forecast_box, 1004, 128);
+    lv_obj_set_pos(forecast_box, 10, 462);
     lv_obj_set_style_bg_color(forecast_box, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_radius(forecast_box, 12, 0);
     lv_obj_set_style_border_width(forecast_box, 0, 0);

@@ -12,6 +12,9 @@
 #define NEWS_LINK_MAX    256
 
 int  news_start(void);                 /* spawn fetch thread if news_enabled */
+/* Synchronously fetch+parse `url` (for the settings Test button). Returns the
+ * headline count (>=0) or -1 on error; writes a human message into `msg`. */
+int  news_test_feed(const char * url, char * msg, size_t msgsz);
 int  news_count(void);                 /* number of headlines currently held */
 /* Copy the i-th headline + link into the given buffers. Returns 0 on success. */
 int  news_item(int i, char * title, size_t tsz, char * link, size_t lsz);
