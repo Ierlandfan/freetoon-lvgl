@@ -1826,7 +1826,7 @@ lv_obj_t * screen_home_create(void) {
     /* --- Big thermostat tile (height 360 — was 410, lost 50 px to make room
            for the new Curtains strip below it). --- */
     lv_obj_t * th = lv_obj_create(scr_root);
-    lv_obj_set_size(th, 520, 360);
+    lv_obj_set_size(th, 520, 344);
     lv_obj_set_pos(th, 20, 20);
     lv_obj_set_style_bg_color(th, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_border_width(th, 0, 0);
@@ -2502,7 +2502,7 @@ lv_obj_t * screen_home_create(void) {
         int col_w = 1004 / WEATHER_FORECAST_DAYS;
         for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
             lv_obj_t * col = lv_obj_create(forecast_box);
-            lv_obj_set_size(col, col_w - 4, 132);
+            lv_obj_set_size(col, col_w - 4, 104);   /* fit the shorter box (was 132 → wind clipped) */
             lv_obj_set_pos(col, i * col_w + 2, 0);
             lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(col, 0, 0);
