@@ -98,6 +98,20 @@ function escapeHtml(s) {
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* Carrier → track-&-trace URL templates. {code} = tracking number,
+ * {pc} = postcode (substituted at render time by resolveTrackUrl). Pick a
+ * carrier in the add form and the URL is built automatically — no scraping,
+ * always opens the official page. */
+const CARRIERS = {
+  postnl: 'https://jouw.postnl.nl/track-and-trace/{code}-NL-{pc}',
+  dhl:    'https://www.dhlparcel.nl/nl/consument/pakket-volgen?tt={code}&pc={pc}',
+  dpd:    'https://www.dpdgroup.com/nl/mydpd/mijn-pakketten/zoeken?lang=nl&parcelNumber={code}',
+  gls:    'https://gls-group.com/NL/nl/pakket-volgen?match={code}',
+  ups:    'https://www.ups.com/track?loc=nl_NL&tracknum={code}',
+  fedex:  'https://www.fedex.com/fedextrack/?trknbr={code}',
+  bpost:  'https://track.bpost.cloud/btr/web/#/search?itemCode={code}&postalCode={pc}',
+};
+
 /* Resolve a tracking URL with the package's postal_code substituted in.
  * Supports three patterns commonly seen in carrier URLs:
  *   1. {pc}            literal placeholder
@@ -188,15 +202,24 @@ const PKG = {
   },
 };
 $('pkg-add-btn').onclick = () => {
+  const carrier  = $('pkg-carrier').value;
+  const tracking = $('pkg-tracking').value.trim();
+  let url        = $('pkg-url').value.trim();
+  // Auto-build the track-&-trace URL from the chosen carrier + tracking code
+  // when no explicit URL was typed. {pc} stays for resolveTrackUrl to fill.
+  if (!url && carrier && CARRIERS[carrier] && tracking)
+    url = CARRIERS[carrier].replace('{code}', encodeURIComponent(tracking));
   PKG.add({
     label:       $('pkg-label').value,
     eta:         $('pkg-eta').value || new Date().toISOString().slice(0,10),
     place:       $('pkg-place').value,
-    tracking:    $('pkg-tracking').value,
+    tracking:    tracking,
     postal_code: $('pkg-postal').value,
-    url:         $('pkg-url').value,
+    carrier:     carrier,
+    url:         url,
   });
   ['pkg-label','pkg-place','pkg-tracking','pkg-url'].forEach(id => $(id).value = '');
+  $('pkg-carrier').value = '';
   // keep postal_code sticky — usually constant for your address
 };
 $('pkg-eta').value = new Date().toISOString().slice(0,10);

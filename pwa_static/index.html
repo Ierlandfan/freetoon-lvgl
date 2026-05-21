@@ -55,7 +55,7 @@
   .pkg-ctl button.danger{background:#3a1a0a;color:#f88}
   .pkg-ctl button:active{background:#3a5070}
   .pkg-add{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
-  .pkg-add input{padding:10px;background:#0f1a2a;border:1px solid #2a4060;
+  .pkg-add input,.pkg-add select{padding:10px;background:#0f1a2a;border:1px solid #2a4060;
                  border-radius:8px;color:#fff;font-size:14px;font-family:inherit;
                  min-width:0}
   .pkg-add input[type="date"]{color-scheme:dark}
@@ -132,7 +132,17 @@
       <input id="pkg-place"    placeholder="Plek (bv. voorhal)" />
       <input id="pkg-tracking" placeholder="Tracking nr (optie)" />
       <input id="pkg-postal"   placeholder="Postcode (verificatie)" />
-      <input id="pkg-url"      placeholder="Track URL (gebruik {pc} of () voor postcode)" />
+      <select id="pkg-carrier">
+        <option value="">Vervoerder (auto-URL)…</option>
+        <option value="postnl">PostNL</option>
+        <option value="dhl">DHL</option>
+        <option value="dpd">DPD</option>
+        <option value="gls">GLS</option>
+        <option value="ups">UPS</option>
+        <option value="fedex">FedEx</option>
+        <option value="bpost">bpost</option>
+      </select>
+      <input id="pkg-url"      placeholder="Track URL (auto uit vervoerder, of zelf {pc})" />
       <button id="pkg-add-btn">Voeg toe</button>
     </div>
   </div>
