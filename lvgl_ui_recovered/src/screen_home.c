@@ -1996,7 +1996,7 @@ lv_obj_t * screen_home_create(void) {
             lv_obj_t * b = lv_btn_create(th);
             lv_obj_set_size(b, bw, bh);
             lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total / 2 + i * (bw + gap) + bw / 2, 104);
+                         -total / 2 + i * (bw + gap) + bw / 2, 114);
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 8, 0);
             lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
