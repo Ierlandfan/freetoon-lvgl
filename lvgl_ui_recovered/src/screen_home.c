@@ -199,7 +199,16 @@ static lv_obj_t * tile_water    = NULL;
 static lv_obj_t * tile_family   = NULL;
 static lv_obj_t * tile_vent     = NULL;
 static lv_obj_t * tile_energy   = NULL;
+static lv_obj_t * tile_waste    = NULL;
 static lv_obj_t * tile_curtains = NULL;
+
+/* Swipeable tile pages. The five built-in tiles (Waste/Energy/Vent/Family/
+ * Water) are "page 0". Swiping left in the tile zone reveals page 1 — an
+ * overlay with extra configurable slots — and swiping right returns. We keep
+ * page 0 absolutely positioned and just toggle visibility (no reparenting). */
+static lv_obj_t * home_page1      = NULL;   /* page-1 overlay container */
+static lv_obj_t * home_dot[2]     = {0};    /* pagination dots */
+static int        home_tile_page  = 0;
 /* Small banner at the top of the home screen — shown when the update
  * checker finds a newer freetoon-lvgl release. Tapping it opens a modal
  * with the release notes + the one-line install command. */
@@ -1538,6 +1547,31 @@ static void open_lights_backend(void) {
     if (settings.enable_domoticz) ui_push(screen_domoticz_create());
     else                          ui_push(screen_lights_create());
 }
+
+/* ---- swipeable tile pages ---- */
+static void home_set_dot(int active) {
+    for (int i = 0; i < 2; i++)
+        if (home_dot[i])
+            lv_obj_set_style_bg_opa(home_dot[i],
+                                    i == active ? LV_OPA_COVER : LV_OPA_30, 0);
+}
+static void home_show_page(int n) {
+    home_tile_page = n;
+    lv_obj_t * p0[5] = { tile_waste, tile_energy, tile_vent, tile_family, tile_water };
+    if (n == 0) {
+        for (int i = 0; i < 5; i++) if (p0[i]) lv_obj_clear_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
+        if (home_page1) lv_obj_add_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
+        apply_offline_tile_visibility();   /* re-hide offline tiles after un-hiding */
+    } else {
+        for (int i = 0; i < 5; i++) if (p0[i]) lv_obj_add_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
+        if (home_page1) lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
+    }
+    home_set_dot(n);
+}
+static void on_page1_slot(lv_event_t * e) {
+    (void)e;
+    screen_settings_open_tile_slots_modal();
+}
 static void on_home_gesture_to_lights(lv_event_t * e) {
     (void)e;
     open_lights_backend();
@@ -1568,8 +1602,17 @@ static void on_lights_handle(lv_event_t * e) {
 
 static void on_home_gesture(lv_event_t * e) {
     (void)e;
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_RIGHT) open_lights_backend();
+    lv_indev_t * indev = lv_indev_get_act();
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    lv_point_t p; lv_indev_get_point(indev, &p);
+    /* Right of x≈556 is the tile zone: swipe pages between tile sets.
+     * Left of it (the thermostat) keeps the swipe-right-for-lights shortcut. */
+    if (p.x >= 556) {
+        if      (dir == LV_DIR_LEFT)  home_show_page(1);
+        else if (dir == LV_DIR_RIGHT) home_show_page(0);
+    } else if (dir == LV_DIR_RIGHT) {
+        open_lights_backend();
+    }
 }
 
 lv_obj_t * screen_home_create(void) {
@@ -1899,6 +1942,7 @@ lv_obj_t * screen_home_create(void) {
     tile_t waste_big;
     make_tile(scr_root, 560, 20, 220, 200, "Waste", 0x88dd66,
               open_placeholder, &waste_big);
+    tile_waste = waste_big.tile;
 
     waste_icon_1 = lv_img_create(waste_big.tile);
     lv_img_set_src(waste_icon_1, &icon_trash);
@@ -2115,6 +2159,46 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_arc_width(water_spinner, 6, LV_PART_MAIN);
     lv_obj_set_style_arc_width(water_spinner, 6, LV_PART_INDICATOR);
     lv_obj_add_flag(water_spinner, LV_OBJ_FLAG_HIDDEN);
+
+    /* ---- Page-1 tile overlay (revealed by swiping the tile zone left) ----
+     * Four configurable slots; tapping one opens the tile-slots picker so the
+     * user can map any integration onto it. Sits on top of the tile zone and
+     * is hidden until paged in. */
+    home_page1 = lv_obj_create(scr_root);
+    lv_obj_set_pos(home_page1, 556, 16);
+    lv_obj_set_size(home_page1, 456, 418);
+    lv_obj_set_style_bg_opa(home_page1, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(home_page1, 0, 0);
+    lv_obj_set_style_pad_all(home_page1, 0, 0);
+    lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_SCROLLABLE);
+    {
+        static const struct { int x, y; const char * t; uint32_t c; } slots[4] = {
+            {   4,   4, "Slot 1", 0x88dd66 }, { 234,   4, "Slot 2", 0xaa77ff },
+            {   4, 214, "Slot 3", 0x66bbdd }, { 234, 214, "Slot 4", 0xff8866 },
+        };
+        for (int i = 0; i < 4; i++) {
+            tile_t s;
+            make_tile(home_page1, slots[i].x, slots[i].y, 214, 196,
+                      slots[i].t, slots[i].c, on_page1_slot, &s);
+            lv_obj_t * hint = lv_label_create(s.tile);
+            lv_obj_set_style_text_color(hint, lv_color_hex(COL_TEXT_DIM), 0);
+            lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
+            lv_label_set_text(hint, LV_SYMBOL_PLUS "  Tap to assign");
+            lv_obj_align(hint, LV_ALIGN_CENTER, 0, 6);
+        }
+    }
+
+    /* Pagination dots, centred in the gap under the tile zone. */
+    for (int i = 0; i < 2; i++) {
+        home_dot[i] = lv_obj_create(scr_root);
+        lv_obj_set_size(home_dot[i], 10, 10);
+        lv_obj_set_pos(home_dot[i], 775 + i * 18, 437);
+        lv_obj_set_style_radius(home_dot[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(home_dot[i], lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_width(home_dot[i], 0, 0);
+        lv_obj_clear_flag(home_dot[i], LV_OBJ_FLAG_SCROLLABLE);
+    }
+    home_show_page(0);
 
     /* --- Curtains tile — slim strip below the (shrunk) thermostat tile.
            Talks to Home Assistant via REST. Shows the group state +
