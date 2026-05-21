@@ -23,6 +23,7 @@
 #include "schedule.h"
 #include "settings.h"
 #include "weather.h"
+#include "notify.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -376,45 +377,16 @@ static int handle_packages_get(int fd) {
 
 /* Append the POSTed JSON object to the list. Generates id + added_at +
  * defaults status="pending". Caller's body is a single JSON object. */
-/* Fire-and-forget HA notify on state change. Reads HA token + recipient
- * from /mnt/data/ha.cfg (token) and /mnt/data/notify.cfg (one line:
- * `notify.mobile_app_<name>`). Empty cfg → silently skip. */
-static void notify_ha_state_change(const char * merchant, const char * label,
-                                   const char * old_status, const char * new_status,
-                                   const char * eta) {
-    FILE * t = fopen("/mnt/data/ha.cfg", "r");
-    if (!t) return;
-    char token[256] = ""; if (!fgets(token, sizeof(token), t)) { fclose(t); return; }
-    fclose(t);
-    char * nl = strchr(token, '\n'); if (nl) *nl = 0;
-    if (!token[0]) return;
-
-    FILE * n = fopen("/mnt/data/notify.cfg", "r");
-    char service[64] = "notify.mobile_app";
-    if (n) {
-        if (fgets(service, sizeof(service), n)) {
-            char * nl2 = strchr(service, '\n'); if (nl2) *nl2 = 0;
-        }
-        fclose(n);
-    }
-    /* HA notify service uses `/api/services/notify/<service_suffix>` so
-     * strip the "notify." prefix the user typed. */
-    const char * svc = service;
-    if (!strncmp(svc, "notify.", 7)) svc += 7;
-
-    char body[512];
-    snprintf(body, sizeof(body),
-        "{\"title\":\"%s: %s\",\"message\":\"%s (verwacht %s)\"}",
-        merchant, new_status, label, eta);
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 4 -X POST "
-        "-H 'Authorization: Bearer %s' -H 'Content-Type: application/json' "
-        "--data '%s' 'http://192.168.3.101:8123/api/services/notify/%s' "
-        ">/dev/null 2>&1 &",
-        token, body, svc);
-    system(cmd);
-    fprintf(stderr, "[pkg] notify HA: %s '%s' %s->%s\n",
+/* Notify on package state change — native Toon banner (happ_usermsg), no HA.
+ * subType is keyed per package so a later DeleteNotification could clear it. */
+static void notify_pkg_state_change(const char * merchant, const char * label,
+                                    const char * old_status, const char * new_status,
+                                    const char * eta) {
+    char text[256];
+    snprintf(text, sizeof text, "%s: %s — %s (verwacht %s)",
+             merchant, new_status, label, eta);
+    notify_show("package", merchant, text);
+    fprintf(stderr, "[pkg] notify (Toon): %s '%s' %s->%s\n",
             merchant, label, old_status, new_status);
 }
 
@@ -526,7 +498,7 @@ static int handle_packages_post(int fd, const char * body) {
                 pthread_mutex_unlock(&g_pkg_mtx);
                 /* Fire notify only on actual state advancement */
                 if (rank_new > rank_old && strcmp(xstatus, status) != 0) {
-                    notify_ha_state_change(merchant, label, xstatus, status, eta);
+                    notify_pkg_state_change(merchant, label, xstatus, status, eta);
                 }
                 return send_status(fd, 200, "OK", "{\"ok\":1,\"upsert\":\"updated\"}");
             }
@@ -557,7 +529,7 @@ static int handle_packages_post(int fd, const char * body) {
     pthread_mutex_unlock(&g_pkg_mtx);
     if (merchant[0] && !strcmp(status, "ordered")) {
         /* First time we hear of an order — fire a notify too */
-        notify_ha_state_change(merchant, label, "(new)", status, eta);
+        notify_pkg_state_change(merchant, label, "(new)", status, eta);
     }
     return send_status(fd, 200, "OK", "{\"ok\":1,\"upsert\":\"created\"}");
 }
