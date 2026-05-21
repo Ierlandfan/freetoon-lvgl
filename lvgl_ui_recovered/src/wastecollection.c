@@ -5,6 +5,7 @@
  */
 #include "wastecollection.h"
 #include "http.h"
+#include "settings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +44,23 @@ static int json_int(const char * json, const char * key, int dflt) {
 }
 
 static int read_config(char * postcode, int psz, char * huis, int hsz) {
+    /* Prefer freetoon's own Settings (toonui.cfg) so the postcode/house-number
+     * can be set in the UI without editing the stock TSC json. Fall back to the
+     * TSC waste plugin's config when the freetoon fields are blank. */
+    if (settings.waste_postcode[0] && settings.waste_housenr[0]) {
+        /* Normalise the postcode regardless of how it was entered (PWA stores
+         * verbatim): strip spaces, uppercase → "1671 ad" becomes "1671AD". */
+        int o = 0;
+        for (const char * q = settings.waste_postcode; *q && o < psz - 1; q++) {
+            unsigned char c = (unsigned char)*q;
+            if (c == ' ') continue;
+            if (c >= 'a' && c <= 'z') c -= 32;
+            postcode[o++] = (char)c;
+        }
+        postcode[o] = 0;
+        snprintf(huis, hsz, "%s", settings.waste_housenr);
+        return 0;
+    }
     FILE * f = fopen(CFG_PATH, "r");
     if (!f) return -1;
     char body[1024];

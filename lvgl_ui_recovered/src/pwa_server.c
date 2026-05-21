@@ -743,6 +743,7 @@ static int handle_settings_get(int fd) {
         "\"active_brightness\":%d,\"dim_brightness\":%d,"
         "\"temp_offset_centi\":%d,\"show_dim_weather\":%d,"
         "\"show_dim_waste\":%d,\"dim_waste_lead_days\":%d,"
+        "\"waste_postcode\":\"%s\",\"waste_housenr\":\"%s\","
         "\"weather_location\":\"%s\",\"weather_location_id\":%d,"
         "\"forecast_mode\":%d,\"ot_bridge_mode\":\"%s\",\"otgw_host\":\"%s\","
         "\"mqtt_enabled\":%d,\"mqtt_host\":\"%s\",\"mqtt_port\":%d,\"mqtt_user\":\"%s\","
@@ -755,6 +756,7 @@ static int handle_settings_get(int fd) {
         settings.active_brightness, settings.dim_brightness,
         settings.temp_offset_centi, settings.show_dim_weather,
         settings.show_dim_waste, settings.dim_waste_lead_days,
+        settings.waste_postcode, settings.waste_housenr,
         settings.weather_location, settings.weather_location_id,
         settings.forecast_mode, settings.ot_bridge_mode, settings.otgw_host,
         settings.mqtt_enabled, settings.mqtt_host, settings.mqtt_port, settings.mqtt_user,
@@ -780,6 +782,10 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "show_dim_weather", &iv))   settings.show_dim_weather = !!iv;
     if (extract_int(body, "show_dim_waste", &iv))     settings.show_dim_waste = !!iv;
     if (extract_int(body, "dim_waste_lead_days", &iv))settings.dim_waste_lead_days = iv < 0 ? 0 : (iv > 7 ? 7 : iv);
+    if (extract_str(body, "waste_postcode", sv, sizeof sv))
+        snprintf(settings.waste_postcode, sizeof settings.waste_postcode, "%s", sv);
+    if (extract_str(body, "waste_housenr", sv, sizeof sv))
+        snprintf(settings.waste_housenr, sizeof settings.waste_housenr, "%s", sv);
     if (extract_int(body, "forecast_mode", &iv))      settings.forecast_mode = iv;
     if (extract_int(body, "mqtt_port", &iv))          settings.mqtt_port = iv;
     if (extract_int(body, "enable_p1_elec", &iv))     settings.enable_p1_elec = !!iv;
@@ -842,6 +848,7 @@ static const char SETTINGS_HTML[] =
 "['temp_offset_centi','Temp offset (centi-C)','n'],"
 "['show_dim_weather','Weather on dim','b'],['show_dim_waste','Waste on dim','b'],"
 "['dim_waste_lead_days','Waste lead days (0-7)','n'],"
+"['waste_postcode','Waste postcode (e.g. 1671AD)','t'],['waste_housenr','Waste house nr','t'],"
 "['Weather','h'],"
 "['weather_location','City (auto-resolves id)','t'],['weather_location_id','Buienradar id (auto)','n'],"
 "['forecast_mode','Forecast (0 auto/1 hourly/2 daily)','n'],"

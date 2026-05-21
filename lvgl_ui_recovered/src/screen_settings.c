@@ -508,9 +508,34 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, 220, y + 12);
 }
 
+static lv_obj_t * ta_waste_pc = NULL, * ta_waste_nr = NULL, * lbl_waste_status = NULL;
+static void on_waste_apply(lv_event_t * e) {
+    (void)e;
+    if (ta_waste_pc) {
+        /* Postcode → uppercase, strip spaces (HVC/most providers want "1671AD"). */
+        const char * src = lv_textarea_get_text(ta_waste_pc);
+        char pc[12]; size_t o = 0;
+        for (const char * q = src; *q && o + 1 < sizeof pc; q++) {
+            unsigned char c = (unsigned char)*q;
+            if (c == ' ') continue;
+            if (c >= 'a' && c <= 'z') c -= 32;
+            pc[o++] = (char)c;
+        }
+        pc[o] = 0;
+        snprintf(settings.waste_postcode, sizeof settings.waste_postcode, "%s", pc);
+    }
+    if (ta_waste_nr)
+        snprintf(settings.waste_housenr, sizeof settings.waste_housenr,
+                 "%s", lv_textarea_get_text(ta_waste_nr));
+    settings_save();
+    if (lbl_waste_status)
+        lv_label_set_text_fmt(lbl_waste_status, "Saved: %s %s  (refreshes shortly)",
+                              settings.waste_postcode, settings.waste_housenr);
+}
+
 static void open_waste_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Waste", 300);
+    lv_obj_t * p = modal_open("Waste", 470);
     int y = 70;
     lv_obj_t * r;
 
@@ -524,6 +549,49 @@ static void open_waste_modal(lv_event_t * e) {
     else lv_label_set_text_fmt(lbl_waste_lead, "vanaf %d dagen vooraf",
                                settings.dim_waste_lead_days);
     sl_waste_lead = row_slider(r, 0, 7, settings.dim_waste_lead_days, on_waste_lead_change);
+    y += 90;
+
+    /* Address — postcode + house number. Overrides the stock TSC waste config.
+     * (Provider selection arrives with the multi-provider fetch work; today the
+     * fetch is HVC Groep / inzamelkalender.) */
+    lv_obj_t * lbl_pc = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_pc, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_pc, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lbl_pc, "Postcode:");
+    lv_obj_align(lbl_pc, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_waste_pc = lv_textarea_create(p);
+    lv_obj_set_size(ta_waste_pc, 220, 44);
+    lv_obj_align(ta_waste_pc, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_textarea_set_one_line(ta_waste_pc, true);
+    lv_textarea_set_text(ta_waste_pc, settings.waste_postcode);
+
+    lv_obj_t * lbl_nr = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_nr, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_nr, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lbl_nr, "Nr:");
+    lv_obj_align(lbl_nr, LV_ALIGN_TOP_LEFT, 500, y);
+    ta_waste_nr = lv_textarea_create(p);
+    lv_obj_set_size(ta_waste_nr, 120, 44);
+    lv_obj_align(ta_waste_nr, LV_ALIGN_TOP_LEFT, 560, y - 4);
+    lv_textarea_set_one_line(ta_waste_nr, true);
+    lv_textarea_set_text(ta_waste_nr, settings.waste_housenr);
+    y += 60;
+
+    lv_obj_t * apply = lv_btn_create(p);
+    lv_obj_set_size(apply, 160, 48);
+    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, 240, y);
+    lv_obj_set_style_bg_color(apply, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(apply, on_waste_apply, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, "Save"); lv_obj_center(al);
+
+    lbl_waste_status = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_waste_status, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lbl_waste_status, &lv_font_montserrat_14, 0);
+    lv_obj_set_width(lbl_waste_status, 760);
+    lv_label_set_long_mode(lbl_waste_status, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(lbl_waste_status,
+        settings.waste_postcode[0] ? "" : "Leave blank to use the stock TSC waste config.");
+    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, 4, y + 56);
 }
 
 static void open_heating_modal(lv_event_t * e) {

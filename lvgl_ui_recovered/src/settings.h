@@ -14,6 +14,8 @@ typedef struct {
     int show_dim_waste;       /* 0/1 — show next-pickup on the dim screen */
     int dim_waste_lead_days;  /* 0..7 — only show if pickup is within this many days
                                  (0 disables; 1 = only on pickup day; 2 = day before + day of) */
+    char waste_postcode[12];  /* e.g. "1671AD" — overrides the TSC waste config when set */
+    char waste_housenr[8];    /* house number, e.g. "14" */
     int  vnc_enabled;         /* 0/1 — run the x11vnc remote-control server */
     char vnc_pass[16];        /* VNC password (plaintext, max 8 effective chars;
                                  empty = no password). No spaces. */
