@@ -15,6 +15,7 @@
 #include "settings.h"
 #include "tile_slots.h"
 #include "meteradapter.h"
+#include "client_link.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -999,6 +1000,11 @@ int boxtalk_set_setpoint(float temp) {
     int centi = (int)(temp * 100.0f + 0.5f);
     if (centi < 500)  centi = 500;   /* 5°C floor */
     if (centi > 3000) centi = 3000;  /* 30°C cap  */
+    if (settings.client_mode) {      /* slave: hand the write to the master */
+        int rc = client_link_setpoint(centi / 100.0f);
+        if (rc == 0) toon_state.setpoint = centi / 100.0f;
+        return rc;
+    }
     char q[64];
     snprintf(q, sizeof(q), "action=roomSetpoint&Setpoint=%d", centi);
     int rc = http_get_thermstat(q);
@@ -1042,6 +1048,11 @@ int boxtalk_set_state_value(int state, int centi) {
 
 int boxtalk_set_program(int state) {
     if (state < 0 || state > 3) return -1;
+    if (settings.client_mode) {      /* slave: hand the program change to the master */
+        int rc = client_link_program(state);
+        if (rc == 0) { toon_state.program_state = state; toon_state.active_state = state; }
+        return rc;
+    }
     char q[64];
     snprintf(q, sizeof(q), "action=changeSchemeState&state=%d", state);
     int rc = http_get_thermstat(q);

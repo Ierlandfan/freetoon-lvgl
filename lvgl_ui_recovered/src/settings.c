@@ -66,6 +66,8 @@ settings_t settings = {
     .enable_vent         = 0,
     .enable_ha           = 0,
     .enable_domoticz     = 0,
+    .client_mode         = 0,
+    .master_host         = "",
     .boot_picker_enabled = 1,
     .hide_offline_tiles  = 0,
     .update_check_enabled = 1,
@@ -187,6 +189,9 @@ void settings_load(void) {
         else if (strcmp(k, "enable_domoticz") == 0) settings.enable_domoticz = iv;
         else if (strcmp(k, "domoticz_host")   == 0)
             snprintf(settings.domoticz_host, sizeof settings.domoticz_host, "%s", v);
+        else if (strcmp(k, "client_mode")     == 0) settings.client_mode = iv;
+        else if (strcmp(k, "master_host")     == 0)
+            snprintf(settings.master_host, sizeof settings.master_host, "%s", v);
         else if (strcmp(k, "domoticz_user")   == 0)
             snprintf(settings.domoticz_user, sizeof settings.domoticz_user, "%s", v);
         else if (strcmp(k, "domoticz_pass")   == 0)
@@ -310,6 +315,8 @@ void settings_save(void) {
     fprintf(f, "enable_ha=%d\n",       settings.enable_ha);
     fprintf(f, "enable_domoticz=%d\n", settings.enable_domoticz);
     fprintf(f, "domoticz_host=%s\n",   settings.domoticz_host);
+    fprintf(f, "client_mode=%d\n",     settings.client_mode);
+    fprintf(f, "master_host=%s\n",     settings.master_host);
     fprintf(f, "domoticz_user=%s\n",   settings.domoticz_user);
     fprintf(f, "domoticz_pass=%s\n",   settings.domoticz_pass);
     fprintf(f, "enable_zwave=%d\n",    settings.enable_zwave);

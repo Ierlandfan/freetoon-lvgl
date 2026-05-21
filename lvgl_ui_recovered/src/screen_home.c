@@ -15,6 +15,7 @@
 #include "wastecollection.h"
 #include "ventilation.h"
 #include "homeassistant.h"
+#include "client_link.h"
 #include "packages.h"
 #include "tile_slots.h"
 #include "update_check.h"
@@ -600,9 +601,9 @@ static void on_vent_mode(lv_event_t * e) {
 static lv_obj_t * lbl_curtain_state = NULL;
 static lv_obj_t * curt_spinner      = NULL;
 static lv_obj_t * curt_bar          = NULL;
-static void on_curt_open (lv_event_t * e) { (void)e; ha_curtain_open_async();  }
-static void on_curt_close(lv_event_t * e) { (void)e; ha_curtain_close_async(); }
-static void on_curt_stop (lv_event_t * e) { (void)e; ha_curtain_stop_async();  }
+static void on_curt_open (lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("open");  else ha_curtain_open_async();  }
+static void on_curt_close(lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("close"); else ha_curtain_close_async(); }
+static void on_curt_stop (lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("stop");  else ha_curtain_stop_async();  }
 
 /* Timer button cycles 10 → 20 → 30 → off and updates its own label.
  * "off" maps to vremotecmd=auto (the most natural resting state). */

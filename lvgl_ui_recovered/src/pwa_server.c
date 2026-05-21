@@ -752,7 +752,8 @@ static int handle_settings_get(int fd) {
         "\"enable_ha\":%d,\"enable_zwave\":%d,\"vnc_enabled\":%d,"
         "\"enable_domoticz\":%d,\"domoticz_host\":\"%s\",\"domoticz_user\":\"%s\","
         "\"hide_offline_tiles\":%d,\"boot_picker_enabled\":%d,"
-        "\"update_check_enabled\":%d"
+        "\"update_check_enabled\":%d,"
+        "\"client_mode\":%d,\"master_host\":\"%s\""
         "}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
         settings.active_brightness, settings.dim_brightness,
@@ -767,7 +768,8 @@ static int handle_settings_get(int fd) {
         settings.enable_ha, settings.enable_zwave, settings.vnc_enabled,
         settings.enable_domoticz, settings.domoticz_host, settings.domoticz_user,
         settings.hide_offline_tiles, settings.boot_picker_enabled,
-        settings.update_check_enabled);
+        settings.update_check_enabled,
+        settings.client_mode, settings.master_host);
     char hdr[160];
     int hn = snprintf(hdr, sizeof hdr,
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
@@ -836,6 +838,9 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.mqtt_host, sizeof settings.mqtt_host, "%s", sv);
     if (extract_str(body, "mqtt_user", sv, sizeof sv))
         snprintf(settings.mqtt_user, sizeof settings.mqtt_user, "%s", sv);
+    if (extract_int(body, "client_mode", &iv))        settings.client_mode = !!iv;
+    if (extract_str(body, "master_host", sv, sizeof sv))
+        snprintf(settings.master_host, sizeof settings.master_host, "%s", sv);
     settings_save();
     return send_status(fd, 200, "OK", "{\"ok\":1,\"note\":\"some changes apply after a toonui restart\"}");
 }
@@ -878,6 +883,8 @@ static const char SETTINGS_HTML[] =
 "['Domoticz','h'],"
 "['enable_domoticz','Domoticz enabled','b'],['domoticz_host','Domoticz host (ip:port)','t'],"
 "['domoticz_user','Domoticz user (opt)','t'],"
+"['Client mode (slave Toon / tablet)','h'],"
+"['client_mode','Client mode (mirror a master Toon)','b'],['master_host','Master Toon IP/host','t'],"
 "['Display options','h'],"
 "['vnc_enabled','VNC server','b'],['hide_offline_tiles','Hide offline tiles','b'],"
 "['boot_picker_enabled','Boot picker','b'],['update_check_enabled','Update check','b']"

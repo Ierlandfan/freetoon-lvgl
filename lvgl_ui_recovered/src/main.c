@@ -83,31 +83,40 @@ int main(int argc, char** argv) {
      * tile_slots_subscribe_all() has something to subscribe to. */
     tile_slots_init();
 
-    if (boxtalk_start() != 0)
-        fprintf(stderr, "[main] boxtalk_start failed\n");
-    if (homewizard_start() != 0)
-        fprintf(stderr, "[main] homewizard_start failed\n");
-    extern int meteradapter_start(void);
-    if (meteradapter_start() != 0)
-        fprintf(stderr, "[main] meteradapter_start failed\n");
-    if (weather_start() != 0)
-        fprintf(stderr, "[main] weather_start failed\n");
-    if (waste_start() != 0)
-        fprintf(stderr, "[main] waste_start failed\n");
-    if (vent_start() != 0)
-        fprintf(stderr, "[main] vent_start failed\n");
-    if (ha_start() != 0)
-        fprintf(stderr, "[main] ha_start failed\n");
-    extern int domoticz_start(void);
-    if (domoticz_start() != 0)
-        fprintf(stderr, "[main] domoticz_start failed\n");
+    if (settings.client_mode) {
+        /* Slave: mirror a master Toon over its PWA API; start NO local
+         * integrations so we connect only to the master. */
+        extern int client_link_start(void);
+        if (client_link_start() != 0)
+            fprintf(stderr, "[main] client_link_start failed\n");
+    } else {
+        if (boxtalk_start() != 0)
+            fprintf(stderr, "[main] boxtalk_start failed\n");
+        if (homewizard_start() != 0)
+            fprintf(stderr, "[main] homewizard_start failed\n");
+        extern int meteradapter_start(void);
+        if (meteradapter_start() != 0)
+            fprintf(stderr, "[main] meteradapter_start failed\n");
+        if (weather_start() != 0)
+            fprintf(stderr, "[main] weather_start failed\n");
+        if (waste_start() != 0)
+            fprintf(stderr, "[main] waste_start failed\n");
+        if (vent_start() != 0)
+            fprintf(stderr, "[main] vent_start failed\n");
+        if (ha_start() != 0)
+            fprintf(stderr, "[main] ha_start failed\n");
+        extern int domoticz_start(void);
+        if (domoticz_start() != 0)
+            fprintf(stderr, "[main] domoticz_start failed\n");
+    }
     if (healthcheck_start() != 0)
         fprintf(stderr, "[main] healthcheck_start failed\n");
     if (pwa_start() != 0)
         fprintf(stderr, "[main] pwa_start failed\n");
     if (update_check_start() != 0)
         fprintf(stderr, "[main] update_check_start failed\n");
-    packages_start();
+    if (!settings.client_mode)
+        packages_start();
 
     ui_init();
 

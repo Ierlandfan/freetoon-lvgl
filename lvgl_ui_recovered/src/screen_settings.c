@@ -84,6 +84,8 @@ static void on_forecast_mode_change(lv_event_t * e) {
 static lv_obj_t * ta_wx_city = NULL;
 static lv_obj_t * ta_wx_id   = NULL;
 static lv_obj_t * lbl_wx_status = NULL;
+static lv_obj_t * ta_master   = NULL;
+static lv_obj_t * sw_client   = NULL;
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
     int city_changed = 0;
@@ -996,6 +998,60 @@ static void open_adapters(lv_event_t * e) {
 static void open_domoticz(lv_event_t * e) {
     (void)e;
     ui_push(screen_domoticz_create());
+}
+
+/* Client mode: this Toon mirrors a master Toon over its PWA API. */
+static void on_client_apply(lv_event_t * e) {
+    (void)e;
+    if (sw_client) settings.client_mode = lv_obj_has_state(sw_client, LV_STATE_CHECKED) ? 1 : 0;
+    if (ta_master) {
+        const char * h = lv_textarea_get_text(ta_master);
+        snprintf(settings.master_host, sizeof settings.master_host, "%s", h ? h : "");
+    }
+    settings_save();
+    open_restart_confirm(NULL);   /* takes effect after a UI restart */
+}
+static void open_client_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Client mode", 470);
+    int y = 70;
+
+    lv_obj_t * r = panel_row(p, y, "Client mode (mirror a master Toon)", NULL);
+    sw_client = row_switch(r, settings.client_mode, NULL);
+    y += 90;
+
+    lv_obj_t * lbl = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lbl, "Master IP:");
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_master = lv_textarea_create(p);
+    lv_obj_set_size(ta_master, 400, 44);
+    lv_obj_align(ta_master, LV_ALIGN_TOP_LEFT, 200, y - 4);
+    lv_textarea_set_one_line(ta_master, true);
+    lv_textarea_set_text(ta_master, settings.master_host);
+    y += 64;
+
+    lv_obj_t * hint = lv_label_create(p);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
+    lv_label_set_text(hint,
+        "This Toon becomes a display-only slave: it shows the master's\n"
+        "thermostat/boiler/air/curtains and sends control back to it, with\n"
+        "no local sensors or integrations. Enter the master Toon's IP\n"
+        "(an Android tablet can instead just open http://<master>:10081 ).");
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y);
+    y += 110;
+
+    lv_obj_t * btn = lv_btn_create(p);
+    lv_obj_set_size(btn, 220, 50);
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_add_event_cb(btn, on_client_apply, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bl = lv_label_create(btn);
+    lv_label_set_text(bl, "Apply & restart");
+    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(bl);
 }
 
 /* WiFi tile-tap: push the WiFi scan/connect/status screen. */
@@ -2324,6 +2380,8 @@ lv_obj_t * screen_settings_create(void) {
               "meter & boiler", open_adapters); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
               "lights & blinds", open_domoticz); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, "Client mode",
+              "mirror a master Toon", open_client_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, "Restart UI",
               "reload settings", open_restart_confirm); n++;
     #undef GX

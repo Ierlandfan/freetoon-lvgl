@@ -128,6 +128,15 @@ typedef struct {
     char tile_slot_family[48];
     char tile_slot_vent[48];
     char tile_slot_water[48];
+
+    /* Client mode — this Toon is a "slave" that mirrors a master Toon over
+     * its PWA HTTP API instead of talking to local HCB daemons. When 1, all
+     * local integrations (BoxTalk, P1, meteradapter, weather, waste, vent,
+     * HA, Domoticz, MQTT) are skipped; client_link.c streams the master's
+     * /api/state/stream into toon_state and routes setpoint/program/curtain
+     * control back to the master. The slave connects ONLY to master_host. */
+    int  client_mode;
+    char master_host[64];   /* master Toon IP/host, no scheme (PWA port 10081) */
 } settings_t;
 
 #define FORECAST_AUTO   0
