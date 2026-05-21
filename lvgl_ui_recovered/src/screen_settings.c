@@ -86,6 +86,12 @@ static lv_obj_t * ta_wx_id   = NULL;
 static lv_obj_t * lbl_wx_status = NULL;
 static lv_obj_t * ta_master   = NULL;
 static lv_obj_t * sw_client   = NULL;
+/* Auto-rotate modal widgets */
+static lv_obj_t * sw_rotate       = NULL;
+static lv_obj_t * ta_rotate_secs  = NULL;
+static lv_obj_t * rotate_cb[16]   = {0};
+static char       rotate_cb_id[16][48];
+static int        rotate_cb_count = 0;
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
     int city_changed = 0;
@@ -276,7 +282,9 @@ static void modal_close(lv_event_t * e) {
 /* Build a dimmed full-screen backdrop + centred panel. Returns the panel;
    caller positions its content below y≈64 (title + close button live there). */
 static lv_obj_t * modal_open(const char * title, int panel_h) {
-    cur_modal = lv_obj_create(scr_root);
+    /* Parent on the currently-active screen, not the settings screen's root —
+     * the tile-slots picker can be opened from the home screen too. */
+    cur_modal = lv_obj_create(lv_scr_act());
     lv_obj_remove_style_all(cur_modal);
     lv_obj_set_size(cur_modal, 1024, 600);
     lv_obj_set_pos(cur_modal, 0, 0);
@@ -1054,6 +1062,106 @@ static void open_client_modal(lv_event_t * e) {
     lv_obj_center(bl);
 }
 
+/* Auto-rotate: page-2 slot 1 cycles through the checked integrations. */
+static int rotate_member_is_checked(const char * id) {
+    char wrap[300];
+    snprintf(wrap, sizeof wrap, ",%s,", settings.tile_rotate_members);
+    char needle[52];
+    snprintf(needle, sizeof needle, ",%s,", id);
+    return strstr(wrap, needle) != NULL;
+}
+static void on_rotate_apply(lv_event_t * e) {
+    (void)e;
+    if (sw_rotate) settings.tile_rotate_enabled = lv_obj_has_state(sw_rotate, LV_STATE_CHECKED) ? 1 : 0;
+    if (ta_rotate_secs) {
+        int v = atoi(lv_textarea_get_text(ta_rotate_secs));
+        settings.tile_rotate_seconds = v < 3 ? 3 : (v > 120 ? 120 : v);
+    }
+    char buf[256] = ""; int first = 1;
+    for (int i = 0; i < rotate_cb_count; i++) {
+        if (rotate_cb[i] && lv_obj_has_state(rotate_cb[i], LV_STATE_CHECKED)) {
+            if (!first) strncat(buf, ",", sizeof buf - strlen(buf) - 1);
+            strncat(buf, rotate_cb_id[i], sizeof buf - strlen(buf) - 1);
+            first = 0;
+        }
+    }
+    snprintf(settings.tile_rotate_members, sizeof settings.tile_rotate_members, "%s", buf);
+    settings_save();
+}
+static void open_rotate_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Auto-rotate tile", 540);
+    int y = 70;
+
+    lv_obj_t * r = panel_row(p, y, "Rotate page-2 slot 1 content", NULL);
+    sw_rotate = row_switch(r, settings.tile_rotate_enabled, NULL);
+    y += 86;
+
+    lv_obj_t * lbl = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lbl, "Interval (s):");
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_rotate_secs = lv_textarea_create(p);
+    lv_obj_set_size(ta_rotate_secs, 160, 44);
+    lv_obj_align(ta_rotate_secs, LV_ALIGN_TOP_LEFT, 200, y - 4);
+    lv_textarea_set_one_line(ta_rotate_secs, true);
+    lv_textarea_set_accepted_chars(ta_rotate_secs, "0123456789");
+    char sbuf[8]; snprintf(sbuf, sizeof sbuf, "%d", settings.tile_rotate_seconds);
+    lv_textarea_set_text(ta_rotate_secs, sbuf);
+    y += 58;
+
+    rotate_cb_count = 0;
+    int ni = tile_slots_integration_count();
+    if (ni == 0) {
+        lv_obj_t * m = lv_label_create(p);
+        lv_obj_set_style_text_color(m, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(m, &lv_font_montserrat_18, 0);
+        lv_obj_set_width(m, 800);
+        lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(m, "Install marketplace integrations first, then pick which ones to rotate here.");
+        lv_obj_align(m, LV_ALIGN_TOP_LEFT, 4, y);
+        return;
+    }
+    lv_obj_t * pick = lv_label_create(p);
+    lv_obj_set_style_text_color(pick, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(pick, &lv_font_montserrat_18, 0);
+    lv_label_set_text(pick, "Cycle through:");
+    lv_obj_align(pick, LV_ALIGN_TOP_LEFT, 4, y);
+    y += 34;
+
+    lv_obj_t * sc = lv_obj_create(p);
+    lv_obj_set_size(sc, 820, 230);
+    lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, y);
+    lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(sc, 0, 0);
+    lv_obj_set_scroll_dir(sc, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(sc, LV_SCROLLBAR_MODE_AUTO);
+    int cy = 0;
+    for (int i = 0; i < ni && i < 16; i++) {
+        const integration_meta_t * im = tile_slots_integration_at(i);
+        if (!im) continue;
+        lv_obj_t * cb = lv_checkbox_create(sc);
+        lv_checkbox_set_text(cb, im->name[0] ? im->name : im->id);
+        lv_obj_set_style_text_font(cb, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_color(cb, lv_color_hex(0xffffff), 0);
+        lv_obj_align(cb, LV_ALIGN_TOP_LEFT, 6, cy);
+        if (rotate_member_is_checked(im->id)) lv_obj_add_state(cb, LV_STATE_CHECKED);
+        rotate_cb[rotate_cb_count] = cb;
+        snprintf(rotate_cb_id[rotate_cb_count], 48, "%s", im->id);
+        rotate_cb_count++;
+        cy += 48;
+    }
+
+    lv_obj_t * btn = lv_btn_create(p);
+    lv_obj_set_size(btn, 160, 50);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_add_event_cb(btn, on_rotate_apply, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, "Apply");
+    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0); lv_obj_center(bl);
+}
+
 /* WiFi tile-tap: push the WiFi scan/connect/status screen. */
 static void open_wifi(lv_event_t * e) {
     (void)e;
@@ -1258,10 +1366,20 @@ static void open_tile_slots_modal(lv_event_t * e) {
     static char options[2048];
     build_slot_options(options, sizeof options);
 
-    int y = 70;
+    /* 8 slots don't fit — host the rows in a vertical scroller. */
+    lv_obj_t * sc = lv_obj_create(p);
+    lv_obj_set_size(sc, 820, 372);
+    lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, 64);
+    lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(sc, 0, 0);
+    lv_obj_set_style_pad_all(sc, 0, 0);
+    lv_obj_set_scroll_dir(sc, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(sc, LV_SCROLLBAR_MODE_AUTO);
+
+    int y = 0;
     for (int s = 0; s < TILE_SLOT_COUNT; s++) {
-        lv_obj_t * row = lv_obj_create(p);
-        lv_obj_set_size(row, 800, 72);
+        lv_obj_t * row = lv_obj_create(sc);
+        lv_obj_set_size(row, 790, 72);
         lv_obj_align(row, LV_ALIGN_TOP_LEFT, 4, y);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x152033), 0);
         lv_obj_set_style_radius(row, 10, 0);
@@ -1294,10 +1412,10 @@ static void open_tile_slots_modal(lv_event_t * e) {
     lv_obj_set_width(hint, 800);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint,
-        "Pick a marketplace integration for each right-column tile. "
-        "\"Built-in\" keeps the default content (Energy/Family/Vent/Water). "
-        "You can also long-press a tile on the home screen to pick directly.");
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y + 6);
+        "Energy/Family/Vent/Water are the page-1 tiles; \"Page 2\" slots show on "
+        "the swipe page. \"Built-in\" keeps the default content. You can also "
+        "long-press a tile on the home screen to pick directly.");
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 4, -8);
 }
 
 /* Public entry point called by screen_home.c long-press handler. Just
@@ -2382,6 +2500,8 @@ lv_obj_t * screen_settings_create(void) {
               "lights & blinds", open_domoticz); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, "Client mode",
               "mirror a master Toon", open_client_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, "Auto-rotate",
+              "cycle a tile's content", open_rotate_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, "Restart UI",
               "reload settings", open_restart_confirm); n++;
     #undef GX

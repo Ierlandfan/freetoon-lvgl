@@ -66,6 +66,8 @@ settings_t settings = {
     .enable_vent         = 0,
     .enable_ha           = 0,
     .enable_domoticz     = 0,
+    .tile_rotate_enabled = 0,
+    .tile_rotate_seconds = 10,
     .client_mode         = 0,
     .master_host         = "",
     .boot_picker_enabled = 1,
@@ -192,6 +194,14 @@ void settings_load(void) {
         else if (strcmp(k, "client_mode")     == 0) settings.client_mode = iv;
         else if (strcmp(k, "master_host")     == 0)
             snprintf(settings.master_host, sizeof settings.master_host, "%s", v);
+        else if (strcmp(k, "tile_slot_p1_0")  == 0) snprintf(settings.tile_slot_page1[0], 48, "%s", v);
+        else if (strcmp(k, "tile_slot_p1_1")  == 0) snprintf(settings.tile_slot_page1[1], 48, "%s", v);
+        else if (strcmp(k, "tile_slot_p1_2")  == 0) snprintf(settings.tile_slot_page1[2], 48, "%s", v);
+        else if (strcmp(k, "tile_slot_p1_3")  == 0) snprintf(settings.tile_slot_page1[3], 48, "%s", v);
+        else if (strcmp(k, "tile_rotate_enabled") == 0) settings.tile_rotate_enabled = iv;
+        else if (strcmp(k, "tile_rotate_seconds") == 0) settings.tile_rotate_seconds = iv < 3 ? 3 : (iv > 120 ? 120 : iv);
+        else if (strcmp(k, "tile_rotate_members") == 0)
+            snprintf(settings.tile_rotate_members, sizeof settings.tile_rotate_members, "%s", v);
         else if (strcmp(k, "domoticz_user")   == 0)
             snprintf(settings.domoticz_user, sizeof settings.domoticz_user, "%s", v);
         else if (strcmp(k, "domoticz_pass")   == 0)
@@ -317,6 +327,11 @@ void settings_save(void) {
     fprintf(f, "domoticz_host=%s\n",   settings.domoticz_host);
     fprintf(f, "client_mode=%d\n",     settings.client_mode);
     fprintf(f, "master_host=%s\n",     settings.master_host);
+    for (int i = 0; i < 4; i++)
+        fprintf(f, "tile_slot_p1_%d=%s\n", i, settings.tile_slot_page1[i]);
+    fprintf(f, "tile_rotate_enabled=%d\n", settings.tile_rotate_enabled);
+    fprintf(f, "tile_rotate_seconds=%d\n", settings.tile_rotate_seconds);
+    fprintf(f, "tile_rotate_members=%s\n", settings.tile_rotate_members);
     fprintf(f, "domoticz_user=%s\n",   settings.domoticz_user);
     fprintf(f, "domoticz_pass=%s\n",   settings.domoticz_pass);
     fprintf(f, "enable_zwave=%d\n",    settings.enable_zwave);

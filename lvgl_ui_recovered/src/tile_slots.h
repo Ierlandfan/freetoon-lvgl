@@ -31,7 +31,12 @@
 #define TILE_SLOT_FAMILY  1
 #define TILE_SLOT_VENT    2
 #define TILE_SLOT_WATER   3
-#define TILE_SLOT_COUNT   4
+/* Page-2 (swipe) slots — independent assignable positions. */
+#define TILE_SLOT_P1_0    4
+#define TILE_SLOT_P1_1    5
+#define TILE_SLOT_P1_2    6
+#define TILE_SLOT_P1_3    7
+#define TILE_SLOT_COUNT   8
 
 #define INTEG_NAME_MAX        48
 #define INTEG_ID_MAX          48

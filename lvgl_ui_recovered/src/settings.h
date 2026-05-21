@@ -128,6 +128,17 @@ typedef struct {
     char tile_slot_family[48];
     char tile_slot_vent[48];
     char tile_slot_water[48];
+    /* Page-2 (swipe) tile slots — 4 independent assignable positions that
+     * render whatever marketplace integration you bind to them. Empty = the
+     * "tap to assign" placeholder. */
+    char tile_slot_page1[4][48];
+
+    /* Auto-rotate: one tile position cycles its content through a chosen set
+     * of installed integrations every N seconds. rotate_members is a
+     * comma-separated list of integration ids. */
+    int  tile_rotate_enabled;
+    int  tile_rotate_seconds;          /* 3..120 */
+    char tile_rotate_members[256];     /* "id1,id2,id3" */
 
     /* Client mode — this Toon is a "slave" that mirrors a master Toon over
      * its PWA HTTP API instead of talking to local HCB daemons. When 1, all

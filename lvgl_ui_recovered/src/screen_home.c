@@ -210,6 +210,11 @@ static lv_obj_t * tile_curtains = NULL;
 static lv_obj_t * home_page1      = NULL;   /* page-1 overlay container */
 static lv_obj_t * home_dot[2]     = {0};    /* pagination dots */
 static int        home_tile_page  = 0;
+/* Page-1 tiles render whatever marketplace integration is bound to slots
+ * TILE_SLOT_P1_0..3 (or a "tap to assign" placeholder when empty). */
+static lv_obj_t * p1_title[4] = {0};
+static lv_obj_t * p1_main[4]  = {0};
+static lv_obj_t * p1_sub[4]   = {0};
 /* Small banner at the top of the home screen — shown when the update
  * checker finds a newer freetoon-lvgl release. Tapping it opens a modal
  * with the release notes + the one-line install command. */
@@ -748,6 +753,54 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     return 1;
 }
 
+/* Render a specific integration's latest value/subtitle/title into a page-1
+ * tile's labels (used by the auto-rotate slot, which shows arbitrary
+ * integrations rather than a fixed binding). */
+static void render_meta_into(const integration_meta_t * m,
+                             lv_obj_t * title, lv_obj_t * main, lv_obj_t * sub) {
+    if (!m) return;
+    if (title) lv_label_set_text(title, m->tile_title[0] ? m->tile_title : m->name);
+    if (main) {
+        const char * v = (const char *)m->latest_value;
+        if (v && v[0]) lv_label_set_text_fmt(main, "%s%s%s", v,
+                              m->value_unit[0] ? " " : "", m->value_unit);
+        else           lv_label_set_text_fmt(main, "%s...", m->tile_title);
+    }
+    if (sub) {
+        const char * s = (const char *)m->latest_subtitle;
+        if (s && s[0]) lv_label_set_text_fmt(sub, "%s%s%s", s,
+                              m->subtitle_unit[0] ? " " : "", m->subtitle_unit);
+        else           lv_label_set_text(sub, "");
+    }
+}
+
+/* Return the n-th (wrapping) integration id from the comma-separated
+ * settings.tile_rotate_members list. Returns 0 if the list is empty. */
+static int rotate_member_at(int n, char * out, size_t sz) {
+    const char * s = settings.tile_rotate_members;
+    if (!s[0]) return 0;
+    int count = 1;
+    for (const char * p = s; *p; p++) if (*p == ',') count++;
+    int want = ((n % count) + count) % count;
+    int idx = 0;
+    const char * start = s;
+    for (const char * p = s; ; p++) {
+        if (*p == ',' || *p == 0) {
+            if (idx == want) {
+                size_t len = (size_t)(p - start);
+                if (len >= sz) len = sz - 1;
+                memcpy(out, start, len); out[len] = 0;
+                /* trim spaces */
+                while (out[0] == ' ') memmove(out, out + 1, strlen(out));
+                return out[0] ? 1 : 0;
+            }
+            idx++; start = p + 1;
+            if (*p == 0) break;
+        }
+    }
+    return 0;
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
 
@@ -767,6 +820,33 @@ static void refresh_cb(lv_timer_t * t) {
                                                     lbl_boiler_state, lbl_boiler_pressure);
     slot_active[TILE_SLOT_WATER]  = render_tile_slot(TILE_SLOT_WATER,
                                                     lbl_inbox_main, lbl_inbox_sub);
+
+    /* Page-1 (swipe) slots — render the bound integration, or a placeholder. */
+    for (int i = 0; i < 4; i++) {
+        const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_P1_0 + i);
+        if (m) {
+            if (p1_title[i]) lv_label_set_text(p1_title[i],
+                                 m->tile_title[0] ? m->tile_title : m->name);
+            render_tile_slot(TILE_SLOT_P1_0 + i, p1_main[i], p1_sub[i]);
+        } else {
+            if (p1_title[i]) lv_label_set_text(p1_title[i], "");
+            if (p1_main[i])  lv_label_set_text(p1_main[i], LV_SYMBOL_PLUS "  Tap to assign");
+            if (p1_sub[i])   lv_label_set_text(p1_sub[i], "");
+        }
+    }
+
+    /* Auto-rotate: page-1 slot 0 cycles through the chosen integrations every
+     * tile_rotate_seconds. Driven off this 1 Hz refresh — no extra timer. */
+    if (settings.tile_rotate_enabled && settings.tile_rotate_members[0]) {
+        static int rot_ctr = 0, rot_idx = 0;
+        int period = settings.tile_rotate_seconds < 3 ? 3 : settings.tile_rotate_seconds;
+        if (++rot_ctr >= period) { rot_ctr = 0; rot_idx++; }
+        char id[48];
+        if (rotate_member_at(rot_idx, id, sizeof id)) {
+            const integration_meta_t * m = tile_slots_integration_by_id(id);
+            if (m) render_meta_into(m, p1_title[0], p1_main[0], p1_sub[0]);
+        }
+    }
 
     /* Update-available banner — toggled live so the user sees it within
      * a refresh tick of the background checker finding a new release. */
@@ -2173,19 +2253,25 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_pad_all(home_page1, 0, 0);
     lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_SCROLLABLE);
     {
-        static const struct { int x, y; const char * t; uint32_t c; } slots[4] = {
-            {   4,   4, "Slot 1", 0x88dd66 }, { 234,   4, "Slot 2", 0xaa77ff },
-            {   4, 214, "Slot 3", 0x66bbdd }, { 234, 214, "Slot 4", 0xff8866 },
+        static const struct { int x, y; uint32_t c; } slots[4] = {
+            {   4,   4, 0x88dd66 }, { 234,   4, 0xaa77ff },
+            {   4, 214, 0x66bbdd }, { 234, 214, 0xff8866 },
         };
         for (int i = 0; i < 4; i++) {
             tile_t s;
             make_tile(home_page1, slots[i].x, slots[i].y, 214, 196,
-                      slots[i].t, slots[i].c, on_page1_slot, &s);
-            lv_obj_t * hint = lv_label_create(s.tile);
-            lv_obj_set_style_text_color(hint, lv_color_hex(COL_TEXT_DIM), 0);
-            lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
-            lv_label_set_text(hint, LV_SYMBOL_PLUS "  Tap to assign");
-            lv_obj_align(hint, LV_ALIGN_CENTER, 0, 6);
+                      "", slots[i].c, on_page1_slot, &s);
+            p1_title[i] = s.title;   /* make_tile's title label, reused */
+            p1_main[i] = lv_label_create(s.tile);
+            lv_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_HI), 0);
+            lv_obj_set_style_text_font(p1_main[i], &lv_font_montserrat_28, 0);
+            lv_label_set_text(p1_main[i], LV_SYMBOL_PLUS "  Tap to assign");
+            lv_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, 0);
+            p1_sub[i] = lv_label_create(s.tile);
+            lv_obj_set_style_text_color(p1_sub[i], lv_color_hex(COL_TEXT_DIM), 0);
+            lv_obj_set_style_text_font(p1_sub[i], &lv_font_montserrat_18, 0);
+            lv_label_set_text(p1_sub[i], "");
+            lv_obj_align(p1_sub[i], LV_ALIGN_BOTTOM_MID, 0, -4);
         }
     }
 

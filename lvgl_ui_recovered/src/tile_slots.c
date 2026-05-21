@@ -20,7 +20,8 @@ static integration_meta_t g_integ[MAX_INSTALLED_INTEGRATIONS];
 static int                g_integ_count = 0;
 
 static const char * SLOT_LABELS[TILE_SLOT_COUNT] = {
-    "Energy", "Family", "Vent", "Water"
+    "Energy", "Family", "Vent", "Water",
+    "Page 2 - 1", "Page 2 - 2", "Page 2 - 3", "Page 2 - 4"
 };
 const char * tile_slot_label(int slot) {
     if (slot < 0 || slot >= TILE_SLOT_COUNT) return "?";
@@ -144,6 +145,10 @@ static char * slot_field(int slot) {
         case TILE_SLOT_FAMILY: return settings.tile_slot_family;
         case TILE_SLOT_VENT:   return settings.tile_slot_vent;
         case TILE_SLOT_WATER:  return settings.tile_slot_water;
+        case TILE_SLOT_P1_0:   return settings.tile_slot_page1[0];
+        case TILE_SLOT_P1_1:   return settings.tile_slot_page1[1];
+        case TILE_SLOT_P1_2:   return settings.tile_slot_page1[2];
+        case TILE_SLOT_P1_3:   return settings.tile_slot_page1[3];
         default: return NULL;
     }
 }
