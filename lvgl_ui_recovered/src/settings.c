@@ -68,6 +68,8 @@ settings_t settings = {
     .enable_domoticz     = 0,
     .tile_rotate_enabled = 0,
     .tile_rotate_seconds = 10,
+    .news_enabled        = 0,
+    .news_rss_url        = "https://feeds.nos.nl/nosnieuwsalgemeen",
     .client_mode         = 0,
     .master_host         = "",
     .boot_picker_enabled = 1,
@@ -202,6 +204,9 @@ void settings_load(void) {
         else if (strcmp(k, "tile_rotate_seconds") == 0) settings.tile_rotate_seconds = iv < 3 ? 3 : (iv > 120 ? 120 : iv);
         else if (strcmp(k, "tile_rotate_members") == 0)
             snprintf(settings.tile_rotate_members, sizeof settings.tile_rotate_members, "%s", v);
+        else if (strcmp(k, "news_enabled")    == 0) settings.news_enabled = iv;
+        else if (strcmp(k, "news_rss_url")    == 0)
+            snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", v);
         else if (strcmp(k, "domoticz_user")   == 0)
             snprintf(settings.domoticz_user, sizeof settings.domoticz_user, "%s", v);
         else if (strcmp(k, "domoticz_pass")   == 0)
@@ -332,6 +337,8 @@ void settings_save(void) {
     fprintf(f, "tile_rotate_enabled=%d\n", settings.tile_rotate_enabled);
     fprintf(f, "tile_rotate_seconds=%d\n", settings.tile_rotate_seconds);
     fprintf(f, "tile_rotate_members=%s\n", settings.tile_rotate_members);
+    fprintf(f, "news_enabled=%d\n", settings.news_enabled);
+    fprintf(f, "news_rss_url=%s\n", settings.news_rss_url);
     fprintf(f, "domoticz_user=%s\n",   settings.domoticz_user);
     fprintf(f, "domoticz_pass=%s\n",   settings.domoticz_pass);
     fprintf(f, "enable_zwave=%d\n",    settings.enable_zwave);

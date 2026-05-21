@@ -16,6 +16,7 @@
 #include "ventilation.h"
 #include "homeassistant.h"
 #include "client_link.h"
+#include "news.h"
 #include "packages.h"
 #include "tile_slots.h"
 #include "update_check.h"
@@ -215,6 +216,12 @@ static int        home_tile_page  = 0;
 static lv_obj_t * p1_title[4] = {0};
 static lv_obj_t * p1_main[4]  = {0};
 static lv_obj_t * p1_sub[4]   = {0};
+
+/* RSS news ticker (above the forecast). Tap → headline list + a QR per
+ * article so it can be opened on a phone. */
+static lv_obj_t * news_ticker = NULL;
+static lv_obj_t * news_modal  = NULL;
+static lv_obj_t * news_qr     = NULL;
 /* Small banner at the top of the home screen — shown when the update
  * checker finds a newer freetoon-lvgl release. Tapping it opens a modal
  * with the release notes + the one-line install command. */
@@ -832,6 +839,31 @@ static void refresh_cb(lv_timer_t * t) {
             if (p1_title[i]) lv_label_set_text(p1_title[i], "");
             if (p1_main[i])  lv_label_set_text(p1_main[i], LV_SYMBOL_PLUS "  Tap to assign");
             if (p1_sub[i])   lv_label_set_text(p1_sub[i], "");
+        }
+    }
+
+    /* News ticker text — rebuild only when the lead headline changes (every
+     * ~15 min) so the scroll animation isn't reset each second. */
+    if (news_ticker) {
+        if (settings.news_enabled && news_count() > 0) {
+            lv_obj_clear_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+            static char last_first[NEWS_TITLE_MAX] = "";
+            char t0[NEWS_TITLE_MAX], l0[NEWS_LINK_MAX];
+            news_item(0, t0, sizeof t0, l0, sizeof l0);
+            if (strcmp(t0, last_first) != 0) {
+                snprintf(last_first, sizeof last_first, "%s", t0);
+                char buf[1400]; buf[0] = 0;
+                int nn = news_count();
+                for (int i = 0; i < nn; i++) {
+                    char ti[NEWS_TITLE_MAX], li[NEWS_LINK_MAX];
+                    if (news_item(i, ti, sizeof ti, li, sizeof li) != 0) continue;
+                    strncat(buf, ti, sizeof buf - strlen(buf) - 1);
+                    if (i < nn - 1) strncat(buf, "    -    ", sizeof buf - strlen(buf) - 1);
+                }
+                lv_label_set_text(news_ticker, buf);
+            }
+        } else {
+            lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -1696,6 +1728,75 @@ static void on_home_gesture(lv_event_t * e) {
     }
 }
 
+/* ---- news ticker tap → headline list + per-article QR ---- */
+static void news_modal_close(lv_event_t * e) {
+    (void)e;
+    if (news_modal) { lv_obj_del(news_modal); news_modal = NULL; news_qr = NULL; }
+}
+static void on_news_item(lv_event_t * e) {
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    char title[NEWS_TITLE_MAX], link[NEWS_LINK_MAX];
+    if (news_item(i, title, sizeof title, link, sizeof link) != 0) return;
+    if (news_qr && link[0]) lv_qrcode_update(news_qr, link, strlen(link));
+}
+static void on_news_tap(lv_event_t * e) {
+    (void)e;
+    if (news_modal || news_count() == 0) return;
+    news_modal = lv_obj_create(lv_scr_act());
+    lv_obj_remove_style_all(news_modal);
+    lv_obj_set_size(news_modal, 1024, 600);
+    lv_obj_set_style_bg_color(news_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(news_modal, LV_OPA_70, 0);
+    lv_obj_add_flag(news_modal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(news_modal, news_modal_close, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * card = lv_obj_create(news_modal);
+    lv_obj_set_size(card, 900, 500);
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
+    lv_obj_set_style_radius(card, 16, 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);   /* swallow taps */
+
+    lv_obj_t * t = lv_label_create(card);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(t, "Nieuws");
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 16, 12);
+
+    lv_obj_t * list = lv_list_create(card);
+    lv_obj_set_size(list, 540, 420);
+    lv_obj_align(list, LV_ALIGN_TOP_LEFT, 12, 56);
+    lv_obj_set_style_bg_color(list, lv_color_hex(0x0e1a2a), 0);
+    int n = news_count();
+    for (int i = 0; i < n; i++) {
+        char ti[NEWS_TITLE_MAX], li[NEWS_LINK_MAX];
+        if (news_item(i, ti, sizeof ti, li, sizeof li) != 0) continue;
+        lv_obj_t * b = lv_list_add_btn(list, NULL, ti);
+        lv_obj_set_style_text_font(b, &lv_font_montserrat_18, 0);
+        lv_obj_add_event_cb(b, on_news_item, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    }
+
+    news_qr = lv_qrcode_create(card, 240, lv_color_hex(0x000000), lv_color_hex(0xffffff));
+    lv_obj_align(news_qr, LV_ALIGN_TOP_RIGHT, -50, 90);
+    lv_obj_t * ql = lv_label_create(card);
+    lv_obj_set_style_text_color(ql, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(ql, &lv_font_montserrat_18, 0);
+    lv_label_set_text(ql, "Scan om te openen");
+    lv_obj_align(ql, LV_ALIGN_TOP_RIGHT, -90, 340);
+
+    char t0[NEWS_TITLE_MAX], l0[NEWS_LINK_MAX];
+    if (news_item(0, t0, sizeof t0, l0, sizeof l0) == 0 && l0[0])
+        lv_qrcode_update(news_qr, l0, strlen(l0));
+
+    lv_obj_t * x = lv_btn_create(card);
+    lv_obj_set_size(x, 130, 48);
+    lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, -16, -12);
+    lv_obj_add_event_cb(x, news_modal_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * xl = lv_label_create(x); lv_label_set_text(xl, "Sluiten"); lv_obj_center(xl);
+}
+
 lv_obj_t * screen_home_create(void) {
     if (scr_root) return scr_root;
 
@@ -2362,6 +2463,20 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(lbl_forecast_city, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_forecast_city, settings.weather_location);
     lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 428);
+
+    /* News ticker — scrolls RSS headlines to the right of the city line,
+     * just above the forecast band. Tap opens the headline list + QR. */
+    news_ticker = lv_label_create(scr_root);
+    lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_width(news_ticker, 680);
+    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 320, 430);
+    lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);
+    lv_obj_set_style_text_font(news_ticker, &lv_font_montserrat_18, 0);
+    lv_label_set_text(news_ticker, "");
+    lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(news_ticker, 12);
+    lv_obj_add_event_cb(news_ticker, on_news_tap, LV_EVENT_CLICKED, NULL);
+    if (!settings.news_enabled) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
 
     /* --- Forecast band — fills the area below the upper-row tiles.
            5 day columns; each shows day label + min/max temp + a big
