@@ -1,7 +1,7 @@
 /*
  * Domoticz screen - Settings -> Domoticz. Lists the lights + blinds from a
  * Domoticz server (via domoticz.c's JSON-API poller) and controls them:
- * switches/dimmers toggle On/Off, blinds get Open/Stop/Close. A gear overlay
+ * switches/dimmers toggle On/Off, blinds get Open/Stop/Close. Configured on the settings page.
  * configures host + (optional) basic-auth user/pass and the enable toggle.
  * For users who run Domoticz instead of Home Assistant.
  */
@@ -58,7 +58,7 @@ static void build_rows(void) {
         lv_obj_set_style_text_font(empty, &lv_font_montserrat_18, 0);
         lv_label_set_text(empty, settings.domoticz_host[0]
             ? "No lights/blinds returned. Check host / credentials / 'used' devices."
-            : "Set the Domoticz host with the gear (top-right).");
+            : "Set the Domoticz host on the settings page (PWA: Domoticz section).");
         g_built_count = n;
         return;
     }
@@ -102,7 +102,7 @@ static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lbl_status) {
         if (!settings.enable_domoticz)
-            lv_label_set_text(lbl_status, "Domoticz disabled - enable it in the gear.");
+            lv_label_set_text(lbl_status, "Domoticz disabled - enable it on the settings page.");
         else if (domoticz_state.connected)
             lv_label_set_text_fmt(lbl_status, "Connected - %d device%s",
                                   domoticz_state.count, domoticz_state.count == 1 ? "" : "s");
@@ -128,90 +128,8 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
-/* ---- config overlay (host / user / pass / enable) ---- */
-static lv_obj_t * g_cfg = NULL;
-static lv_obj_t * ta_host = NULL, * ta_user = NULL, * ta_pass = NULL, * sw_en = NULL;
-static void cfg_close(void) { if (g_cfg) { lv_obj_del(g_cfg); g_cfg = NULL; } }
-static void on_cfg_cancel(lv_event_t * e) { (void)e; cfg_close(); }
-static void on_cfg_save(lv_event_t * e) {
-    (void)e;
-    if (ta_host) snprintf(settings.domoticz_host, sizeof settings.domoticz_host, "%s", lv_textarea_get_text(ta_host));
-    if (ta_user) snprintf(settings.domoticz_user, sizeof settings.domoticz_user, "%s", lv_textarea_get_text(ta_user));
-    if (ta_pass) snprintf(settings.domoticz_pass, sizeof settings.domoticz_pass, "%s", lv_textarea_get_text(ta_pass));
-    if (sw_en)   settings.enable_domoticz = lv_obj_has_state(sw_en, LV_STATE_CHECKED) ? 1 : 0;
-    settings_save();
-    g_built_count = -1;     /* force a rebuild on next refresh */
-    cfg_close();
-}
-static lv_obj_t * cfg_field(lv_obj_t * card, int y, const char * lbl, const char * val) {
-    lv_obj_t * l = lv_label_create(card);
-    lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_18, 0);
-    lv_label_set_text(l, lbl);
-    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 12, y + 6);
-    lv_obj_t * ta = lv_textarea_create(card);
-    lv_obj_set_size(ta, 380, 42);
-    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 180, y);
-    lv_textarea_set_one_line(ta, true);
-    lv_textarea_set_text(ta, val);
-    return ta;
-}
-static void open_cfg(lv_event_t * e) {
-    (void)e;
-    g_cfg = lv_obj_create(scr_root);
-    lv_obj_set_size(g_cfg, 1024, 600); lv_obj_set_pos(g_cfg, 0, 0);
-    lv_obj_set_style_bg_color(g_cfg, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(g_cfg, LV_OPA_70, 0);
-    lv_obj_set_style_border_width(g_cfg, 0, 0);
-    lv_obj_clear_flag(g_cfg, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t * card = lv_obj_create(g_cfg);
-    lv_obj_set_size(card, 640, 380); lv_obj_center(card);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
-    lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_radius(card, 14, 0);
-    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t * t = lv_label_create(card);
-    lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
-    lv_label_set_text(t, "Domoticz");
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 12, 8);
-
-    lv_obj_t * enl = lv_label_create(card);
-    lv_obj_set_style_text_color(enl, lv_color_hex(COL_TEXT_HI), 0);
-    lv_label_set_text(enl, "Enabled");
-    lv_obj_align(enl, LV_ALIGN_TOP_RIGHT, -70, 12);
-    sw_en = lv_switch_create(card);
-    lv_obj_align(sw_en, LV_ALIGN_TOP_RIGHT, -8, 8);
-    if (settings.enable_domoticz) lv_obj_add_state(sw_en, LV_STATE_CHECKED);
-
-    ta_host = cfg_field(card, 56,  "Host (ip:port):", settings.domoticz_host);
-    ta_user = cfg_field(card, 110, "User (opt):",     settings.domoticz_user);
-    ta_pass = cfg_field(card, 164, "Pass (opt):",     settings.domoticz_pass);
-
-    lv_obj_t * hint = lv_label_create(card);
-    lv_obj_set_style_text_color(hint, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-    lv_obj_set_width(hint, 600);
-    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(hint, "e.g. 192.168.1.10:8080. Leave user/pass blank if your Domoticz allows this network without login. Applies after a few seconds.");
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 12, 220);
-
-    lv_obj_t * save = lv_btn_create(card);
-    lv_obj_set_size(save, 160, 50);
-    lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, -12, -12);
-    lv_obj_set_style_bg_color(save, lv_color_hex(COL_ON), 0);
-    lv_obj_add_event_cb(save, on_cfg_save, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, "Save"); lv_obj_center(sl);
-
-    lv_obj_t * ca = lv_btn_create(card);
-    lv_obj_set_size(ca, 160, 50);
-    lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, 12, -12);
-    lv_obj_set_style_bg_color(ca, lv_color_hex(COL_OFF), 0);
-    lv_obj_add_event_cb(ca, on_cfg_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cl = lv_label_create(ca); lv_label_set_text(cl, "Cancel"); lv_obj_center(cl);
-}
+/* Host + credentials + enable are configured on the settings page
+ * (PWA /settings, Domoticz section), not from a gear here. */
 
 /* ---- screen ---- */
 static void back_async(void * u) { (void)u; ui_pop(); }
@@ -247,13 +165,6 @@ lv_obj_t * screen_domoticz_create(void) {
     lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
     lv_label_set_text(title, "Domoticz");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 24);
-
-    lv_obj_t * gear = lv_btn_create(scr_root);
-    lv_obj_set_size(gear, 120, 52);
-    lv_obj_align(gear, LV_ALIGN_TOP_RIGHT, -20, 14);
-    lv_obj_set_style_bg_color(gear, lv_color_hex(0x2a4060), 0);
-    lv_obj_add_event_cb(gear, open_cfg, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * gl = lv_label_create(gear); lv_label_set_text(gl, LV_SYMBOL_SETTINGS); lv_obj_center(gl);
 
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(COL_TEXT_DIM), 0);

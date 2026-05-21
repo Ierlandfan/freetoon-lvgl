@@ -1532,15 +1532,21 @@ static void refresh_cb(lv_timer_t * t) {
 /* ---------- screen builder ---------- */
 /* Push the Lights page. Used by both the swipe-right gesture and the
  * lightbulb button in the top-right. */
+/* Route to whichever lights backend is enabled: Domoticz if configured,
+ * otherwise the Home Assistant lights page. */
+static void open_lights_backend(void) {
+    if (settings.enable_domoticz) ui_push(screen_domoticz_create());
+    else                          ui_push(screen_lights_create());
+}
 static void on_home_gesture_to_lights(lv_event_t * e) {
     (void)e;
-    ui_push(screen_lights_create());
+    open_lights_backend();
 }
 
 static void on_home_gesture(lv_event_t * e) {
     (void)e;
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_RIGHT) ui_push(screen_lights_create());
+    if (dir == LV_DIR_RIGHT) open_lights_backend();
 }
 
 lv_obj_t * screen_home_create(void) {
@@ -2348,6 +2354,25 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_style_text_color(logo_lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(logo_lbl, &lv_font_montserrat_22, 0);
         lv_obj_center(logo_lbl);
+    }
+
+    /* Lights quick-button — left edge, vertically centred. Opens the lights
+     * backend (Domoticz if enabled, else Home Assistant). Same target as the
+     * swipe-right gesture, but discoverable. */
+    {
+        lv_obj_t * lb = lv_btn_create(scr_root);
+        lv_obj_set_size(lb, 50, 92);
+        lv_obj_align(lb, LV_ALIGN_LEFT_MID, 2, 0);
+        lv_obj_set_style_bg_color(lb, lv_color_hex(0x2a4060), 0);
+        lv_obj_set_style_bg_color(lb, lv_color_hex(0x3a5688), LV_STATE_PRESSED);
+        lv_obj_set_style_radius(lb, 14, 0);
+        lv_obj_set_ext_click_area(lb, 12);
+        lv_obj_add_event_cb(lb, on_home_gesture_to_lights, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * ll = lv_label_create(lb);
+        lv_obj_set_style_text_color(ll, lv_color_hex(0xffe08a), 0);
+        lv_obj_set_style_text_font(ll, &lv_font_montserrat_28, 0);
+        lv_label_set_text(ll, LV_SYMBOL_CHARGE);   /* lightbulb-ish; freetoon has no bulb glyph */
+        lv_obj_center(ll);
     }
 
     /* Gear in the very top-right corner of the screen. */
