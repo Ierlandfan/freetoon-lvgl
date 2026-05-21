@@ -85,17 +85,23 @@ void ui_idle_tick(void) {
      * counting from the original idle moment. */
     if (settings.auto_home_enabled) {
         uint32_t home_threshold = (uint32_t)settings.auto_home_seconds * 1000u;
-        int on_subscreen = is_dimmed ? (sp > 2) : (sp > 1);
-        if (on_subscreen && elapsed_ms >= home_threshold) {
-            fprintf(stderr, "[ui] auto-home after %u ms idle\n", elapsed_ms);
-            if (is_dimmed) {
-                /* Keep the dim screen on top; make home the only thing under it. */
-                stack[1] = stack[sp - 1];
-                sp = 2;
-            } else {
-                sp = 1;
-                lv_scr_load(stack[0]);
+        if (elapsed_ms >= home_threshold) {
+            int on_subscreen = is_dimmed ? (sp > 2) : (sp > 1);
+            if (on_subscreen) {
+                fprintf(stderr, "[ui] auto-home after %u ms idle\n", elapsed_ms);
+                if (is_dimmed) {
+                    /* Keep the dim screen on top; make home the only thing under it. */
+                    stack[1] = stack[sp - 1];
+                    sp = 2;
+                } else {
+                    sp = 1;
+                    lv_scr_load(stack[0]);
+                }
             }
+            /* Also return the home screen's swipe page to the main page, so
+             * "auto to main screen" lands on page 1 even if the user wandered
+             * to page 2. No-op when already on page 1. */
+            screen_home_reset_to_main();
         }
     }
 
