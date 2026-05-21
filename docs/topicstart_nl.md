@@ -94,8 +94,8 @@ alles ook via VNC of touch in te vullen is.
 | **Adapters** | Meteradapter (Z-Wave) + keteladapter (bedraad): status & test |
 | **Domoticz** | Lampen + zonwering via de Domoticz JSON-API (HA-alternatief) |
 | **Client mode** | Deze Toon als "slave" van een master-Toon (zie verderop) |
-| **Auto-rotate** | Eén tegel laat zijn inhoud rouleren langs gekozen integraties + interval |
-| **Newsreader** | RSS-ticker aan/uit + feed-URL (default NOS) |
+| **Auto-rotate** | Eén tegel (Pagina-2 slot 1) laat zijn inhoud rouleren langs gekozen integraties + instelbaar interval |
+| **Newsreader** | RSS-ticker aan/uit + feed-URL (default NOS) met een **Test-knop** die de feed controleert |
 | **Restart UI** | De interface herstarten (leest instellingen opnieuw) |
 
 ---
@@ -132,8 +132,10 @@ aan een tegel via **Instellingen → Tiles** (of door op een tegel te
 *long-pressen*, of op een lege **Pagina-2**-slot te tikken → "Open Marketplace").
 
 De vier **Pagina-2-slots** (de veegpagina) zijn vrij toewijsbaar: elke slot toont
-de waarde/titel/subtitel van de gekoppelde integratie. Met **Auto-rotate** kan één
-slot zijn inhoud automatisch laten rouleren langs een door jou gekozen set
+de waarde/titel/subtitel van de gekoppelde integratie. Tik een lege slot aan om de
+tegel-picker te openen — daar kies je een geïnstalleerde integratie of tik je op
+**"Open Marketplace"** om er meteen één te installeren. Met **Auto-rotate** kan
+één slot zijn inhoud automatisch laten rouleren langs een door jou gekozen set
 integraties, met instelbaar interval.
 
 ---

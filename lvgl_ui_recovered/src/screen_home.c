@@ -1833,7 +1833,7 @@ lv_obj_t * screen_home_create(void) {
     /* --- Big thermostat tile (height 360 — was 410, lost 50 px to make room
            for the new Curtains strip below it). --- */
     lv_obj_t * th = lv_obj_create(scr_root);
-    lv_obj_set_size(th, 520, 344);
+    lv_obj_set_size(th, 520, 360);   /* bottom flush with the curtains/right column */
     lv_obj_set_pos(th, 20, 20);
     lv_obj_set_style_bg_color(th, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_border_width(th, 0, 0);
@@ -1996,7 +1996,7 @@ lv_obj_t * screen_home_create(void) {
             lv_obj_t * b = lv_btn_create(th);
             lv_obj_set_size(b, bw, bh);
             lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total / 2 + i * (bw + gap) + bw / 2, 118);
+                         -total / 2 + i * (bw + gap) + bw / 2, 104);
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 8, 0);
             lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
