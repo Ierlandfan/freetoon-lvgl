@@ -18,6 +18,7 @@
  *                   happ_thermstat reports otCommError==0 (toon_state).
  */
 #include "screens.h"
+#include "display.h"
 #include "settings.h"
 #include "boxtalk.h"
 #include "meteradapter.h"
@@ -133,7 +134,7 @@ static void on_pair_clicked(lv_event_t * e) {
     }
     /* Confirm before starting a mutating Z-Wave action. */
     g_confirm = lv_obj_create(scr_root);
-    lv_obj_set_size(g_confirm, 1024, 600);
+    lv_obj_set_size(g_confirm, DISP_HOR, DISP_VER);
     lv_obj_set_pos(g_confirm, 0, 0);
     lv_obj_set_style_bg_color(g_confirm, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(g_confirm, LV_OPA_70, 0);
@@ -238,7 +239,7 @@ static lv_obj_t * mk_btn(lv_obj_t * parent, const char * txt, uint32_t col,
 static lv_obj_t * mk_card(int y, const char * title, const char * kind,
                           lv_obj_t ** out_state, lv_obj_t ** out_sub) {
     lv_obj_t * card = lv_obj_create(scr_root);
-    lv_obj_set_size(card, 980, 210);
+    lv_obj_set_size(card, DISP_HOR - 44, SY(210));
     lv_obj_align(card, LV_ALIGN_TOP_LEFT, 22, y);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -256,22 +257,22 @@ static lv_obj_t * mk_card(int y, const char * title, const char * kind,
     lv_obj_set_style_text_color(kd, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(kd, &lv_font_montserrat_14, 0);
     lv_label_set_text(kd, kind);
-    lv_obj_align(kd, LV_ALIGN_TOP_LEFT, 2, 34);
+    lv_obj_align(kd, LV_ALIGN_TOP_LEFT, 2, SY(34));
 
     lv_obj_t * st = lv_label_create(card);
     lv_obj_set_style_text_font(st, &lv_font_montserrat_22, 0);
     lv_obj_set_style_text_color(st, lv_color_hex(COL_TEXT_DIM), 0);
     lv_label_set_text(st, "...");
-    lv_obj_align(st, LV_ALIGN_TOP_LEFT, 0, 64);
+    lv_obj_align(st, LV_ALIGN_TOP_LEFT, 0, SY(64));
     *out_state = st;
 
     lv_obj_t * sub = lv_label_create(card);
     lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(sub, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_width(sub, 940);
+    lv_obj_set_width(sub, DISP_HOR - 280);
     lv_label_set_long_mode(sub, LV_LABEL_LONG_WRAP);
     lv_label_set_text(sub, "");
-    lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 0, 104);
+    lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 0, SY(104));
     *out_sub = sub;
 
     return card;
@@ -306,17 +307,17 @@ lv_obj_t * screen_adapters_create(void) {
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 24);
 
     /* Meteradapter card + buttons. */
-    lv_obj_t * mcard = mk_card(86, "Meteradapter", "Smart meter - Z-Wave",
+    lv_obj_t * mcard = mk_card(SY(86), "Meteradapter", "Smart meter - Z-Wave",
                                &lbl_met_state, &lbl_met_sub);
     mk_btn(mcard, "Test", 0x2a4060, on_met_test, NULL);
     lv_obj_t * met_test = lv_obj_get_child(mcard, lv_obj_get_child_cnt(mcard) - 1);
     lv_obj_align(met_test, LV_ALIGN_TOP_RIGHT, 0, 0);
     mk_btn(mcard, "Pair via Z-Wave", COL_OK, on_pair_clicked, &btn_pair_lbl);
     lv_obj_t * met_pair = lv_obj_get_child(mcard, lv_obj_get_child_cnt(mcard) - 1);
-    lv_obj_align(met_pair, LV_ALIGN_TOP_RIGHT, 0, 64);
+    lv_obj_align(met_pair, LV_ALIGN_TOP_RIGHT, 0, SY(64));
 
     /* Keteladapter card + button. */
-    lv_obj_t * kcard = mk_card(312, "Keteladapter", "Boiler - wired (OpenTherm)",
+    lv_obj_t * kcard = mk_card(SY(312), "Keteladapter", "Boiler - wired (OpenTherm)",
                                &lbl_ket_state, &lbl_ket_sub);
     mk_btn(kcard, "Test", 0x2a4060, on_ket_test, NULL);
     lv_obj_t * ket_test = lv_obj_get_child(kcard, lv_obj_get_child_cnt(kcard) - 1);

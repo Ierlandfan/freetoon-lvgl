@@ -96,6 +96,8 @@ static int        rotate_cb_count = 0;
 static lv_obj_t * sw_news         = NULL;
 static lv_obj_t * ta_news_url     = NULL;
 static lv_obj_t * lbl_news_status = NULL;
+static lv_obj_t * lbl_news_speed  = NULL;
+static lv_obj_t * sl_news_speed   = NULL;
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
     int city_changed = 0;
@@ -158,6 +160,16 @@ static void on_dim_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
     settings.dim_brightness = v;
     lv_label_set_text_fmt(lbl_dim_val, "%d", v);
+}
+static void on_auto_brightness_change(lv_event_t * e) {
+    int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings.auto_brightness = on;
+    if (on) {
+        int lvl = backlight_auto_level(settings.dim_brightness, settings.active_brightness);
+        backlight_set(lvl >= 0 ? lvl : settings.active_brightness);
+    } else {
+        backlight_set(settings.active_brightness);
+    }
 }
 static void on_offset_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
@@ -232,6 +244,12 @@ static void kb_event(lv_event_t * e) {
     lv_event_code_t c = lv_event_get_code(e);
     if (c == LV_EVENT_READY || c == LV_EVENT_CANCEL) kb_hide();
 }
+/* Tag a textarea as numeric/IP so its keyboard opens on the number pad (digits
+ * + '.' on one screen — no bouncing to the letters screen for the dots). The
+ * keyboard-icon key still switches to letters for the odd hostname. */
+#define KB_NUMERIC ((void *)(intptr_t)0x4e554d)   /* 'NUM' */
+static void ta_make_numeric(lv_obj_t * ta) { if (ta) lv_obj_set_user_data(ta, KB_NUMERIC); }
+
 static void ta_kb_event(lv_event_t * e) {
     lv_event_code_t c = lv_event_get_code(e);
     lv_obj_t * ta = lv_event_get_target(e);
@@ -243,6 +261,8 @@ static void ta_kb_event(lv_event_t * e) {
             lv_obj_add_event_cb(g_kb, kb_event, LV_EVENT_ALL, NULL);
         }
         lv_keyboard_set_textarea(g_kb, ta);
+        lv_keyboard_set_mode(g_kb, lv_obj_get_user_data(ta) == KB_NUMERIC
+                             ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER);
         lv_obj_clear_flag(g_kb, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(g_kb);
     } else if (c == LV_EVENT_DEFOCUSED) {
@@ -497,6 +517,12 @@ static void open_display_modal(lv_event_t * e) {
     r = panel_row(p, y, "Dim brightness", &lbl_dim_val);
     lv_label_set_text_fmt(lbl_dim_val, "%d", settings.dim_brightness);
     sl_dim = row_slider(r, 0, 400, settings.dim_brightness, on_dim_change);
+    y += 82;
+
+    /* Auto-brightness — follow the LTR-303 ambient sensor (Toon 2). When on, the
+       active backlight tracks the room between the dim and active values above. */
+    r = panel_row(p, y, "Auto-brightness (light sensor)", NULL);
+    row_switch(r, settings.auto_brightness, on_auto_brightness_change);
 }
 
 static void open_weather_modal(lv_event_t * e) {
@@ -573,40 +599,97 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, 220, y + 12);
 }
 
-static lv_obj_t * ta_waste_pc = NULL, * ta_waste_nr = NULL, * lbl_waste_status = NULL;
-static lv_obj_t * sw_waste_ics = NULL, * ta_waste_ics = NULL;
+static lv_obj_t * lbl_waste_status = NULL;
+static lv_obj_t * ta_waste_ics = NULL, * dd_waste_prov = NULL;
+static lv_obj_t * ta_waste_pc = NULL, * ta_waste_nr = NULL, * ta_waste_icsid = NULL,
+                * ta_waste_street = NULL, * ta_waste_city = NULL;
+
+/* Provider list from the ToonSoftwareCollective plugin_index.json (the same
+   dropdown the stock app shows). Fetched on modal open. */
+#define WASTE_MAX_PROV 80
+static char g_prov_ids[WASTE_MAX_PROV][8];
+static int  g_prov_count = 0;
+static char g_prov_opts[6144];
+
+static void waste_load_providers(void) {
+    extern int http_fetch(const char *, char *, size_t);
+    g_prov_count = 0; g_prov_opts[0] = 0;
+    static char body[24576];
+    if (http_fetch("https://raw.githubusercontent.com/ToonSoftwareCollective/"
+                   "wastecollection_plugins/main/plugin_index.json", body, sizeof body) != 0)
+        return;
+    const char * p = body;
+    while (g_prov_count < WASTE_MAX_PROV) {
+        const char * fn = strstr(p, "\"friendlyName\"");
+        if (!fn) break;
+        const char * q1 = strchr(strchr(fn, ':') ? strchr(fn, ':') : fn, '"');
+        q1 = q1 ? strchr(q1 + 1, '"') : NULL;          /* opening quote of value */
+        const char * q2 = q1 ? strchr(q1 + 1, '"') : NULL;
+        if (!q1 || !q2) break;
+        char name[64]; int nl = (int)(q2 - q1 - 1); if (nl > 63) nl = 63;
+        memcpy(name, q1 + 1, nl); name[nl] = 0;
+        const char * pr = strstr(q2, "\"provider\"");
+        const char * v1 = pr ? strchr(pr + 10, '"') : NULL;
+        const char * v2 = v1 ? strchr(v1 + 1, '"') : NULL;
+        if (!v1 || !v2) break;
+        int il = (int)(v2 - v1 - 1); if (il > 7) il = 7;
+        memcpy(g_prov_ids[g_prov_count], v1 + 1, il); g_prov_ids[g_prov_count][il] = 0;
+        if (g_prov_count) strncat(g_prov_opts, "\n", sizeof g_prov_opts - strlen(g_prov_opts) - 1);
+        strncat(g_prov_opts, name, sizeof g_prov_opts - strlen(g_prov_opts) - 1);
+        g_prov_count++;
+        p = v2 + 1;
+    }
+}
+
+static void waste_set_field_upper(char * dst, size_t dsz, const char * src) {
+    size_t o = 0;
+    for (const char * q = src; *q && o + 1 < dsz; q++) {
+        unsigned char c = (unsigned char)*q;
+        if (c == ' ') continue;
+        if (c >= 'a' && c <= 'z') c -= 32;
+        dst[o++] = (char)c;
+    }
+    dst[o] = 0;
+}
+
 static void on_waste_apply(lv_event_t * e) {
     (void)e;
-    if (sw_waste_ics)
-        settings.waste_provider = lv_obj_has_state(sw_waste_ics, LV_STATE_CHECKED) ? 1 : 0;
-    if (ta_waste_ics)
-        snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url,
-                 "%s", lv_textarea_get_text(ta_waste_ics));
-    if (ta_waste_pc) {
-        /* Postcode → uppercase, strip spaces (HVC/most providers want "1671AD"). */
-        const char * src = lv_textarea_get_text(ta_waste_pc);
-        char pc[12]; size_t o = 0;
-        for (const char * q = src; *q && o + 1 < sizeof pc; q++) {
-            unsigned char c = (unsigned char)*q;
-            if (c == ' ') continue;
-            if (c >= 'a' && c <= 'z') c -= 32;
-            pc[o++] = (char)c;
-        }
-        pc[o] = 0;
-        snprintf(settings.waste_postcode, sizeof settings.waste_postcode, "%s", pc);
+    if (dd_waste_prov && g_prov_count) {
+        int idx = lv_dropdown_get_selected(dd_waste_prov);
+        if (idx >= 0 && idx < g_prov_count)
+            snprintf(settings.waste_plugin, sizeof settings.waste_plugin, "%s", g_prov_ids[idx]);
     }
-    if (ta_waste_nr)
-        snprintf(settings.waste_housenr, sizeof settings.waste_housenr,
-                 "%s", lv_textarea_get_text(ta_waste_nr));
+    if (ta_waste_pc)    waste_set_field_upper(settings.waste_postcode, sizeof settings.waste_postcode,
+                                              lv_textarea_get_text(ta_waste_pc));
+    if (ta_waste_nr)    snprintf(settings.waste_housenr, sizeof settings.waste_housenr, "%s", lv_textarea_get_text(ta_waste_nr));
+    if (ta_waste_icsid) snprintf(settings.waste_icsid,   sizeof settings.waste_icsid,   "%s", lv_textarea_get_text(ta_waste_icsid));
+    if (ta_waste_street)snprintf(settings.waste_street,  sizeof settings.waste_street,  "%s", lv_textarea_get_text(ta_waste_street));
+    if (ta_waste_city)  snprintf(settings.waste_city,    sizeof settings.waste_city,    "%s", lv_textarea_get_text(ta_waste_city));
+    if (ta_waste_ics)   snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url, "%s", lv_textarea_get_text(ta_waste_ics));
     settings_save();
     if (lbl_waste_status)
-        lv_label_set_text_fmt(lbl_waste_status, "Saved: %s %s  (refreshes shortly)",
-                              settings.waste_postcode, settings.waste_housenr);
+        lv_label_set_text(lbl_waste_status,
+            "Saved - the calendar refreshes within a few seconds.");
+}
+
+/* small labelled one-line text field; returns the textarea */
+static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lbl, const char * val) {
+    lv_obj_t * l = lv_label_create(p);
+    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_18, 0);
+    lv_label_set_text(l, lbl);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, x, y);
+    lv_obj_t * ta = lv_textarea_create(p);
+    lv_obj_set_size(ta, w, 44);
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, x, y + 26);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_text(ta, val ? val : "");
+    return ta;
 }
 
 static void open_waste_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Waste", 560);
+    lv_obj_t * p = modal_open("Waste", 720);
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
@@ -620,70 +703,58 @@ static void open_waste_modal(lv_event_t * e) {
     r = panel_row(p, y, "Waste alert window", &lbl_waste_lead);
     if      (settings.dim_waste_lead_days == 0) lv_label_set_text(lbl_waste_lead, "uit");
     else if (settings.dim_waste_lead_days == 1) lv_label_set_text(lbl_waste_lead, "vanaf 1 dag vooraf");
-    else lv_label_set_text_fmt(lbl_waste_lead, "vanaf %d dagen vooraf",
-                               settings.dim_waste_lead_days);
+    else lv_label_set_text_fmt(lbl_waste_lead, "vanaf %d dagen vooraf", settings.dim_waste_lead_days);
     sl_waste_lead = row_slider(r, 0, 7, settings.dim_waste_lead_days, on_waste_lead_change);
     y += 90;
 
-    /* Address — postcode + house number. Overrides the stock TSC waste config.
-     * (Provider selection arrives with the multi-provider fetch work; today the
-     * fetch is HVC Groep / inzamelkalender.) */
-    lv_obj_t * lbl_pc = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_pc, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_pc, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_pc, "Postcode:");
-    lv_obj_align(lbl_pc, LV_ALIGN_TOP_LEFT, 4, y);
-    ta_waste_pc = lv_textarea_create(p);
-    lv_obj_set_size(ta_waste_pc, 220, 44);
-    lv_obj_align(ta_waste_pc, LV_ALIGN_TOP_LEFT, 240, y - 4);
-    lv_textarea_set_one_line(ta_waste_pc, true);
-    lv_textarea_set_text(ta_waste_pc, settings.waste_postcode);
+    /* Provider dropdown — the ToonSoftwareCollective plugin list (same as the
+       stock Afvalkalender app). Fetched live; the wastefetch helper then runs
+       the chosen provider's script. */
+    lv_obj_t * lp = lv_label_create(p);
+    lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lp, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lp, "Afvalverwerker (provider):");
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, 4, y);
+    waste_load_providers();
+    dd_waste_prov = lv_dropdown_create(p);
+    lv_obj_set_width(dd_waste_prov, 720);
+    lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, 4, y + 30);
+    if (g_prov_count) {
+        lv_dropdown_set_options(dd_waste_prov, g_prov_opts);
+        for (int i = 0; i < g_prov_count; i++)
+            if (strcmp(g_prov_ids[i], settings.waste_plugin) == 0) { lv_dropdown_set_selected(dd_waste_prov, i); break; }
+    } else {
+        lv_dropdown_set_options(dd_waste_prov, "(provider list unavailable - check internet)");
+    }
+    y += 96;
 
-    lv_obj_t * lbl_nr = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_nr, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_nr, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_nr, "Nr:");
-    lv_obj_align(lbl_nr, LV_ALIGN_TOP_LEFT, 500, y);
-    ta_waste_nr = lv_textarea_create(p);
-    lv_obj_set_size(ta_waste_nr, 120, 44);
-    lv_obj_align(ta_waste_nr, LV_ALIGN_TOP_LEFT, 560, y - 4);
-    lv_textarea_set_one_line(ta_waste_nr, true);
-    lv_textarea_set_text(ta_waste_nr, settings.waste_housenr);
-    y += 64;
-
-    /* Provider: HVC postcode (off) vs a generic ICS calendar URL (on) — the
-     * ICS path covers prezero/cyclus/dar/cranendonck/katwijk/hvc-ICS etc. */
-    r = panel_row(p, y, "Use ICS calendar URL", NULL);
-    sw_waste_ics = row_switch(r, settings.waste_provider == 1, NULL);
-    y += 82;
-
-    lv_obj_t * lbl_ics = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_ics, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_ics, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_ics, "ICS URL:");
-    lv_obj_align(lbl_ics, LV_ALIGN_TOP_LEFT, 4, y);
-    ta_waste_ics = lv_textarea_create(p);
-    lv_obj_set_size(ta_waste_ics, 560, 44);
-    lv_obj_align(ta_waste_ics, LV_ALIGN_TOP_LEFT, 240, y - 4);
-    lv_textarea_set_one_line(ta_waste_ics, true);
-    lv_textarea_set_text(ta_waste_ics, settings.waste_ics_url);
-    y += 64;
+    /* Per-provider fields — fill the ones your provider needs (postcode+nr, or a
+       calendar number/ICS-id, or street+city). Hint shown per provider's info. */
+    ta_waste_pc    = waste_field(p, 4,   y, 220, "Postcode",        settings.waste_postcode);
+    ta_waste_nr    = waste_field(p, 240, y, 120, "Huisnr",          settings.waste_housenr);
+    ta_waste_icsid = waste_field(p, 380, y, 360, "Kalender-/ICS-id", settings.waste_icsid);
+    ta_make_numeric(ta_waste_nr); ta_make_numeric(ta_waste_icsid);
+    y += 84;
+    ta_waste_street = waste_field(p, 4,   y, 360, "Straat (opt)",   settings.waste_street);
+    ta_waste_city   = waste_field(p, 380, y, 360, "Plaats (opt)",   settings.waste_city);
+    y += 84;
+    ta_waste_ics = waste_field(p, 4, y, 736, "of: eigen iCal / ICS URL", settings.waste_ics_url);
+    y += 92;
 
     lv_obj_t * apply = lv_btn_create(p);
-    lv_obj_set_size(apply, 160, 48);
-    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, 240, y);
+    lv_obj_set_size(apply, 200, 50);
+    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, 4, y);
     lv_obj_set_style_bg_color(apply, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(apply, on_waste_apply, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, "Save"); lv_obj_center(al);
+    lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, "Opslaan"); lv_obj_center(al);
 
     lbl_waste_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_waste_status, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_waste_status, &lv_font_montserrat_14, 0);
-    lv_obj_set_width(lbl_waste_status, 760);
+    lv_obj_set_width(lbl_waste_status, 736);
     lv_label_set_long_mode(lbl_waste_status, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(lbl_waste_status,
-        settings.waste_postcode[0] ? "" : "Leave blank to use the stock TSC waste config.");
-    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, 4, y + 56);
+    lv_label_set_text(lbl_waste_status, "Kies een provider en vul de velden die deze nodig heeft.");
+    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, 220, y + 8);
 }
 
 static void open_heating_modal(lv_event_t * e) {
@@ -1007,9 +1078,89 @@ static void open_adapters(lv_event_t * e) {
     ui_push(screen_adapters_create());
 }
 
-static void open_domoticz(lv_event_t * e) {
+/* On-device Domoticz config — host/user/enable can now be set on the Toon
+ * itself (previously PWA-only). "View lights/blinds" opens the device list. */
+static lv_obj_t * ta_domoticz_host = NULL;
+static lv_obj_t * ta_domoticz_user = NULL;
+static lv_obj_t * lbl_domoticz_result = NULL;
+
+static void on_domoticz_enabled_change(lv_event_t * e) {
+    settings.enable_domoticz =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_domoticz_view_click(lv_event_t * e) {
     (void)e;
     ui_push(screen_domoticz_create());
+}
+static void on_domoticz_apply_click(lv_event_t * e) {
+    (void)e;
+    const char * h = lv_textarea_get_text(ta_domoticz_host);
+    const char * u = lv_textarea_get_text(ta_domoticz_user);
+    snprintf(settings.domoticz_host, sizeof(settings.domoticz_host), "%s", h ? h : "");
+    snprintf(settings.domoticz_user, sizeof(settings.domoticz_user), "%s", u ? u : "");
+    settings_save();
+    extern int domoticz_start(void);
+    domoticz_start();    /* (re)connect with the new host */
+    if (lbl_domoticz_result)
+        lv_label_set_text(lbl_domoticz_result, settings.domoticz_host[0]
+            ? "Saved. Connecting to Domoticz..." : "Saved (host empty).");
+}
+
+static void open_domoticz(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Domoticz", 430);
+    int y = 70;
+
+    lv_obj_t * r_en = panel_row(p, y, "Domoticz enabled", NULL);
+    row_switch(r_en, settings.enable_domoticz, on_domoticz_enabled_change);
+    y += 82;
+
+    lv_obj_t * lh = lv_label_create(p);
+    lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lh, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lh, "Host (ip:port):");
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_domoticz_host = lv_textarea_create(p); ta_make_numeric(ta_domoticz_host);
+    lv_obj_set_size(ta_domoticz_host, 420, 44);
+    lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, 260, y - 4);
+    lv_textarea_set_one_line(ta_domoticz_host, true);
+    lv_textarea_set_text(ta_domoticz_host, settings.domoticz_host);
+    y += 60;
+
+    lv_obj_t * lu = lv_label_create(p);
+    lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lu, &lv_font_montserrat_22, 0);
+    lv_label_set_text(lu, "User (opt):");
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, 4, y);
+    ta_domoticz_user = lv_textarea_create(p);
+    lv_obj_set_size(ta_domoticz_user, 420, 44);
+    lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, 260, y - 4);
+    lv_textarea_set_one_line(ta_domoticz_user, true);
+    lv_textarea_set_text(ta_domoticz_user, settings.domoticz_user);
+    y += 64;
+
+    lv_obj_t * b_apply = lv_btn_create(p);
+    lv_obj_set_size(b_apply, 220, 50);
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
+    lv_obj_add_event_cb(b_apply, on_domoticz_apply_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, "Save + connect"); lv_obj_center(la);
+
+    lv_obj_t * b_view = lv_btn_create(p);
+    lv_obj_set_size(b_view, 240, 50);
+    lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, 244, y);
+    lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
+    lv_obj_add_event_cb(b_view, on_domoticz_view_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, "View lights/blinds"); lv_obj_center(lv);
+    y += 64;
+
+    lbl_domoticz_result = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_domoticz_result, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_font(lbl_domoticz_result, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(lbl_domoticz_result, 770);
+    lv_label_set_long_mode(lbl_domoticz_result, LV_LABEL_LONG_WRAP);
+    lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_label_set_text(lbl_domoticz_result, "Set the Domoticz host, then Save + connect.");
 }
 
 /* Client mode: this Toon mirrors a master Toon over its PWA API. */
@@ -1037,7 +1188,7 @@ static void open_client_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl, "Master IP:");
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
-    ta_master = lv_textarea_create(p);
+    ta_master = lv_textarea_create(p); ta_make_numeric(ta_master);
     lv_obj_set_size(ta_master, 400, 44);
     lv_obj_align(ta_master, LV_ALIGN_TOP_LEFT, 200, y - 4);
     lv_textarea_set_one_line(ta_master, true);
@@ -1191,9 +1342,19 @@ static void on_news_test(lv_event_t * e) {
     news_test_feed(lv_textarea_get_text(ta_news_url), msg, sizeof msg);
     lv_label_set_text(lbl_news_status, msg);
 }
+static void on_news_speed_change(lv_event_t * e) {
+    int v = lv_slider_get_value(lv_event_get_target(e));
+    settings.news_scroll_speed = v;
+    if (lbl_news_speed) lv_label_set_text_fmt(lbl_news_speed, "%d", v);
+    screen_home_set_ticker_speed(v);   /* live */
+}
+
 static void open_news_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Newsreader", 470);
+    lv_obj_t * p = modal_open("Newsreader", 560);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
     lv_obj_t * r = panel_row(p, y, "News ticker on home screen", NULL);
@@ -1218,6 +1379,12 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_add_event_cb(tbtn, on_news_test, LV_EVENT_CLICKED, NULL);
     lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, "Test");
     lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0); lv_obj_center(tl);
+    y += 86;
+
+    int spd = settings.news_scroll_speed > 0 ? settings.news_scroll_speed : 30;
+    lv_obj_t * rs = panel_row(p, y, "Ticker speed (px/s)", &lbl_news_speed);
+    lv_label_set_text_fmt(lbl_news_speed, "%d", spd);
+    sl_news_speed = row_slider(rs, 10, 120, spd, on_news_speed_change);
     y += 86;
 
     lbl_news_status = lv_label_create(p);
@@ -1529,16 +1696,30 @@ static void open_about_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("About", 320);
 
+    /* Same identity as the home ft-logo modal so both Abouts read identically:
+       freetoon · version · beta · author/MIT, then the live update status. */
+    lv_obj_t * t = lv_label_create(p);
+    lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_28, 0);
+    lv_label_set_text(t, "freetoon");
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 58);
+
     lv_obj_t * ver = lv_label_create(p);
-    lv_obj_set_style_text_color(ver, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(ver, &lv_font_montserrat_22, 0);
-    lv_label_set_text(ver, "toonui - LVGL rebuild   (build " __DATE__ ")");
-    lv_obj_align(ver, LV_ALIGN_TOP_LEFT, 4, 70);
+    lv_obj_set_style_text_color(ver, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(ver, &lv_font_montserrat_18, 0);
+    lv_label_set_text_fmt(ver, "%s  -  beta", BUILD_VERSION);
+    lv_obj_align(ver, LV_ALIGN_TOP_LEFT, 4, 94);
+
+    lv_obj_t * cred = lv_label_create(p);
+    lv_obj_set_style_text_color(cred, lv_color_hex(0x6f8aa0), 0);
+    lv_obj_set_style_text_font(cred, &lv_font_montserrat_14, 0);
+    lv_label_set_text(cred, "alternative UI by Ierlandfan  -  MIT License");
+    lv_obj_align(cred, LV_ALIGN_TOP_LEFT, 4, 120);
 
     lbl_about_status = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_about_status, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_about_status, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_about_status, &lv_font_montserrat_18, 0);
-    lv_obj_align(lbl_about_status, LV_ALIGN_TOP_LEFT, 4, 112);
+    lv_obj_align(lbl_about_status, LV_ALIGN_TOP_LEFT, 4, 150);
 
     about_tick();
     modal_tick_fn = about_tick;
@@ -1961,7 +2142,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(lbl_host, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_host, "OTGW host:");
     lv_obj_align(lbl_host, LV_ALIGN_TOP_LEFT, 4, y);
-    ta_otgw_host = lv_textarea_create(p);
+    ta_otgw_host = lv_textarea_create(p); ta_make_numeric(ta_otgw_host);
     lv_obj_set_size(ta_otgw_host, 380, 44);
     lv_obj_align(ta_otgw_host, LV_ALIGN_TOP_LEFT, 240, y - 4);
     lv_textarea_set_one_line(ta_otgw_host, true);
@@ -2416,7 +2597,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(lbl_h, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_h, "Broker host:");
     lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, 4, y);
-    ta_mqtt_host = lv_textarea_create(p);
+    ta_mqtt_host = lv_textarea_create(p); ta_make_numeric(ta_mqtt_host);
     lv_obj_set_size(ta_mqtt_host, 380, 44);
     lv_obj_align(ta_mqtt_host, LV_ALIGN_TOP_LEFT, 240, y - 4);
     lv_textarea_set_one_line(ta_mqtt_host, true);
@@ -2427,7 +2608,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(lbl_p, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_p, "Port:");
     lv_obj_align(lbl_p, LV_ALIGN_TOP_LEFT, 640, y);
-    ta_mqtt_port = lv_textarea_create(p);
+    ta_mqtt_port = lv_textarea_create(p); ta_make_numeric(ta_mqtt_port);
     lv_obj_set_size(ta_mqtt_port, 100, 44);
     lv_obj_align(ta_mqtt_port, LV_ALIGN_TOP_LEFT, 720, y - 4);
     lv_textarea_set_one_line(ta_mqtt_port, true);

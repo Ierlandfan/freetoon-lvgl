@@ -9,7 +9,8 @@
 #define WASTE_TYPES 4
 
 typedef struct {
-    char    label[16];      /* "Restafval" / "GFT" / "Papier" / "Plastic" */
+    char    label[40];      /* HVC: "Restafval"/"GFT"/... ; ICS: the raw calendar
+                               SUMMARY (e.g. "Droge herbruikbare materialen"). */
     char    date[16];       /* "YYYY-MM-DD", empty if none */
 } waste_item_t;
 
@@ -34,5 +35,13 @@ typedef struct {
     char labels[40];
 } waste_pickup_t;
 int waste_next_2_pickups(waste_pickup_t * out1, waste_pickup_t * out2);
+
+/* Up to max_n soonest upcoming pickups within `lead_days`, with a per-type
+   pickup-day cutoff (Plastic until 21:00, others until 16:00). Single source
+   of truth for the home tile and dim screen. Returns count filled. */
+int waste_next_n_windowed(int lead_days, waste_pickup_t * out, int max_n);
+
+/* Whole days from today to an ISO "YYYY-MM-DD" date (negative if past). */
+long waste_days_until(const char * date);
 
 #endif

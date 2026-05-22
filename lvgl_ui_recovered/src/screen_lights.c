@@ -4,6 +4,7 @@
  * in that area with a Toggle button. State is polled by ha_thread.
  */
 #include "screens.h"
+#include "display.h"
 #include "homeassistant.h"
 #include "icons.h"
 #include "settings.h"
@@ -103,8 +104,10 @@ static void refresh_cb(lv_timer_t * t) {
 static void build_light_row(lv_obj_t * parent, int i, int y) {
     light_row_t * R = &rows[i];
     R->row = lv_obj_create(parent);
-    lv_obj_set_size(R->row, 280, 44);
-    lv_obj_set_pos(R->row, 8, y);
+    /* Fill the card's inner width (card is narrower on Toon 1) so the
+     * RIGHT_MID Toggle button stays inside the card. */
+    lv_obj_set_size(R->row, lv_pct(100), 44);
+    lv_obj_set_pos(R->row, 0, y);
     lv_obj_set_style_bg_opa(R->row, 0, 0);
     lv_obj_set_style_border_width(R->row, 0, 0);
     lv_obj_set_style_pad_all(R->row, 4, 0);
@@ -141,9 +144,12 @@ static void build_light_row(lv_obj_t * parent, int i, int y) {
 
 /* Build a card per area; cards are arranged in 3 columns. */
 static void build_area_card(int col, const char * area_name) {
-    int card_w = 320, card_h = 380;
+    /* Three cards across: derive width from the panel so the row fits both
+     * Toon 2 (1024 → 320px cards) and Toon 1 (800 → ~245px cards). */
+    int card_w = (DISP_HOR - 16 * 2 - 12 * 2) / 3;
+    int card_h = SY(380);
     int x = 16 + col * (card_w + 12);
-    int y = 130;
+    int y = SY(130);
     lv_obj_t * card = lv_obj_create(scr_root);
     lv_obj_set_size(card, card_w, card_h);
     lv_obj_set_pos(card, x, y);
@@ -200,7 +206,9 @@ lv_obj_t * screen_lights_create(void) {
 
     /* All Lights master controls — header strip */
     lv_obj_t * master = lv_obj_create(scr_root);
-    lv_obj_set_size(master, 720, 60);
+    /* Cap the strip so it clears the title + Back button on the narrower
+     * Toon 1 panel (720px would start at x=64 and collide with them). */
+    lv_obj_set_size(master, (DISP_VER < 600 ? 500 : 720), 60);
     lv_obj_align(master, LV_ALIGN_TOP_RIGHT, -16, 12);
     lv_obj_set_style_bg_color(master, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(master, 0, 0);
@@ -249,7 +257,7 @@ lv_obj_t * screen_lights_create(void) {
      * so they vanish behind it when HA integration is off. The area
      * cards stay built (cheap), the overlay just covers them. */
     ha_offline_overlay = lv_obj_create(scr_root);
-    lv_obj_set_size(ha_offline_overlay, 1024, 600);
+    lv_obj_set_size(ha_offline_overlay, DISP_HOR, DISP_VER);
     lv_obj_set_pos(ha_offline_overlay, 0, 0);
     lv_obj_set_style_bg_color(ha_offline_overlay, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(ha_offline_overlay, LV_OPA_COVER, 0);
@@ -279,7 +287,9 @@ lv_obj_t * screen_lights_create(void) {
         lv_obj_t * hint = lv_label_create(ha_offline_overlay);
         lv_obj_set_style_text_color(hint, lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(hint, &lv_font_montserrat_22, 0);
-        lv_obj_set_width(hint, 800);
+        /* Leave a margin so the centered wrapped text never reaches the
+         * panel edge (was a fixed 800px → clipped on Toon 1). */
+        lv_obj_set_width(hint, DISP_HOR - 80);
         lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_text(hint,

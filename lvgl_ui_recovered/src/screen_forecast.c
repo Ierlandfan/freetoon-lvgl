@@ -9,6 +9,7 @@
  * goes, and shows the weatherreport text body on the right.
  */
 #include "screens.h"
+#include "display.h"
 #include "weather.h"
 #include "icons.h"
 #include "settings.h"
@@ -139,8 +140,8 @@ lv_obj_t * screen_forecast_create(void) {
        precipitation map. Our weather thread saves it to disk every 5 min;
        we render via LVGL's stdio FS driver + PNG decoder. */
     lv_obj_t * radar_frame = lv_obj_create(scr_root);
-    lv_obj_set_size(radar_frame, 380, 380);
-    lv_obj_set_pos(radar_frame, 30, 100);
+    lv_obj_set_size(radar_frame, SX(380), SY(380));
+    lv_obj_set_pos(radar_frame, 30, SY(100));
     lv_obj_set_style_bg_color(radar_frame, lv_color_hex(0x1a2a44), 0);
     lv_obj_set_style_radius(radar_frame, 12, 0);
     lv_obj_set_style_border_color(radar_frame, lv_color_hex(0x335577), 0);
@@ -159,8 +160,8 @@ lv_obj_t * screen_forecast_create(void) {
     /* Zoom + / - buttons stacked on top of the radar frame's top-left
        corner. Translucent so they don't fully hide the map underneath. */
     struct { lv_align_t a; int x, y; int d; const char * t; } z[] = {
-        { LV_ALIGN_TOP_LEFT,     34,  102, +RADAR_ZOOM_STEP, "+" },
-        { LV_ALIGN_TOP_LEFT,     34,  146, -RADAR_ZOOM_STEP, "-" },
+        { LV_ALIGN_TOP_LEFT,     34,  SY(102), +RADAR_ZOOM_STEP, "+" },
+        { LV_ALIGN_TOP_LEFT,     34,  SY(146), -RADAR_ZOOM_STEP, "-" },
     };
     for (size_t i = 0; i < sizeof(z)/sizeof(z[0]); i++) {
         lv_obj_t * b = lv_btn_create(scr_root);
@@ -182,17 +183,17 @@ lv_obj_t * screen_forecast_create(void) {
     lbl_title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_28, 0);
-    lv_obj_set_width(lbl_title, 540);
+    lv_obj_set_width(lbl_title, SX(540));
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, 440, 100);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, SX(440), SY(100));
     lv_label_set_text(lbl_title, "Weersverwachting");
 
     /* Body text — wrap inside a vertically-scrollable container so the
      * full weather report is readable. Previously the LONG_DOT mode
      * truncated everything past ~340 px tall with an ellipsis. */
     lv_obj_t * body_scroll = lv_obj_create(scr_root);
-    lv_obj_set_size(body_scroll, 560, 340);
-    lv_obj_align(body_scroll, LV_ALIGN_TOP_LEFT, 440, 150);
+    lv_obj_set_size(body_scroll, SX(560), SY(340) - (DISP_VER < 600 ? 80 : 0));
+    lv_obj_align(body_scroll, LV_ALIGN_TOP_LEFT, SX(440), SY(150));
     lv_obj_set_style_bg_opa(body_scroll, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(body_scroll, 0, 0);
     lv_obj_set_style_pad_all(body_scroll, 0, 0);
@@ -201,7 +202,7 @@ lv_obj_t * screen_forecast_create(void) {
     lbl_body = lv_label_create(body_scroll);
     lv_obj_set_style_text_color(lbl_body, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_body, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_body, 540);
+    lv_obj_set_width(lbl_body, SX(540));
     lv_label_set_long_mode(lbl_body, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_body, "(laden...)");
 
@@ -209,11 +210,16 @@ lv_obj_t * screen_forecast_create(void) {
        label top-left, max°(min°) top-right, big icon centred, wind arrow
        + Bft along the bottom. The home strip switched away from the
        verbose desc text so we keep the layouts identical. */
-    int col_w = 1004 / WEATHER_FORECAST_DAYS;
+    int col_w = (DISP_HOR - 20) / WEATHER_FORECAST_DAYS;
+    /* On Toon 1 the radar/text block (ends ~y=384) leaves only a thin band
+     * at the bottom, so sit the strip just under it and shorten it so its
+     * bottom stays above y=480. On Toon 2 it keeps the roomy y=460/130. */
+    int strip_y = (DISP_VER < 600) ? 390 : 460;
+    int strip_h = (DISP_VER < 600) ? 84  : 130;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         lv_obj_t * col = lv_obj_create(scr_root);
-        lv_obj_set_size(col, col_w - 8, 130);
-        lv_obj_set_pos(col, 10 + i * col_w, 460);
+        lv_obj_set_size(col, col_w - 8, strip_h);
+        lv_obj_set_pos(col, 10 + i * col_w, strip_y);
         lv_obj_set_style_bg_color(col, lv_color_hex(0x1a2a44), 0);
         lv_obj_set_style_radius(col, 10, 0);
         lv_obj_set_style_border_width(col, 0, 0);
@@ -226,6 +232,9 @@ lv_obj_t * screen_forecast_create(void) {
         lv_img_set_src(fc_icon[i], &icon_wx_cloud_lg);
         lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(0xddeeff), 0);
         lv_obj_set_style_img_recolor_opa(fc_icon[i], 255, 0);
+        /* Shrink the big icon on Toon 1's shorter strip so it fits the
+         * 84px column without crowding the day/temp/wind text. */
+        if (DISP_VER < 600) lv_img_set_zoom(fc_icon[i], 160);
         lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 0);
 
         /* Wind-direction arrow + Bft at the bottom of each column. */

@@ -218,11 +218,12 @@ static lv_obj_t * p1_title[4] = {0};
 static lv_obj_t * p1_main[4]  = {0};
 static lv_obj_t * p1_sub[4]   = {0};
 
-/* RSS news ticker (above the forecast). Tap → headline list + a QR per
- * article so it can be opened on a phone. */
-static lv_obj_t * news_ticker = NULL;
-static lv_obj_t * news_modal  = NULL;
-static lv_obj_t * news_qr     = NULL;
+/* RSS news ticker (above the forecast). Tap → headline list; tapping a headline
+ * shows its article summary (from the RSS body) in the reading pane. */
+static lv_obj_t * news_ticker    = NULL;
+static lv_obj_t * news_modal     = NULL;
+static lv_obj_t * news_body_lbl  = NULL;   /* reading pane (was a QR) */
+static lv_obj_t * news_body_title = NULL;
 /* Small banner at the top of the home screen — shown when the update
  * checker finds a newer freetoon-lvgl release. Tapping it opens a modal
  * with the release notes + the one-line install command. */
@@ -1058,9 +1059,15 @@ static void refresh_cb(lv_timer_t * t) {
      * changes daily, not by-the-second, but keep this cheap: a single
      * src-swap when the phase slot moves. */
     if (moon_phase_img) {
-        const lv_img_dsc_t * ph = moon_phase_icon(40);
-        if (lv_img_get_src(moon_phase_img) != ph)
-            lv_img_set_src(moon_phase_img, ph);
+        /* White at night, hidden during the day — same gate as the dim screen. */
+        if (is_daytime_now()) {
+            lv_obj_add_flag(moon_phase_img, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            const lv_img_dsc_t * ph = moon_phase_icon(40);
+            if (lv_img_get_src(moon_phase_img) != ph)
+                lv_img_set_src(moon_phase_img, ph);
+            lv_obj_clear_flag(moon_phase_img, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     if (toon_state.indoor_temp > 0)
@@ -1194,9 +1201,13 @@ static void refresh_cb(lv_timer_t * t) {
     /* Waste tile (top + next-up rows). Each row gets the icon and accent
        colour for its type label. */
     if (lbl_waste_date && lbl_waste_type) {
-        waste_pickup_t p1, p2;
-        memset(&p1, 0, sizeof p1); memset(&p2, 0, sizeof p2);
-        int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
+        /* Windowed + per-type cutoff, same source as the dim screen: only show
+           pickups within the lead window (default 3 days, up to 7), so when
+           only Plastic falls inside the window only Plastic shows. */
+        waste_pickup_t wp[2];
+        int lead = settings.dim_waste_lead_days > 0 ? settings.dim_waste_lead_days : 3;
+        int n = waste_state.connected ? waste_next_n_windowed(lead, wp, 2) : 0;
+        waste_pickup_t p1 = wp[0], p2 = wp[1];
         if (n >= 1) {
             int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
             lv_label_set_text_fmt(lbl_waste_date, "%d-%d", d, mo);
@@ -1874,13 +1885,24 @@ static void on_home_gesture(lv_event_t * e) {
 /* ---- news ticker tap → headline list + per-article QR ---- */
 static void news_modal_close(lv_event_t * e) {
     (void)e;
-    if (news_modal) { lv_obj_del(news_modal); news_modal = NULL; news_qr = NULL; }
+    if (news_modal) { lv_obj_del(news_modal); news_modal = NULL;
+                      news_body_lbl = NULL; news_body_title = NULL; }
+}
+/* Show the i-th article's title + summary in the reading pane. */
+static void news_show_body(int i) {
+    char title[NEWS_TITLE_MAX] = "", body[NEWS_BODY_MAX] = "";
+    news_item(i, title, sizeof title, NULL, 0);
+    news_body(i, body, sizeof body);
+    if (news_body_title) lv_label_set_text(news_body_title, title);
+    if (news_body_lbl)   lv_label_set_text(news_body_lbl,
+                             body[0] ? body : "(geen samenvatting beschikbaar)");
 }
 static void on_news_item(lv_event_t * e) {
-    int i = (int)(intptr_t)lv_event_get_user_data(e);
-    char title[NEWS_TITLE_MAX], link[NEWS_LINK_MAX];
-    if (news_item(i, title, sizeof title, link, sizeof link) != 0) return;
-    if (news_qr && link[0]) lv_qrcode_update(news_qr, link, strlen(link));
+    news_show_body((int)(intptr_t)lv_event_get_user_data(e));
+}
+/* Live ticker scroll-speed change from Settings (px/sec). */
+void screen_home_set_ticker_speed(int spd) {
+    if (news_ticker) lv_obj_set_style_anim_speed(news_ticker, spd > 0 ? spd : 30, 0);
 }
 static void on_news_tap(lv_event_t * e) {
     (void)e;
@@ -1909,29 +1931,43 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 16, 12);
 
     lv_obj_t * list = lv_list_create(card);
-    lv_obj_set_size(list, 540, 420);
-    lv_obj_align(list, LV_ALIGN_TOP_LEFT, 12, 56);
+    lv_obj_set_size(list, 430, 432);
+    lv_obj_align(list, LV_ALIGN_TOP_LEFT, 12, 52);
     lv_obj_set_style_bg_color(list, lv_color_hex(0x0e1a2a), 0);
     int n = news_count();
     for (int i = 0; i < n; i++) {
-        char ti[NEWS_TITLE_MAX], li[NEWS_LINK_MAX];
-        if (news_item(i, ti, sizeof ti, li, sizeof li) != 0) continue;
+        char ti[NEWS_TITLE_MAX];
+        if (news_item(i, ti, sizeof ti, NULL, 0) != 0) continue;
         lv_obj_t * b = lv_list_add_btn(list, NULL, ti);
         lv_obj_set_style_text_font(b, &lv_font_montserrat_18, 0);
         lv_obj_add_event_cb(b, on_news_item, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        /* one-line, ellipsised titles so more headlines fit without wrapping */
+        lv_obj_t * bl = lv_obj_get_child(b, lv_obj_get_child_cnt(b) - 1);
+        if (bl) { lv_label_set_long_mode(bl, LV_LABEL_LONG_DOT); lv_obj_set_width(bl, 380); }
     }
 
-    news_qr = lv_qrcode_create(card, 240, lv_color_hex(0x000000), lv_color_hex(0xffffff));
-    lv_obj_align(news_qr, LV_ALIGN_TOP_RIGHT, -50, 90);
-    lv_obj_t * ql = lv_label_create(card);
-    lv_obj_set_style_text_color(ql, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(ql, &lv_font_montserrat_18, 0);
-    lv_label_set_text(ql, "Scan om te openen");
-    lv_obj_align(ql, LV_ALIGN_TOP_RIGHT, -90, 340);
+    /* Reading pane (right) — selected article's title + summary; tap a headline. */
+    news_body_title = lv_label_create(card);
+    lv_obj_set_style_text_font(news_body_title, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(news_body_title, lv_color_hex(0xffffff), 0);
+    lv_label_set_long_mode(news_body_title, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(news_body_title, 420);
+    lv_obj_align(news_body_title, LV_ALIGN_TOP_LEFT, 458, 50);
 
-    char t0[NEWS_TITLE_MAX], l0[NEWS_LINK_MAX];
-    if (news_item(0, t0, sizeof t0, l0, sizeof l0) == 0 && l0[0])
-        lv_qrcode_update(news_qr, l0, strlen(l0));
+    lv_obj_t * pane = lv_obj_create(card);
+    lv_obj_set_size(pane, 432, 320);
+    lv_obj_align(pane, LV_ALIGN_TOP_LEFT, 452, 132);
+    lv_obj_set_style_bg_color(pane, lv_color_hex(0x0e1a2a), 0);
+    lv_obj_set_style_border_width(pane, 0, 0);
+    lv_obj_set_style_radius(pane, 10, 0);
+    lv_obj_set_scroll_dir(pane, LV_DIR_VER);
+    news_body_lbl = lv_label_create(pane);
+    lv_obj_set_style_text_font(news_body_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(news_body_lbl, lv_color_hex(0xcdd9e6), 0);
+    lv_label_set_long_mode(news_body_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(news_body_lbl, 400);
+
+    news_show_body(0);
 
     lv_obj_t * x = lv_btn_create(card);
     lv_obj_set_size(x, 130, 48);
@@ -1996,16 +2032,15 @@ lv_obj_t * screen_home_create(void) {
      * pixel position is used (rather than align-to-date-label) because
      * lv_obj_align_to runs before the label has measured its text width
      * → the icon ends up clipped behind the clock. */
-    moon_phase_img = lv_img_create(th);
+    moon_phase_img = lv_img_create(scr_root);
     lv_img_set_src(moon_phase_img, moon_phase_icon(40));
-    lv_obj_set_style_img_recolor(moon_phase_img, lv_color_hex(0xe8edf2), 0);
+    lv_obj_set_style_img_recolor(moon_phase_img, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(moon_phase_img, 255, 0);
-    /* Position: hovering to the right of "Tue 19 May", at clock baseline.
-     * Using lv_obj_align (not lv_obj_set_pos) because the heater tile is
-     * a styled container and set_pos has been observed to clip behind
-     * other children. The 40-px icon spans (148+20, 24+20) → (188+20,
-     * 64+20) inside the padded tile — well clear of the temp number. */
-    lv_obj_align(moon_phase_img, LV_ALIGN_TOP_LEFT, 148, 24);
+    lv_img_set_zoom(moon_phase_img, 154);   /* ~24 px, sized to the header line */
+    /* Sits at the start of the "<city> - X.X°C now" location/forecast header
+     * (just before the outside temperature). White at night, hidden during
+     * the day — gated in refresh_cb via is_daytime_now(), mirroring dim. */
+    lv_obj_align(moon_phase_img, LV_ALIGN_TOP_LEFT, 20, 450);
 
     /* Air-quality badge — top-right of the Heater tile, coloured per
        eCO2/TVOC bucket (green/lime/yellow/orange/red). */
@@ -2605,13 +2640,16 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_forecast_city, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_forecast_city, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_forecast_city, settings.weather_location);
-    /* Location sits BELOW the ticker, as the forecast's header line. */
-    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 22, 457);
+    /* Location sits BELOW the ticker, as the forecast's header line. Shifted
+       right of x=22 to leave room for the night-moon glyph that precedes it. */
+    lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 54, 457);
 
     /* News ticker — full-width strip at the top of the bottom band, above the
      * location + forecast. Tap opens the headline list + QR. */
     news_ticker = lv_label_create(scr_root);
     lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_anim_speed(news_ticker,
+        settings.news_scroll_speed > 0 ? settings.news_scroll_speed : 30, 0);
     lv_obj_set_width(news_ticker, 1000);
     lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 12, 432);
     lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);

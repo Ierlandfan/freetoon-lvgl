@@ -47,6 +47,16 @@ void ui_wake_now(void) {
     wake_pending = 1;
 }
 
+/* Set the active backlight — either the fixed value, or following the ambient
+   light sensor (auto-brightness, Toon 2). Falls back to fixed if no sensor. */
+static void apply_active_brightness(void) {
+    if (settings.auto_brightness) {
+        int lvl = backlight_auto_level(settings.dim_brightness, settings.active_brightness);
+        if (lvl >= 0) { backlight_set(lvl); return; }
+    }
+    backlight_set(settings.active_brightness);
+}
+
 void ui_idle_tick(void) {
     /* Process any queued wake first so a touch immediately undims, even
        if the on-screen click handler couldn't run for some reason. */
@@ -59,7 +69,7 @@ void ui_idle_tick(void) {
         boxtalk_request_indoor_refresh();
         ui_pop();
         is_dimmed = 0;
-        backlight_set(settings.active_brightness);
+        apply_active_brightness();
         last_activity_ms = lv_tick_get();
         wake_pending = 0;
         /* Tell the indev to ignore any lingering touch state so the wake
@@ -72,6 +82,13 @@ void ui_idle_tick(void) {
         return;
     }
     wake_pending = 0;
+
+    /* Auto-brightness: while active, retrack the ambient sensor every ~3 s. */
+    if (!is_dimmed && settings.auto_brightness) {
+        static uint32_t last_als_ms = 0;
+        uint32_t nt = lv_tick_get();
+        if (nt - last_als_ms > 3000) { apply_active_brightness(); last_als_ms = nt; }
+    }
 
     uint32_t now = lv_tick_get();
     uint32_t elapsed_ms = now - last_activity_ms;
@@ -119,5 +136,5 @@ void ui_init(void) {
     lv_obj_t * home = screen_home_create();
     ui_push(home);
     ui_mark_activity();
-    backlight_set(settings.active_brightness);
+    apply_active_brightness();
 }

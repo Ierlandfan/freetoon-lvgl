@@ -168,6 +168,56 @@ static double current_moon_phase01(void) {
     return r / 30.0;  /* 0..1 across the lunar month */
 }
 
+/* Day/night via the standard sunrise equation for the Netherlands
+ * (~52.8°N, 5.0°E — Medemblik area). Accurate to a few minutes, which is
+ * plenty to decide whether to show the night moon. Season-aware (uses the
+ * day-of-year), so it tracks the long summer / short winter daylight. */
+int is_daytime_now(void) {
+    time_t now = time(NULL);
+    struct tm lt, ut;
+    localtime_r(&now, &lt);
+    gmtime_r(&now, &ut);
+
+    const double lat = 52.8, lon = 5.0;
+    const double ZENITH = 90.833;          /* official sunrise/sunset */
+    const double D2R = M_PI / 180.0, R2D = 180.0 / M_PI;
+    const double lngHour = lon / 15.0;
+    int N = lt.tm_yday + 1;                 /* day of year */
+
+    double t_event[2] = { N + ((6  - lngHour) / 24.0),    /* rise */
+                          N + ((18 - lngHour) / 24.0) };  /* set  */
+    double ut_event[2] = { -1, -1 };
+    int always_up = 0, always_down = 0;
+
+    for (int w = 0; w < 2; w++) {
+        double t = t_event[w];
+        double M = (0.9856 * t) - 3.289;
+        double L = M + (1.916 * sin(M * D2R)) + (0.020 * sin(2 * M * D2R)) + 282.634;
+        L = fmod(L + 360.0, 360.0);
+        double RA = R2D * atan(0.91764 * tan(L * D2R));
+        RA = fmod(RA + 360.0, 360.0);
+        RA += (floor(L / 90.0) * 90.0) - (floor(RA / 90.0) * 90.0);
+        RA /= 15.0;
+        double sinDec = 0.39782 * sin(L * D2R);
+        double cosDec = cos(asin(sinDec));
+        double cosH = (cos(ZENITH * D2R) - (sinDec * sin(lat * D2R)))
+                      / (cosDec * cos(lat * D2R));
+        if (cosH > 1.0)  { always_down = 1; continue; }   /* sun never rises */
+        if (cosH < -1.0) { always_up   = 1; continue; }   /* sun never sets  */
+        double H = (w == 0) ? (360.0 - R2D * acos(cosH)) : (R2D * acos(cosH));
+        H /= 15.0;
+        double T = H + RA - (0.06571 * t) - 6.622;
+        ut_event[w] = fmod(T - lngHour + 48.0, 24.0);
+    }
+    if (always_up)   return 1;
+    if (always_down) return 0;
+
+    double nowUT = ut.tm_hour + ut.tm_min / 60.0 + ut.tm_sec / 3600.0;
+    double rise = ut_event[0], set = ut_event[1];
+    if (rise <= set) return (nowUT >= rise && nowUT < set);
+    return !(nowUT >= set && nowUT < rise);    /* event wraps midnight UTC */
+}
+
 const lv_img_dsc_t * moon_phase_icon(int size_px) {
     double p = current_moon_phase01();
     /* Map 0..1 to 8 phase slots — quantise to nearest 1/8th. */

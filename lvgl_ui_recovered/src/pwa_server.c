@@ -712,11 +712,12 @@ static int handle_settings_get(int fd) {
     int n = snprintf(body, sizeof body,
         "{"
         "\"auto_dim_enabled\":%d,\"auto_dim_seconds\":%d,"
-        "\"active_brightness\":%d,\"dim_brightness\":%d,"
+        "\"active_brightness\":%d,\"dim_brightness\":%d,\"auto_brightness\":%d,"
         "\"temp_offset_centi\":%d,\"show_dim_weather\":%d,"
         "\"show_dim_waste\":%d,\"dim_waste_lead_days\":%d,"
         "\"waste_postcode\":\"%s\",\"waste_housenr\":\"%s\","
         "\"waste_provider\":%d,\"waste_ics_url\":\"%s\","
+        "\"waste_plugin\":\"%s\",\"waste_icsid\":\"%s\",\"waste_street\":\"%s\",\"waste_city\":\"%s\","
         "\"weather_location\":\"%s\",\"weather_location_id\":%d,"
         "\"forecast_mode\":%d,\"ot_bridge_mode\":\"%s\",\"otgw_host\":\"%s\","
         "\"mqtt_enabled\":%d,\"mqtt_host\":\"%s\",\"mqtt_port\":%d,\"mqtt_user\":\"%s\","
@@ -732,16 +733,17 @@ static int handle_settings_get(int fd) {
         "\"doorbell_stream_url\":\"%s\","
         "\"p1_elec_host\":\"%s\",\"p1_water_host\":\"%s\",\"vent_host\":\"%s\",\"opnsense_host\":\"%s\","
         "\"energy_source\":%d,\"auto_update_enabled\":%d,\"auto_update_hour\":%d,"
-        "\"news_enabled\":%d,\"news_rss_url\":\"%s\","
+        "\"news_enabled\":%d,\"news_rss_url\":\"%s\",\"news_scroll_speed\":%d,"
         "\"tile_rotate_enabled\":%d,\"tile_rotate_seconds\":%d,\"tile_rotate_members\":\"%s\","
         "\"client_mode\":%d,\"master_host\":\"%s\""
         "}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
-        settings.active_brightness, settings.dim_brightness,
+        settings.active_brightness, settings.dim_brightness, settings.auto_brightness,
         settings.temp_offset_centi, settings.show_dim_weather,
         settings.show_dim_waste, settings.dim_waste_lead_days,
         settings.waste_postcode, settings.waste_housenr,
         settings.waste_provider, settings.waste_ics_url,
+        settings.waste_plugin, settings.waste_icsid, settings.waste_street, settings.waste_city,
         settings.weather_location, settings.weather_location_id,
         settings.forecast_mode, settings.ot_bridge_mode, settings.otgw_host,
         settings.mqtt_enabled, settings.mqtt_host, settings.mqtt_port, settings.mqtt_user,
@@ -757,7 +759,7 @@ static int handle_settings_get(int fd) {
         settings.doorbell_stream_url,
         settings.p1_elec_host, settings.p1_water_host, settings.vent_host, settings.opnsense_host,
         settings.energy_source, settings.auto_update_enabled, settings.auto_update_hour,
-        settings.news_enabled, settings.news_rss_url,
+        settings.news_enabled, settings.news_rss_url, settings.news_scroll_speed,
         settings.tile_rotate_enabled, settings.tile_rotate_seconds, settings.tile_rotate_members,
         settings.client_mode, settings.master_host);
     char hdr[160];
@@ -774,6 +776,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "auto_dim_seconds", &iv))   settings.auto_dim_seconds = iv < 5 ? 5 : (iv > 300 ? 300 : iv);
     if (extract_int(body, "active_brightness", &iv))  settings.active_brightness = iv < 0 ? 0 : (iv > 1000 ? 1000 : iv);
     if (extract_int(body, "dim_brightness", &iv))     settings.dim_brightness = iv < 0 ? 0 : (iv > 1000 ? 1000 : iv);
+    if (extract_int(body, "auto_brightness", &iv))    settings.auto_brightness = !!iv;
     if (extract_int(body, "temp_offset_centi", &iv))  settings.temp_offset_centi = iv < -500 ? -500 : (iv > 500 ? 500 : iv);
     if (extract_int(body, "show_dim_weather", &iv))   settings.show_dim_weather = !!iv;
     if (extract_int(body, "show_dim_waste", &iv))     settings.show_dim_waste = !!iv;
@@ -785,6 +788,14 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "waste_provider", &iv)) settings.waste_provider = !!iv;
     if (extract_str(body, "waste_ics_url", sv, sizeof sv))
         snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url, "%s", sv);
+    if (extract_str(body, "waste_plugin", sv, sizeof sv))
+        snprintf(settings.waste_plugin, sizeof settings.waste_plugin, "%s", sv);
+    if (extract_str(body, "waste_icsid", sv, sizeof sv))
+        snprintf(settings.waste_icsid, sizeof settings.waste_icsid, "%s", sv);
+    if (extract_str(body, "waste_street", sv, sizeof sv))
+        snprintf(settings.waste_street, sizeof settings.waste_street, "%s", sv);
+    if (extract_str(body, "waste_city", sv, sizeof sv))
+        snprintf(settings.waste_city, sizeof settings.waste_city, "%s", sv);
     if (extract_int(body, "forecast_mode", &iv))      settings.forecast_mode = iv;
     if (extract_int(body, "mqtt_port", &iv))          settings.mqtt_port = iv;
     if (extract_int(body, "enable_p1_elec", &iv))     settings.enable_p1_elec = !!iv;
@@ -874,6 +885,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "news_enabled", &iv))       settings.news_enabled = !!iv;
     if (extract_str(body, "news_rss_url", sv, sizeof sv))
         snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", sv);
+    if (extract_int(body, "news_scroll_speed", &iv)) settings.news_scroll_speed = iv;
     /* Tile auto-rotate */
     if (extract_int(body, "tile_rotate_enabled", &iv))settings.tile_rotate_enabled = !!iv;
     if (extract_int(body, "tile_rotate_seconds", &iv))settings.tile_rotate_seconds = iv < 3 ? 3 : (iv > 120 ? 120 : iv);
@@ -907,8 +919,10 @@ static const char SETTINGS_HTML[] =
 "['temp_offset_centi','Temp offset (centi-C)','n'],"
 "['show_dim_weather','Weather on dim','b'],['show_dim_waste','Waste on dim','b'],"
 "['dim_waste_lead_days','Waste lead days (0-7)','n'],"
-"['waste_postcode','Waste postcode (e.g. 1671AD)','t'],['waste_housenr','Waste house nr','t'],"
-"['waste_provider','Waste: use ICS URL (0 HVC / 1 ICS)','n'],['waste_ics_url','Waste ICS calendar URL','t'],"
+"['waste_plugin','Waste provider id (plugin_index.json; e.g. 6=HVC, 33=generic)','t'],"
+"['waste_icsid','Waste calendar/ICS-id (ICSId providers e.g. HVC)','t'],"
+"['waste_street','Waste street (street-based providers)','t'],['waste_city','Waste city','t'],"
+"['waste_ics_url','or: own iCal / ICS URL','t'],"
 "['Weather','h'],"
 "['weather_location','City (auto-resolves id)','t'],['weather_location_id','Buienradar id (auto)','n'],"
 "['forecast_mode','Forecast (0 auto/1 hourly/2 daily)','n'],"
@@ -938,6 +952,7 @@ static const char SETTINGS_HTML[] =
 "['domoticz_user','Domoticz user (opt)','t'],"
 "['Newsreader','h'],"
 "['news_enabled','News ticker','b'],['news_rss_url','RSS feed URL','t'],"
+"['news_scroll_speed','News ticker speed (px/s, 10-120)','n'],"
 "['Tile auto-rotate','h'],"
 "['tile_rotate_enabled','Rotate a tile','b'],['tile_rotate_seconds','Rotate every (s)','n'],"
 "['tile_rotate_members','Rotate members (id1,id2,..)','t'],"

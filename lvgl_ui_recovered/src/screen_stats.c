@@ -10,7 +10,9 @@
  * the raw cumulative.
  */
 #include "screens.h"
+#include "display.h"
 #include "stats.h"
+#include "airhist.h"
 #include "homewizard.h"
 #include <stdio.h>
 #include <math.h>
@@ -22,7 +24,7 @@ static lv_chart_series_t * cs;
 static lv_obj_t * lbl_metric_name;
 static lv_obj_t * lbl_unit;
 static lv_obj_t * lbl_value;
-static lv_obj_t * tab_metric_btns[3];
+static lv_obj_t * tab_metric_btns[6];
 static lv_obj_t * tab_period_btns[5];
 
 typedef enum { PERIOD_HOUR, PERIOD_DAY, PERIOD_WEEK, PERIOD_MONTH, PERIOD_YEAR } period_t;
@@ -37,12 +39,19 @@ typedef struct {
     /* For Electricity we sum two tariffs (nt + lt). */
     const char * cum_logger_extra;
     uint32_t color;
+    /* local_hist: not in hcb_rrd — read from freetoon's airhist recorder
+       (instantaneous ppm/ppb, never diffed). which = metric index - 3. */
+    int local_hist;
 } metric_t;
-static const metric_t metrics[3] = {
-    {"Electricity", "W",     "kWh",  "elec_flow",  "elec_quantity_nt", "elec_quantity_lt", 0xaa77ff},
-    {"Gas",         "l/h",   "m3",   "gas_flow",   "gas_quantity",     NULL,                0xffaa44},
-    {"Water",       "l/min", "m3",   "water_flow", "water_quantity",   NULL,                0x44aaff},
+static const metric_t metrics[6] = {
+    {"Electricity", "W",     "kWh",  "elec_flow",  "elec_quantity_nt", "elec_quantity_lt", 0xaa77ff, 0},
+    {"Gas",         "l/h",   "m3",   "gas_flow",   "gas_quantity",     NULL,                0xffaa44, 0},
+    {"Water",       "l/min", "m3",   "water_flow", "water_quantity",   NULL,                0x44aaff, 0},
+    {"CO2",         "ppm",   "ppm",  NULL,         NULL,               NULL,                0x44cc88, 1},
+    {"TVOC",        "ppb",   "ppb",  NULL,         NULL,               NULL,                0xcc8844, 1},
+    {"CV bar",      "bar",   "bar",  NULL,         NULL,               NULL,                0x5fb3ff, 2},  /* CH pressure, all periods */
 };
+#define N_METRIC ((int)(sizeof metrics / sizeof metrics[0]))
 
 static int      selected_metric = 0;
 static period_t selected_period = PERIOD_HOUR;
@@ -63,9 +72,9 @@ static int    g_bar_count = 0;
 static lv_obj_t * g_xlbl[XLBL_COUNT] = {0};
 /* Chart plot geometry — chart is 700x300 at TOP_RIGHT -30,235; the Y tick
  * labels (draw_size 60) inset the plot on the left. Tuned to bar centers. */
-#define PLOT_L 360
-#define PLOT_R 986
-#define XLBL_Y 540
+#define PLOT_L SX(360)
+#define PLOT_R SX(986)
+#define XLBL_Y SY(540)
 
 static void place_x_labels(void) {
     for (int i = 0; i < XLBL_COUNT; i++)
@@ -79,9 +88,9 @@ static void place_x_labels(void) {
         double cx = PLOT_L + (b + 0.5) * plot_w / g_bar_count;
         if (!g_xlbl[k]) continue;
         lv_label_set_text(g_xlbl[k], g_bar_label[b]);
-        lv_obj_set_width(g_xlbl[k], 58);
+        lv_obj_set_width(g_xlbl[k], SX(58));
         lv_obj_set_style_text_align(g_xlbl[k], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(g_xlbl[k], (int)(cx - 29), XLBL_Y);
+        lv_obj_set_pos(g_xlbl[k], (int)(cx - SX(29)), XLBL_Y);
         lv_obj_clear_flag(g_xlbl[k], LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -107,6 +116,19 @@ static int load_for_period(void) {
     const metric_t * m = &metrics[selected_metric];
     const long HOUR = 3600, DAY = 86400, WEEK = 7*DAY,
                MONTH = 31*DAY, YEAR = 365*DAY;
+    if (m->local_hist) {                /* CO2/TVOC/pressure — freetoon's recorder */
+        series2.n = 0;
+        if (m->local_hist == 2) {       /* CH pressure — hourly ring, all periods */
+            long win = (selected_period == PERIOD_HOUR)  ? HOUR
+                     : (selected_period == PERIOD_DAY)   ? DAY
+                     : (selected_period == PERIOD_WEEK)  ? WEEK
+                     : (selected_period == PERIOD_MONTH) ? MONTH : YEAR;
+            return airhist_pres_series(win, 365, &series);
+        }
+        long win = (selected_period == PERIOD_HOUR) ? HOUR
+                 : (selected_period == PERIOD_DAY)  ? DAY : WEEK;  /* CO2/TVOC: 7d ring */
+        return airhist_series(selected_metric - 3, win, 288, &series);
+    }
     switch (selected_period) {
         case PERIOD_HOUR:
             return stats_fetch(m->flow_logger, "5min", HOUR, 12, &series);
@@ -186,7 +208,8 @@ static void render_chart(void) {
 
     int is_cum = (selected_period == PERIOD_WEEK ||
                   selected_period == PERIOD_MONTH ||
-                  selected_period == PERIOD_YEAR);
+                  selected_period == PERIOD_YEAR)
+                 && !metrics[selected_metric].local_hist;  /* CO2/TVOC are instantaneous */
 
     /* Cumulative meters → per-sample usage deltas. The elec NT/LT split is
      * diffed separately then summed (the source sometimes returns NT-alone,
@@ -330,7 +353,7 @@ static void reload_and_render(void) {
 static void on_metric_tap(lv_event_t * e) {
     int idx = (int)(long)lv_event_get_user_data(e);
     selected_metric = idx;
-    for (int i = 0; i < 3; i++) style_metric_tab(i, i == idx);
+    for (int i = 0; i < N_METRIC; i++) style_metric_tab(i, i == idx);
     reload_and_render();
 }
 static void on_period_tap(lv_event_t * e) {
@@ -370,10 +393,10 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 26);
 
     /* Metric tabs row */
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < N_METRIC; i++) {
         lv_obj_t * t = lv_obj_create(scr_root);
-        lv_obj_set_size(t, 200, 56);
-        lv_obj_set_pos(t, 30 + i * 220, 100);
+        lv_obj_set_size(t, SX(150), SY(56));
+        lv_obj_set_pos(t, SX(26 + i * 163), SY(100));
         lv_obj_set_style_radius(t, 12, 0);
         lv_obj_set_style_pad_all(t, 0, 0);
         lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
@@ -382,7 +405,7 @@ lv_obj_t * screen_stats_create(void) {
         lv_obj_t * lbl = lv_label_create(t);
         lv_label_set_text(lbl, metrics[i].label);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, 0);  /* 6 tabs → smaller */
         lv_obj_center(lbl);
         tab_metric_btns[i] = t;
         style_metric_tab(i, i == selected_metric);
@@ -392,8 +415,8 @@ lv_obj_t * screen_stats_create(void) {
     const char * periods[] = {"Hour", "Day", "Week", "Month", "Year"};
     for (int i = 0; i < 5; i++) {
         lv_obj_t * t = lv_obj_create(scr_root);
-        lv_obj_set_size(t, 184, 46);
-        lv_obj_set_pos(t, 30 + i * 196, 170);
+        lv_obj_set_size(t, SX(184), SY(46));
+        lv_obj_set_pos(t, SX(30 + i * 196), SY(170));
         lv_obj_set_style_radius(t, 10, 0);
         lv_obj_set_style_pad_all(t, 0, 0);
         lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
@@ -413,7 +436,7 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_color(lbl_metric_name, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_metric_name, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_metric_name, "Electricity");
-    lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, 30, 235);
+    lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, 30, SY(235));
 
     /* Repurposed as the "Current" / "Period total" caption above the
      * value. Was rendering a duplicated unit ("W" under "369.0 W"). */
@@ -421,18 +444,18 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_unit, &lv_font_montserrat_18, 0);
     lv_label_set_text(lbl_unit, "Current");
-    lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, 30, 265);
+    lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, 30, SY(265));
 
     lbl_value = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_value, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_value, &lv_font_montserrat_48, 0);
     lv_label_set_text(lbl_value, "--");
-    lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, 30, 290);
+    lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, 30, SY(290));
 
     /* Chart */
     chart = lv_chart_create(scr_root);
-    lv_obj_set_size(chart, 700, 300);
-    lv_obj_align(chart, LV_ALIGN_TOP_RIGHT, -30, 235);
+    lv_obj_set_size(chart, SX(700), SY(300));
+    lv_obj_align(chart, LV_ALIGN_TOP_RIGHT, SX(-30), SY(235));
     /* Bars, like the original Toon energy view. Rounded top corners + a
      * little inter-bar gap so they read as discrete usage blocks. */
     lv_chart_set_type(chart, LV_CHART_TYPE_BAR);

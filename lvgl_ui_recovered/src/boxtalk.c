@@ -402,9 +402,15 @@ static void handle_query_response(const char* xml) {
      * first change-notify. */
     if (strcmp(tail, "vocSensor") == 0) {
         if (elem_text_float(xml, "tvoc", &v)) {
-            toon_state.tvoc = (int)v;
-            toon_state.msg_count++;
-            fprintf(stderr, "[bxt] query response tvoc = %d\n", toon_state.tvoc);
+            /* This sensor's seed-query returns tvoc=0 even when the live value
+             * (via change-notify) is non-zero — don't let the 0 clobber it,
+             * or the home tile and the Stats TVOC graph stay flat at zero. */
+            if (v > 0) {
+                toon_state.tvoc = (int)v;
+                toon_state.msg_count++;
+            }
+            fprintf(stderr, "[bxt] query response tvoc = %d%s\n",
+                    (int)v, v > 0 ? "" : " (ignored, keeping live value)");
             return;
         }
         if (elem_text_float(xml, "eco2", &v)) {

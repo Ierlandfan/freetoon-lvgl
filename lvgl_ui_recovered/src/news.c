@@ -20,7 +20,26 @@
 typedef struct {
     char title[NEWS_TITLE_MAX];
     char link[NEWS_LINK_MAX];
+    char body[NEWS_BODY_MAX];   /* RSS <description>, HTML-stripped */
 } news_item_t;
+
+/* Strip HTML tags in place, then collapse the whitespace they leave behind. */
+static void strip_html(char * s) {
+    char * w = s;
+    for (char * r = s; *r; ) {
+        if (*r == '<') { while (*r && *r != '>') r++; if (*r) r++; }
+        else *w++ = *r++;
+    }
+    *w = 0;
+    /* collapse double spaces created by removed tags */
+    char * o = s; int sp = 0;
+    for (char * r = s; *r; r++) {
+        if (*r == ' ') { if (!sp) *o++ = ' '; sp = 1; }
+        else { *o++ = *r; sp = 0; }
+    }
+    *o = 0;
+    while (o > s && o[-1] == ' ') *--o = 0;
+}
 
 static news_item_t     g_items[NEWS_MAX_ITEMS];
 static int             g_count = 0;
@@ -33,6 +52,22 @@ static int url_ok(const char * u) {
         if (*p == '\'' || *p == '`' || *p == '"' || (unsigned char)*p < 0x20 || *p == ' ')
             return 0;
     return 1;
+}
+
+/* UTF-8 C3-xx (Latin-1 supplement) trail byte → base ASCII letter, or 0.
+   So "Oekraïne" → "Oekraine", "café" → "cafe" instead of "??" boxes. */
+static char latin1_to_ascii(unsigned char n) {
+    if (n >= 0xA0 && n <= 0xA5) return 'a';  if (n == 0xA6) return 0;
+    if (n == 0xA7) return 'c';
+    if (n >= 0xA8 && n <= 0xAB) return 'e';  if (n >= 0xAC && n <= 0xAF) return 'i';
+    if (n == 0xB0) return 'd';  if (n == 0xB1) return 'n';
+    if (n >= 0xB2 && n <= 0xB6) return 'o';  if (n == 0xB8) return 'o';
+    if (n >= 0xB9 && n <= 0xBC) return 'u';  if (n == 0xBD || n == 0xBF) return 'y';
+    if (n >= 0x80 && n <= 0x85) return 'A';  if (n == 0x87) return 'C';
+    if (n >= 0x88 && n <= 0x8B) return 'E';  if (n >= 0x8C && n <= 0x8F) return 'I';
+    if (n == 0x91) return 'N';  if (n >= 0x92 && n <= 0x96) return 'O';
+    if (n >= 0x99 && n <= 0x9C) return 'U';
+    return 0;
 }
 
 /* Minimal entity + whitespace cleanup, in place. */
@@ -57,8 +92,13 @@ static void clean_text(char * s) {
         unsigned char c = (unsigned char)*r;
         if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
             if (!prev_sp) { *w++ = ' '; prev_sp = 1; }
+        } else if (c >= 0xC0) {                       /* UTF-8 lead byte */
+            char a = (c == 0xC3 && r[1]) ? latin1_to_ascii((unsigned char)r[1]) : 0;
+            if (a) { *w++ = a; prev_sp = 0; }
+            else if (!prev_sp) { *w++ = ' '; prev_sp = 1; }   /* drop unknown multibyte */
+            while (((unsigned char)r[1]) >= 0x80 && ((unsigned char)r[1]) <= 0xBF) r++;
         } else if (c >= 0x80) {
-            *w++ = '?'; prev_sp = 0;
+            /* stray continuation byte — skip */
         } else {
             *w++ = (char)c; prev_sp = 0;
         }
@@ -116,11 +156,14 @@ static void parse_feed(const char * xml, size_t len) {
         if (!it_end) it_end = memmem(it, end - it, "</entry", 7);
         if (!it_end) it_end = end;
 
-        char title[NEWS_TITLE_MAX] = "", link[NEWS_LINK_MAX] = "";
+        char title[NEWS_TITLE_MAX] = "", link[NEWS_LINK_MAX] = "", body[NEWS_BODY_MAX] = "";
         if (tag_text(it, it_end, "title", title, sizeof title) == 0 && title[0]) {
             tag_text(it, it_end, "link", link, sizeof link);  /* link optional */
+            if (tag_text(it, it_end, "description", body, sizeof body) == 0)
+                strip_html(body);                              /* article summary */
             snprintf(g_items[n].title, sizeof g_items[n].title, "%s", title);
             snprintf(g_items[n].link,  sizeof g_items[n].link,  "%s", link);
+            snprintf(g_items[n].body,  sizeof g_items[n].body,  "%s", body);
             n++;
         }
         p = it_end + 1;
@@ -211,6 +254,17 @@ int news_item(int i, char * title, size_t tsz, char * link, size_t lsz) {
     if (i >= 0 && i < g_count) {
         if (title) snprintf(title, tsz, "%s", g_items[i].title);
         if (link)  snprintf(link,  lsz, "%s", g_items[i].link);
+        rc = 0;
+    }
+    pthread_mutex_unlock(&g_mtx);
+    return rc;
+}
+
+int news_body(int i, char * body, size_t bsz) {
+    int rc = -1;
+    pthread_mutex_lock(&g_mtx);
+    if (i >= 0 && i < g_count) {
+        snprintf(body, bsz, "%s", g_items[i].body);
         rc = 0;
     }
     pthread_mutex_unlock(&g_mtx);

@@ -38,9 +38,19 @@ dl() {  # dl <asset> <out>
     curl -fSL --connect-timeout 8 --max-time 120 -o "$2" "$BASE/$1"
 }
 
+# Pick the matching binary asset so each Toon updates along its own path from
+# the same (combined) release. Toon 2 = i.MX6 "nxt" arch (asset "toonui");
+# Toon 1 = i.MX27 "qb2"/armv5e, no "nxt" in arch.conf (asset "toonui-toon1").
+if grep -q nxt /etc/opkg/arch.conf 2>/dev/null; then
+    BIN_ASSET="toonui"
+else
+    BIN_ASSET="toonui-toon1"
+fi
+say "device binary asset: $BIN_ASSET"
+
 # 1) toonui binary (required) — sanity-check the size (a GitHub error page or
 # truncated download is tiny; the real binary is ~1 MB). busybox-safe.
-dl toonui "$TMP/toonui"
+dl "$BIN_ASSET" "$TMP/toonui"
 SZ=$(wc -c < "$TMP/toonui" 2>/dev/null || echo 0)
 if [ "$SZ" -lt 500000 ]; then
     say "ERROR: toonui download too small ($SZ bytes) — aborting."
@@ -63,6 +73,17 @@ done
 if dl fbvnc_input "$TMP/fbvnc_input"; then
     if [ "$(wc -c < "$TMP/fbvnc_input" 2>/dev/null || echo 0)" -gt 2000 ]; then
         cp "$TMP/fbvnc_input" "$DEST/fbvnc_input" && chmod +x "$DEST/fbvnc_input"
+    fi
+fi
+
+# 2b2) wastefetch — embeds QuickJS to run the ToonSoftwareCollective waste
+# provider scripts (full stock-app afvalkalender mimic, all providers). Arch-
+# matched like the main binary: nxt → wastefetch, qb2 → wastefetch-toon1.
+if grep -q nxt /etc/opkg/arch.conf 2>/dev/null; then WF_ASSET="wastefetch"; else WF_ASSET="wastefetch-toon1"; fi
+if dl "$WF_ASSET" "$TMP/wastefetch"; then
+    if [ "$(wc -c < "$TMP/wastefetch" 2>/dev/null || echo 0)" -gt 100000 ]; then
+        cp "$TMP/wastefetch" "$DEST/wastefetch" && chmod +x "$DEST/wastefetch"
+        say "installed waste provider engine -> $DEST/wastefetch"
     fi
 fi
 

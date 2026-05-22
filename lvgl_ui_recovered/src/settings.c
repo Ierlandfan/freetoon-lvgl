@@ -19,7 +19,7 @@ settings_t settings = {
     .temp_offset_centi = 0,
     .show_dim_weather  = 1,
     .show_dim_waste    = 1,
-    .dim_waste_lead_days = 2,
+    .dim_waste_lead_days = 3,
     .vnc_enabled       = 0,
     .vnc_pass          = "",
     .weather_location    = "De Bilt",
@@ -68,6 +68,7 @@ settings_t settings = {
     .tile_rotate_seconds = 10,
     .news_enabled        = 0,
     .news_rss_url        = "https://feeds.nos.nl/nosnieuwsalgemeen",
+    .news_scroll_speed   = 30,
     .auto_update_enabled = 0,
     .auto_update_hour    = 2,
     .ha_host             = "",
@@ -136,6 +137,7 @@ void settings_load(void) {
         else if (strcmp(k, "auto_home_seconds") == 0) settings.auto_home_seconds = iv;
         else if (strcmp(k, "active_brightness") == 0) settings.active_brightness = iv;
         else if (strcmp(k, "dim_brightness")    == 0) settings.dim_brightness    = iv;
+        else if (strcmp(k, "auto_brightness")   == 0) settings.auto_brightness   = iv;
         else if (strcmp(k, "temp_offset_centi") == 0) settings.temp_offset_centi = iv;
         else if (strcmp(k, "show_dim_weather")  == 0) settings.show_dim_weather  = iv;
         else if (strcmp(k, "show_dim_waste")    == 0) settings.show_dim_waste    = iv;
@@ -147,6 +149,14 @@ void settings_load(void) {
         else if (strcmp(k, "waste_provider")    == 0) settings.waste_provider = iv;
         else if (strcmp(k, "waste_ics_url")     == 0)
             snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url, "%s", v);
+        else if (strcmp(k, "waste_plugin")      == 0)
+            snprintf(settings.waste_plugin, sizeof settings.waste_plugin, "%s", v);
+        else if (strcmp(k, "waste_icsid")       == 0)
+            snprintf(settings.waste_icsid, sizeof settings.waste_icsid, "%s", v);
+        else if (strcmp(k, "waste_street")      == 0)
+            snprintf(settings.waste_street, sizeof settings.waste_street, "%s", v);
+        else if (strcmp(k, "waste_city")        == 0)
+            snprintf(settings.waste_city, sizeof settings.waste_city, "%s", v);
         else if (strcmp(k, "show_dim_weather")  == 0) settings.show_dim_weather  = iv;
         else if (strcmp(k, "temp_offset_centi") == 0) settings.temp_offset_centi = iv;
         else if (strcmp(k, "weather_location_id") == 0) settings.weather_location_id = iv;
@@ -211,6 +221,7 @@ void settings_load(void) {
         else if (strcmp(k, "news_enabled")    == 0) settings.news_enabled = iv;
         else if (strcmp(k, "news_rss_url")    == 0)
             snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", v);
+        else if (strcmp(k, "news_scroll_speed") == 0) settings.news_scroll_speed = iv;
         else if (strcmp(k, "auto_update_enabled") == 0) settings.auto_update_enabled = iv;
         else if (strcmp(k, "auto_update_hour")    == 0) settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;
         else if (strcmp(k, "ha_host")          == 0) snprintf(settings.ha_host, sizeof settings.ha_host, "%s", v);
@@ -322,6 +333,7 @@ void settings_save(void) {
     fprintf(f, "auto_home_seconds=%d\n", settings.auto_home_seconds);
     fprintf(f, "active_brightness=%d\n", settings.active_brightness);
     fprintf(f, "dim_brightness=%d\n",    settings.dim_brightness);
+    fprintf(f, "auto_brightness=%d\n",   settings.auto_brightness);
     fprintf(f, "temp_offset_centi=%d\n", settings.temp_offset_centi);
     fprintf(f, "show_dim_weather=%d\n",  settings.show_dim_weather);
     fprintf(f, "show_dim_waste=%d\n",    settings.show_dim_waste);
@@ -330,6 +342,10 @@ void settings_save(void) {
     fprintf(f, "waste_housenr=%s\n",       settings.waste_housenr);
     fprintf(f, "waste_provider=%d\n",      settings.waste_provider);
     fprintf(f, "waste_ics_url=%s\n",       settings.waste_ics_url);
+    fprintf(f, "waste_plugin=%s\n",        settings.waste_plugin);
+    fprintf(f, "waste_icsid=%s\n",         settings.waste_icsid);
+    fprintf(f, "waste_street=%s\n",        settings.waste_street);
+    fprintf(f, "waste_city=%s\n",          settings.waste_city);
     fprintf(f, "vnc_enabled=%d\n",       settings.vnc_enabled);
     fprintf(f, "vnc_pass=%s\n",          settings.vnc_pass);
     fprintf(f, "weather_location=%s\n",    settings.weather_location);
@@ -362,6 +378,7 @@ void settings_save(void) {
     fprintf(f, "tile_rotate_members=%s\n", settings.tile_rotate_members);
     fprintf(f, "news_enabled=%d\n", settings.news_enabled);
     fprintf(f, "news_rss_url=%s\n", settings.news_rss_url);
+    fprintf(f, "news_scroll_speed=%d\n", settings.news_scroll_speed);
     fprintf(f, "auto_update_enabled=%d\n", settings.auto_update_enabled);
     fprintf(f, "auto_update_hour=%d\n", settings.auto_update_hour);
     fprintf(f, "ha_host=%s\n", settings.ha_host);

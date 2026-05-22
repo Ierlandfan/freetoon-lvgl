@@ -3,6 +3,7 @@
  * setpoint adjustment. Reachable from the home tile.
  */
 #include "screens.h"
+#include "display.h"
 #include "boxtalk.h"
 #include "homewizard.h"
 #include "icons.h"
@@ -233,7 +234,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffcc44), 0);
     lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_48, 0);
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, -80);
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(-80));
     lv_label_set_text(lbl_temp, "-- C");
 
     /* Flame icon at left of the big temp — visible only when the burner
@@ -244,7 +245,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_img_set_zoom(img_temp_flame, 256);
     lv_obj_set_style_img_recolor(img_temp_flame, lv_color_hex(0xff6644), 0);
     lv_obj_set_style_img_recolor_opa(img_temp_flame, 255, 0);
-    lv_obj_align(img_temp_flame, LV_ALIGN_CENTER, 145, -75);
+    lv_obj_align(img_temp_flame, LV_ALIGN_CENTER, SX(145), SY(-75));
     lv_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
 
     /* Program preset row — six small buttons centered horizontally just
@@ -257,13 +258,15 @@ lv_obj_t * screen_thermostat_create(void) {
                                  "Comfort", "Home", "Sleep", "Away"};
         uint32_t     cols[6]  = {0x2f6b6b, 0x6a5424,
                                  0xcc7733, 0x3377cc, 0x553388, 0x557788};
-        const int    bw = 130, bh = 44, gap = 6;
+        /* On Toon 1 the 130px buttons + gaps total 810px and run off the
+         * 800px panel; SX() shrinks them to fit (identity on Toon 2). */
+        const int    bw = SX(130), bh = 44, gap = SX(6);
         int total = 6 * bw + 5 * gap;
         for (int i = 0; i < 6; i++) {
             lv_obj_t * b = lv_btn_create(scr_root);
             lv_obj_set_size(b, bw, bh);
             lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total / 2 + i * (bw + gap) + bw / 2, -20);
+                         -total / 2 + i * (bw + gap) + bw / 2, SY(-20));
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 10, 0);
             lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
@@ -285,55 +288,67 @@ lv_obj_t * screen_thermostat_create(void) {
     lbl_humidity = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_humidity, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_humidity, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_humidity, LV_ALIGN_BOTTOM_LEFT, 30, -260);
+    lv_obj_align(lbl_humidity, LV_ALIGN_BOTTOM_LEFT, 30,
+                 SY(-260) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_humidity, "RH --%");
 
     lbl_voc = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_voc, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_voc, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_voc, LV_ALIGN_BOTTOM_LEFT, 30, -225);
+    lv_obj_align(lbl_voc, LV_ALIGN_BOTTOM_LEFT, 30,
+                 SY(-225) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_voc, "eCO2 -- ppm");
 
     lbl_water = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_water, lv_color_hex(0x66aaff), 0);
     lv_obj_set_style_text_font(lbl_water, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_water, LV_ALIGN_BOTTOM_LEFT, 30, -190);
+    lv_obj_align(lbl_water, LV_ALIGN_BOTTOM_LEFT, 30,
+                 SY(-190) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_water, "Water -- m3");
 
     /* Setpoint row with +/- buttons. Wider than before so "Setpoint: NN.N C"
        has breathing room between the two buttons. */
     lv_obj_t * sp_row = lv_obj_create(scr_root);
-    lv_obj_set_size(sp_row, 760, 130);
-    lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0, -40);
+    lv_obj_set_size(sp_row, SX(760), SY(130));
+    /* Lift a little extra on Toon 1 so its bottom clears the Advanced btn. */
+    lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0,
+                 SY(-40) - (DISP_VER < 600 ? 8 : 0));
     lv_obj_set_style_bg_color(sp_row, lv_color_hex(0x1a2a44), 0);
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_radius(sp_row, 14, 0);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * btn_dn = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_dn, 110, 100);
+    lv_obj_set_size(btn_dn, SX(110), SY(100));
     lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, 5, 0);
     lv_obj_set_style_bg_color(btn_dn, lv_color_hex(0x335577), 0);
     lv_obj_add_event_cb(btn_dn, on_setpoint_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_dn_lbl = lv_label_create(btn_dn);
     lv_label_set_text(btn_dn_lbl, "-");
-    lv_obj_set_style_text_font(btn_dn_lbl, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(btn_dn_lbl,
+                               (DISP_VER < 600 ? &lv_font_montserrat_28
+                                               : &lv_font_montserrat_48), 0);
     lv_obj_center(btn_dn_lbl);
 
     lbl_setpoint = lv_label_create(sp_row);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_setpoint, &lv_font_montserrat_48, 0);
+    /* font_48 is too wide for the narrowed row on Toon 1 — drop to 34 there. */
+    lv_obj_set_style_text_font(lbl_setpoint,
+                               (DISP_VER < 600 ? &lv_font_montserrat_28
+                                               : &lv_font_montserrat_48), 0);
     lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, -8);
     lv_label_set_text(lbl_setpoint, "Setpoint: --");
 
     lv_obj_t * btn_up = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_up, 110, 100);
+    lv_obj_set_size(btn_up, SX(110), SY(100));
     lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, -5, 0);
     lv_obj_set_style_bg_color(btn_up, lv_color_hex(0x335577), 0);
     lv_obj_add_event_cb(btn_up, on_setpoint_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_up_lbl = lv_label_create(btn_up);
     lv_label_set_text(btn_up_lbl, "+");
-    lv_obj_set_style_text_font(btn_up_lbl, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(btn_up_lbl,
+                               (DISP_VER < 600 ? &lv_font_montserrat_28
+                                               : &lv_font_montserrat_48), 0);
     lv_obj_center(btn_up_lbl);
 
     /* Boiler state — icons + text. Icons live at left; text label sits
@@ -368,7 +383,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lbl_burner = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_burner, LV_ALIGN_TOP_LEFT, 180, 130);
+    lv_obj_align(lbl_burner, LV_ALIGN_TOP_LEFT, 180, SY(130));
     lv_label_set_text(lbl_burner, "Boiler idle");
 
     /* CH water inlet/outlet block — right side, above the setpoint row.
@@ -377,19 +392,22 @@ lv_obj_t * screen_thermostat_create(void) {
     lbl_ch_hdr = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_ch_hdr, lv_color_hex(0x6688aa), 0);
     lv_obj_set_style_text_font(lbl_ch_hdr, &lv_font_montserrat_18, 0);
-    lv_obj_align(lbl_ch_hdr, LV_ALIGN_BOTTOM_RIGHT, -40, -250);
+    lv_obj_align(lbl_ch_hdr, LV_ALIGN_BOTTOM_RIGHT, -40,
+                 SY(-250) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_ch_hdr, "CH water");
 
     lbl_flow = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_flow, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_text_font(lbl_flow, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_flow, LV_ALIGN_BOTTOM_RIGHT, -40, -220);
+    lv_obj_align(lbl_flow, LV_ALIGN_BOTTOM_RIGHT, -40,
+                 SY(-220) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_flow, "Flow  -- C");
 
     lbl_return = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_return, lv_color_hex(0x66aaff), 0);
     lv_obj_set_style_text_font(lbl_return, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_return, LV_ALIGN_BOTTOM_RIGHT, -40, -192);
+    lv_obj_align(lbl_return, LV_ALIGN_BOTTOM_RIGHT, -40,
+                 SY(-192) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_return, "Return  -- C");
 
     /* "Advanced" button — pushes OTGW raw-DID list. */

@@ -8,6 +8,7 @@ typedef struct {
     int auto_home_seconds;    /* 5..600 — idle timeout before auto-returning home */
     int active_brightness;    /* 0..1000 backlight when active */
     int dim_brightness;       /* 0..1000 backlight while dimmed */
+    int auto_brightness;      /* 0/1 — follow the LTR-303 ambient sensor (Toon 2) */
     int temp_offset_centi;    /* -500..+500 — added to displayed indoor temp,
                                  in centi-degrees (e.g. -120 = subtract 1.2°C) */
     int show_dim_weather;     /* 0/1 — show today's weather icon on the dim screen */
@@ -18,6 +19,12 @@ typedef struct {
     char waste_housenr[8];    /* house number, e.g. "14" */
     int  waste_provider;      /* 0 = HVC (postcode), 1 = generic ICS calendar URL */
     char waste_ics_url[256];  /* full .ics calendar URL for provider 1 (prezero/cyclus/dar/…) */
+    /* ToonSoftwareCollective provider plugin (run by the wastefetch helper) — the
+       full stock-app mimic. "" = none (use ics_url / legacy). */
+    char waste_plugin[8];     /* provider id from plugin_index.json, e.g. "6", "33" */
+    char waste_icsid[48];     /* calendar number for ICSId-based providers (HVC etc.) */
+    char waste_street[48];    /* for street-based providers */
+    char waste_city[48];
     int  vnc_enabled;         /* 0/1 — run the x11vnc remote-control server */
     char vnc_pass[16];        /* VNC password (plaintext, max 8 effective chars;
                                  empty = no password). No spaces. */
@@ -186,6 +193,7 @@ typedef struct {
      * Tapping a headline shows a QR to open the article on your phone. */
     int  news_enabled;
     char news_rss_url[256];
+    int  news_scroll_speed;   /* ticker scroll speed, px/sec (0 → default 30) */
 
     /* Client mode — this Toon is a "slave" that mirrors a master Toon over
      * its PWA HTTP API instead of talking to local HCB daemons. When 1, all

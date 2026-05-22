@@ -4,6 +4,7 @@
  * No colour, no icons; this is the screen we want visible while idle.
  */
 #include "screens.h"
+#include "display.h"
 #include "boxtalk.h"
 #include "settings.h"
 #include "homewizard.h"
@@ -108,10 +109,17 @@ static void refresh_cb(lv_timer_t * t) {
     strftime(dt, sizeof(dt), "%A %d %B", &tm);
     lv_label_set_text(lbl_date, dt);
 
+    /* Moon (top-right, beside the current-weather icon): white at night,
+       hidden during the day. Day/night from a real sunrise/sunset calc. */
     if (dim_moon_img) {
-        const lv_img_dsc_t * ph = moon_phase_icon(80);
-        if (lv_img_get_src(dim_moon_img) != ph)
-            lv_img_set_src(dim_moon_img, ph);
+        if (is_daytime_now()) {
+            lv_obj_add_flag(dim_moon_img, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            const lv_img_dsc_t * ph = moon_phase_icon(80);
+            if (lv_img_get_src(dim_moon_img) != ph)
+                lv_img_set_src(dim_moon_img, ph);
+            lv_obj_clear_flag(dim_moon_img, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     /* Always paint values: if data not yet present, fall back to a
@@ -368,36 +376,25 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Waste: show if user enabled AND next pickup is within the lead window. */
+    /* Waste: next upcoming pickup within the lead window — shares the home
+       tile's windowed + per-type-cutoff logic (Plastic until 21:00, the rest
+       until 16:00), so both screens agree on what's "next". */
     int show_waste = 0;
-    char wtype[40] = "", wdate_iso[16] = "", waste_text[60] = "";
+    char wtype[40] = "", waste_text[60] = "";
     if (settings.show_dim_waste && settings.dim_waste_lead_days > 0 &&
         waste_state.connected) {
-        waste_next_pickup(wdate_iso, sizeof(wdate_iso), wtype, sizeof(wtype));
-        if (wdate_iso[0]) {
-            /* days_until = pickup_date − today */
-            struct tm pt = {0};
-            pt.tm_year = atoi(wdate_iso)     - 1900;
-            pt.tm_mon  = atoi(wdate_iso + 5) - 1;
-            pt.tm_mday = atoi(wdate_iso + 8);
-            time_t pickup = mktime(&pt);
-            time_t now_t = time(NULL);
-            struct tm nt; localtime_r(&now_t, &nt);
-            nt.tm_hour = 0; nt.tm_min = 0; nt.tm_sec = 0;
-            time_t midnight = mktime(&nt);
-            long days_until = (long)((pickup - midnight) / 86400);
-            /* lead_days N => show if pickup is within N days (inclusive),
-               0 => off entirely. */
-            if (days_until >= 0 && days_until <= settings.dim_waste_lead_days) {
-                show_waste = 1;
-                const char * when =
-                      (days_until == 0) ? "Vandaag"
-                    : (days_until == 1) ? "Morgen"
-                    : NULL;
-                if (when) snprintf(waste_text, sizeof(waste_text), "%s: %s", when, wtype);
-                else      snprintf(waste_text, sizeof(waste_text), "Over %ld d: %s",
-                                   days_until, wtype);
-            }
+        waste_pickup_t wp;
+        if (waste_next_n_windowed(settings.dim_waste_lead_days, &wp, 1) >= 1) {
+            snprintf(wtype, sizeof(wtype), "%s", wp.labels);
+            long days_until = waste_days_until(wp.date);
+            show_waste = 1;
+            const char * when =
+                  (days_until == 0) ? "Vandaag"
+                : (days_until == 1) ? "Morgen"
+                : NULL;
+            if (when) snprintf(waste_text, sizeof(waste_text), "%s: %s", when, wtype);
+            else      snprintf(waste_text, sizeof(waste_text), "Over %ld d: %s",
+                               days_until, wtype);
         }
     }
     if (waste_icon) {
@@ -452,7 +449,7 @@ lv_obj_t * screen_dim_create(void) {
         lv_obj_t * logo = lv_obj_create(scr_root);
         lv_obj_remove_style_all(logo);
         lv_obj_set_size(logo, 40, 40);
-        lv_obj_align(logo, LV_ALIGN_TOP_LEFT, 8, 6);
+        lv_obj_align(logo, LV_ALIGN_TOP_LEFT, 8, SY(6));
         lv_obj_set_style_bg_color(logo, lv_color_hex(0x2e6e9e), 0);
         lv_obj_set_style_bg_opa(logo, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(logo, 12, 0);
@@ -470,7 +467,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_color(lbl_clock, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_clock, &lv_font_montserrat_96_custom, 0);
     lv_label_set_text(lbl_clock, "--:--");
-    lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, -130);
+    lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, SY(-130));
 
     /* All labels positioned against screen center with explicit Y offsets so
        different content widths can't drift them out of alignment. */
@@ -478,7 +475,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_date, "");
-    lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, -50);
+    lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
 
     /* Moon phase — paired with the weather icon to form one tidy "sky" cluster
      * in the top-right, instead of floating orphaned in the gap between the
@@ -490,19 +487,19 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_src(dim_moon_img, moon_phase_icon(80));
     lv_obj_set_style_img_recolor(dim_moon_img, lv_color_hex(0xe8edf2), 0);
     lv_obj_set_style_img_recolor_opa(dim_moon_img, 255, 0);
-    lv_obj_align(dim_moon_img, LV_ALIGN_TOP_RIGHT, -150, 52);
+    lv_obj_align(dim_moon_img, LV_ALIGN_TOP_RIGHT, -150, SY(52));
 
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_48, 0);
     lv_label_set_text(lbl_temp, "-- C");
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, 45);
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(45));
 
     lbl_setpoint = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_setpoint, &lv_font_montserrat_28, 0);
     lv_label_set_text(lbl_setpoint, "to -- C");
-    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, 115);
+    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, SY(115));
 
     /* Active program — sits directly under the setpoint and above the
        air-quality / pressure metrics strip. Same vertical-ordering as the
@@ -511,7 +508,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_color(lbl_program, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_program, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_program, "--");
-    lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, 140);
+    lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, SY(140));
 
     /* Air-quality + CH-pressure strip — moved below program so the TVOC /
        ppm / bar / AQ block doesn't shove the manual label off the layout.
@@ -521,7 +518,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_color(lbl_metrics, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(lbl_metrics, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_metrics, "");
-    lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, 170);
+    lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, SY(162));
 
     /* Burner state — sits to the right of lbl_program on the same baseline.
        CH-heating shows "-> 90 C" (red). DHW shows the faucet+drop pair
@@ -529,7 +526,7 @@ lv_obj_t * screen_dim_create(void) {
     lbl_burner = lv_label_create(scr_root);
     lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_burner, "");
-    lv_obj_align(lbl_burner, LV_ALIGN_CENTER, 80, 140);
+    lv_obj_align(lbl_burner, LV_ALIGN_CENTER, 80, SY(140));
     lv_obj_add_flag(lbl_burner, LV_OBJ_FLAG_HIDDEN);
 
     /* Toon-style radiator+flame glyph, parked to the right of the big indoor
@@ -541,7 +538,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_flame, 256);
     lv_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
-    lv_obj_align(dim_img_flame, LV_ALIGN_CENTER, 145, 45);
+    lv_obj_align(dim_img_flame, LV_ALIGN_CENTER, 145, SY(45));
     lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW faucet fully red — see screen_home.c for rationale. */
@@ -550,7 +547,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_faucet, 256);
     lv_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
-    lv_obj_align(dim_img_faucet, LV_ALIGN_CENTER, 140, 35);
+    lv_obj_align(dim_img_faucet, LV_ALIGN_CENTER, 140, SY(35));
     lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW drop in RED to distinguish from the blue cold-water-flow drop —
@@ -560,7 +557,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_drop, 256);
     lv_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
-    lv_obj_align(dim_img_drop, LV_ALIGN_CENTER, 158, 55);
+    lv_obj_align(dim_img_drop, LV_ALIGN_CENTER, 158, SY(55));
     lv_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     /* Live water flow — drop icon + "X.X L/m" right of the indoor temp,
@@ -570,14 +567,14 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_water, 256);
     lv_obj_set_style_img_recolor(dim_img_water, lv_color_hex(0x66bbff), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_water, 255, 0);
-    lv_obj_align(dim_img_water, LV_ALIGN_CENTER, 130, 80);
+    lv_obj_align(dim_img_water, LV_ALIGN_CENTER, 130, SY(80));
     lv_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_water = lv_label_create(scr_root);
     lv_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
     lv_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
     lv_label_set_text(dim_lbl_water, "");
-    lv_obj_align(dim_lbl_water, LV_ALIGN_CENTER, 175, 80);
+    lv_obj_align(dim_lbl_water, LV_ALIGN_CENTER, 175, SY(80));
     lv_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
 
     /* Vent — small fan icon top-RIGHT (mirrors the waste icon on top-LEFT)
@@ -598,7 +595,7 @@ lv_obj_t * screen_dim_create(void) {
     /* Mirror the radiator+flame at (+145, +45): vent indicator sits to the
      * LEFT of the big indoor temp at the same offset. Label tucks under it
      * so the preset/% stays glanceable without crowding the temp row. */
-    lv_obj_align(dim_vent_fan, LV_ALIGN_CENTER, -145, 45);
+    lv_obj_align(dim_vent_fan, LV_ALIGN_CENTER, -145, SY(45));
     lv_obj_add_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
 
     dim_vent_lbl = lv_label_create(scr_root);
@@ -607,7 +604,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(dim_vent_lbl, "-- %");
     lv_obj_set_style_text_align(dim_vent_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(dim_vent_lbl, 120);
-    lv_obj_align(dim_vent_lbl, LV_ALIGN_CENTER, -145, 85);
+    lv_obj_align(dim_vent_lbl, LV_ALIGN_CENTER, -145, SY(85));
     lv_obj_add_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
 
     /* Weather icon (large, top-right) + outside temp underneath.
@@ -617,13 +614,13 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
     /* Native 80×80 — bigger source bitmap, no transform. */
-    lv_obj_align(wx_icon, LV_ALIGN_TOP_RIGHT, -60, 50);
+    lv_obj_align(wx_icon, LV_ALIGN_TOP_RIGHT, -60, SY(50));
 
     lbl_outside = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_outside, "-- C");
-    lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, -30, 140);
+    lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, -30, SY(140));
 
     /* Life360 — sits under the outside temp on the right edge, mirroring
      * the Family tile on the home screen. Right-aligned so longer street
@@ -635,7 +632,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_align(dim_lbl_life360_a, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_a, LV_LABEL_LONG_DOT);
     lv_label_set_text(dim_lbl_life360_a, "");
-    lv_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, -30, 174);
+    lv_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, -30, SY(174));
     lv_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_life360_b = lv_label_create(scr_root);
@@ -645,7 +642,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_align(dim_lbl_life360_b, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_b, LV_LABEL_LONG_DOT);
     lv_label_set_text(dim_lbl_life360_b, "");
-    lv_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, -30, 198);
+    lv_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, -30, SY(198));
     lv_obj_add_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
 
     /* Waste — 80×80 trash icon top-LEFT (mirroring the weather block).
@@ -654,14 +651,14 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_src(waste_icon, &icon_trash_lg);
     lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
-    lv_obj_align(waste_icon, LV_ALIGN_TOP_LEFT, 60, 50);
+    lv_obj_align(waste_icon, LV_ALIGN_TOP_LEFT, 60, SY(50));
     lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
 
     lbl_waste = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_waste, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_waste, "");
-    lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, 30, 140);
+    lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, 30, SY(140));
     lv_obj_add_flag(lbl_waste, LV_OBJ_FLAG_HIDDEN);
 
     /* City header above the forecast strip — same content as the home
@@ -670,20 +667,22 @@ lv_obj_t * screen_dim_create(void) {
     dim_lbl_city = lv_label_create(scr_root);
     lv_obj_set_style_text_color(dim_lbl_city, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(dim_lbl_city, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(dim_lbl_city, 1024);
+    lv_obj_set_width(dim_lbl_city, DISP_HOR);
     lv_obj_set_style_text_align(dim_lbl_city, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(dim_lbl_city, "");
     /* y=498 so it sits below the metrics row (CENTER + 170 ≈ 470..492)
      * with a small gap, and still above the forecast strip at y=518. */
-    lv_obj_set_pos(dim_lbl_city, 0, 498);
+    lv_obj_set_pos(dim_lbl_city, 0, SY(490));
 
     /* 5-day forecast strip across the bottom of dim. Black/white style:
        40×40 icon at top, day label below, temp range under that. */
     /* Strip sits below the city header (y=498..~516) with a tiny gap.
      * Total vertical budget: 600 − 518 = 82 px for icon(40) + 4 gap +
      * day(18) + 2 gap + temp(18) = 82, tight but fits cleanly. */
-    int strip_y = 518;
-    int col_w   = 1024 / WEATHER_FORECAST_DAYS;
+    /* SY() compresses the strip onto the shorter Toon 1 panel; the extra
+       nudge clears the bottom edge for the temp row's 18-px font (unscaled). */
+    int strip_y = SY(508) - (DISP_VER < 600 ? 12 : 0);
+    int col_w   = DISP_HOR / WEATHER_FORECAST_DAYS;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         int cx = i * col_w + col_w / 2;
 
@@ -700,7 +699,7 @@ lv_obj_t * screen_dim_create(void) {
         lv_label_set_text(dim_fc_day[i], "");
         lv_obj_set_style_text_align(dim_fc_day[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_day[i], col_w);
-        lv_obj_set_pos(dim_fc_day[i], i * col_w, strip_y + 44);
+        lv_obj_set_pos(dim_fc_day[i], i * col_w, strip_y + SY(44));
         lv_obj_add_flag(dim_fc_day[i], LV_OBJ_FLAG_HIDDEN);
 
         dim_fc_temp[i] = lv_label_create(scr_root);
@@ -709,7 +708,7 @@ lv_obj_t * screen_dim_create(void) {
         lv_label_set_text(dim_fc_temp[i], "");
         lv_obj_set_style_text_align(dim_fc_temp[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_temp[i], col_w);
-        lv_obj_set_pos(dim_fc_temp[i], i * col_w, strip_y + 64);
+        lv_obj_set_pos(dim_fc_temp[i], i * col_w, strip_y + SY(64));
         lv_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -719,7 +718,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), 0);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
     lv_label_set_text(hint, "tap to wake");
-    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, SY(6));
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;

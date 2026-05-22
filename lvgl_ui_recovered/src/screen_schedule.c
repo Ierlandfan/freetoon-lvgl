@@ -13,6 +13,7 @@
  * On any change we call schedule_save() which writes back via hcb_config.
  */
 #include "screens.h"
+#include "display.h"
 #include "schedule.h"
 #include "boxtalk.h"
 #include <stdio.h>
@@ -31,12 +32,14 @@ static lv_timer_t * refresh_timer = NULL;
  * runs top→bottom (00:00 at top, 24:00 at bottom). Reads like a planner.
  * Compressed so the timeline + day chips + per-day switch list fit a
  * 600-px-tall screen without overlapping. */
-#define TL_X        80
-#define TL_Y        130
-#define TL_COL_W    120                /* width of each weekday column   */
-#define TL_HOUR_PX  12                 /* vertical pixels per hour        */
-#define TL_H        (24 * TL_HOUR_PX)  /* total height = 288 px           */
-#define TL_W        (7  * TL_COL_W)    /* total width  = 840 px           */
+/* All wrapped in SX()/SY() so the planner compresses onto Toon 1's
+ * 800x480 panel (identity on Toon 2's 1024x600). */
+#define TL_X        SX(80)
+#define TL_Y        SY(130)
+#define TL_COL_W    SX(120)            /* width of each weekday column   */
+#define TL_HOUR_PX  SY(12)             /* vertical pixels per hour        */
+#define TL_H        (24 * TL_HOUR_PX)  /* total height                    */
+#define TL_W        (7  * TL_COL_W)    /* total width                     */
 
 /* Forward decls */
 static void rebuild_day_list(void);
@@ -186,7 +189,7 @@ static void rebuild_day_list(void) {
         row_data[i].idx = i;
 
         lv_obj_t * row = lv_obj_create(day_list);
-        lv_obj_set_size(row, 940, 50);
+        lv_obj_set_size(row, lv_pct(100), 50);
         lv_obj_set_pos(row, 0, row_y);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x1a2a44), 0);
         lv_obj_set_style_radius(row, 8, 0);
@@ -525,8 +528,8 @@ lv_obj_t * screen_schedule_create(void) {
     /* Day chips */
     for (int i = 0; i < 7; i++) {
         lv_obj_t * c = lv_obj_create(scr_root);
-        lv_obj_set_size(c, 130, 48);
-        lv_obj_set_pos(c, 30 + i * 140, 70);
+        lv_obj_set_size(c, SX(130), SY(48));
+        lv_obj_set_pos(c, SX(30 + i * 140), SY(70));
         lv_obj_set_style_radius(c, 12, 0);
         lv_obj_set_style_pad_all(c, 0, 0);
         lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
@@ -559,8 +562,10 @@ lv_obj_t * screen_schedule_create(void) {
      * even when a day has 5+ entries plus the "Add" button. The scrollbar
      * stays visible so it's obvious there's more below the fold. */
     day_list = lv_obj_create(scr_root);
-    lv_obj_set_size(day_list, 960, 168);
-    lv_obj_set_pos(day_list, 30, 432);
+    /* Width tracks the panel; top sits just under the timeline and the box
+     * runs to the bottom edge (it scrolls vertically for long day lists). */
+    lv_obj_set_size(day_list, DISP_HOR - 60, DISP_VER - SY(432));
+    lv_obj_set_pos(day_list, 30, SY(432));
     lv_obj_set_style_bg_opa(day_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(day_list, 0, 0);
     lv_obj_set_style_pad_all(day_list, 0, 0);

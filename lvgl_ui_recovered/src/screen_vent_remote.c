@@ -5,6 +5,7 @@
  * settings list.
  */
 #include "screens.h"
+#include "display.h"
 #include "ventilation.h"
 #include <stdio.h>
 
@@ -98,8 +99,10 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, 20, 92);
     lv_label_set_text(lbl_status, "(loading...)");
 
-    /* 8 command buttons in a 4x2 grid */
-    const int X0 = 40, Y0 = 150, BW = 220, BH = 110, GAP = 16;
+    /* 8 command buttons in a 4x2 grid. The full 4-wide row spans 968px at
+     * design size and runs off Toon 1's 800px panel, so SX() shrinks the
+     * column pitch + width to fit (identity on Toon 2). */
+    const int X0 = SX(40), Y0 = SY(150), BW = SX(220), BH = SY(110), GAP = SX(16);
     mk_btn(scr_root, X0 + 0*(BW+GAP), Y0 + 0*(BH+GAP), BW, BH, "Away",   "away",   0x335577);
     mk_btn(scr_root, X0 + 1*(BW+GAP), Y0 + 0*(BH+GAP), BW, BH, "Low",    "low",    0x44aa66);
     mk_btn(scr_root, X0 + 2*(BW+GAP), Y0 + 0*(BH+GAP), BW, BH, "Medium", "medium", 0xddbb22);

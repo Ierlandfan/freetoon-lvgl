@@ -41,6 +41,10 @@ extern const lv_img_dsc_t icon_wx_moon_wan_cres_lg;
  * for the sun overlay on partly-cloudy nights, or as the cloud-icon
  * slot itself on a clear-sky night. */
 const lv_img_dsc_t * moon_phase_icon(int size_px);
+
+/* 1 if the sun is currently above the horizon (daytime), else 0. Sunrise/sunset
+   computed for the Netherlands; used to hide the night moon during the day. */
+int is_daytime_now(void);
 extern const lv_img_dsc_t icon_wx_snow;
 extern const lv_img_dsc_t icon_wx_fog;
 

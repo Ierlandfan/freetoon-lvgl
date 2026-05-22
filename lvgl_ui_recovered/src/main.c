@@ -7,6 +7,7 @@
 #include "lv_drivers/indev/evdev.h"
 #include "bootpick.h"
 #include "boxtalk.h"
+#include "display.h"
 #include "screens.h"
 #include "settings.h"
 #include "tile_slots.h"
@@ -35,8 +36,7 @@ static void evdev_read_with_activity(lv_indev_drv_t * drv, lv_indev_data_t * dat
     if (data->state == LV_INDEV_STATE_PR) ui_mark_activity();
 }
 
-#define DISP_HOR 1024
-#define DISP_VER 600
+/* DISP_HOR / DISP_VER come from display.h (per-target geometry). */
 #define DRAW_BUF_LINES 100
 
 static lv_color_t buf1[DISP_HOR * DRAW_BUF_LINES];
@@ -120,6 +120,9 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[main] update_check_start failed\n");
     if (!settings.client_mode)
         packages_start();
+
+    extern void airhist_start(void);
+    airhist_start();   /* record eCO2/TVOC history (RRD doesn't) for Stats graphs */
 
     ui_init();
 

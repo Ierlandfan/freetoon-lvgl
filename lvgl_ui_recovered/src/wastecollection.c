@@ -205,6 +205,80 @@ int waste_next_2_pickups(waste_pickup_t * out1, waste_pickup_t * out2) {
     return 2;
 }
 
+/* Per-type collection-time cutoff (local hour) on the pickup day: a type stops
+ * counting as "upcoming" once this hour passes on its pickup date. Plastic is
+ * collected on the late/evening round (~21:00); the grey (Restafval), green
+ * (GFT) and paper rounds wrap up in the afternoon (~16:00). */
+static int waste_cutoff_hour(const char * label) {
+    if (label && (strstr(label, "Plastic") || strstr(label, "plastic"))) return 21;
+    return 16;
+}
+
+/* Seconds from now until <date> at the type's cutoff hour; <0 if already past. */
+static long waste_secs_until(const char * date, const char * label) {
+    if (!date || !date[0]) return -1;
+    struct tm t = {0};
+    t.tm_year = atoi(date)     - 1900;
+    t.tm_mon  = atoi(date + 5) - 1;
+    t.tm_mday = atoi(date + 8);
+    t.tm_hour = waste_cutoff_hour(label);
+    t.tm_isdst = -1;
+    return (long)(mktime(&t) - time(NULL));
+}
+
+/* Whole days from today's local midnight to <date> (negative if in the past). */
+long waste_days_until(const char * date) {
+    if (!date || !date[0]) return -9999;
+    struct tm t = {0};
+    t.tm_year = atoi(date)     - 1900;
+    t.tm_mon  = atoi(date + 5) - 1;
+    t.tm_mday = atoi(date + 8);
+    t.tm_isdst = -1;
+    time_t pickup = mktime(&t);
+    time_t now = time(NULL);
+    struct tm nt; localtime_r(&now, &nt);
+    nt.tm_hour = nt.tm_min = nt.tm_sec = 0; nt.tm_isdst = -1;
+    return (long)((pickup - mktime(&nt)) / 86400);
+}
+
+/* Up to max_n soonest UPCOMING pickup dates within `lead_days`, grouping the
+ * still-upcoming types collected on each date (a type drops off once its
+ * per-type cutoff time passes on the pickup day). The single source of truth
+ * for both the home tile and the dim screen. Returns count filled. */
+int waste_next_n_windowed(int lead_days, waste_pickup_t * out, int max_n) {
+    for (int i = 0; i < max_n; i++) { out[i].date[0] = 0; out[i].labels[0] = 0; }
+    int filled = 0;
+    char prev[16] = "0000-00-00";
+    while (filled < max_n) {
+        /* soonest date strictly after `prev` with a still-upcoming type in window */
+        char best[16] = "9999-99-99"; int have = 0;
+        for (int i = 0; i < WASTE_TYPES; i++) {
+            const char * d  = waste_state.items[i].date;
+            const char * lb = waste_state.items[i].label;
+            if (!d[0] || strcmp(d, prev) <= 0) continue;
+            if (waste_secs_until(d, lb) < 0)        continue;  /* past its cutoff */
+            if (waste_days_until(d) > lead_days)    continue;  /* beyond window   */
+            if (strcmp(d, best) < 0) { snprintf(best, sizeof best, "%s", d); have = 1; }
+        }
+        if (!have) break;
+        snprintf(out[filled].date, sizeof out[filled].date, "%s", best);
+        for (int i = 0; i < WASTE_TYPES; i++) {
+            const char * d  = waste_state.items[i].date;
+            const char * lb = waste_state.items[i].label;
+            if (strcmp(d, best) != 0) continue;
+            if (waste_secs_until(d, lb) < 0) continue;        /* skip already-past types */
+            if (out[filled].labels[0])
+                strncat(out[filled].labels, "+",
+                        sizeof out[filled].labels - strlen(out[filled].labels) - 1);
+            strncat(out[filled].labels, lb,
+                    sizeof out[filled].labels - strlen(out[filled].labels) - 1);
+        }
+        snprintf(prev, sizeof prev, "%s", best);
+        filled++;
+    }
+    return filled;
+}
+
 /* ---- generic ICS provider (prezero / cyclus / dar / cranendonck / katwijk /
  * any provider that exposes a downloadable .ics calendar). One parser handles
  * them all: walk VEVENTs, take DTSTART (date) + SUMMARY (waste type), and keep
@@ -226,12 +300,15 @@ static int ics_slot(const char * s) {
     return -1;
 }
 
+/* Generic ICS parse: the calendar's own SUMMARY text is the waste-type label,
+ * so it works for any municipality (HVC, mijnafvalwijzer, Ximmio, …) regardless
+ * of how they name their streams. Each distinct SUMMARY claims one of the
+ * WASTE_TYPES slots (first-seen), keeping its soonest upcoming date. */
 static int parse_ics(const char * body) {
-    static const char * SLOT[WASTE_TYPES] = { "GFT", "Plastic", "Papier", "Restafval" };
     char today[16]; ymd_today(today, sizeof today);
     for (int i = 0; i < WASTE_TYPES; i++) {
-        snprintf(waste_state.items[i].label, sizeof waste_state.items[i].label, "%s", SLOT[i]);
-        waste_state.items[i].date[0] = 0;
+        waste_state.items[i].label[0] = 0;
+        waste_state.items[i].date[0]  = 0;
     }
     int found = 0;
     const char * p = body;
@@ -255,25 +332,46 @@ static int parse_ics(const char * body) {
             }
         }
 
-        /* SUMMARY → slot */
-        int slot = -1;
+        /* SUMMARY → label (raw text, trimmed of trailing CR/LF). */
+        char label[40] = "";
         const char * s = strstr(p, "SUMMARY");
         if (s && s < evend) {
             const char * c = strchr(s, ':');
             if (c) {
-                char low[64]; int n = 0; c++;
-                while (*c && *c != '\r' && *c != '\n' && n < (int)sizeof(low) - 1)
-                    low[n++] = (char)tolower((unsigned char)*c++);
-                low[n] = 0;
-                slot = ics_slot(low);
+                int n = 0; c++;
+                /* Unescape ICS text: "\," → "," , "\;" → ";" , "\\" → "\" , "\n" → space. */
+                while (*c && *c != '\r' && *c != '\n' && n < (int)sizeof(label) - 1) {
+                    if (*c == '\\' && c[1]) {
+                        c++;
+                        label[n++] = (*c == 'n' || *c == 'N') ? ' ' : *c;
+                        c++;
+                    } else {
+                        label[n++] = *c++;
+                    }
+                }
+                label[n] = 0;
             }
         }
 
-        /* Keep the soonest upcoming date per slot. */
-        if (date[0] && slot >= 0 && strcmp(date, today) >= 0) {
-            if (waste_state.items[slot].date[0] == 0 ||
-                strcmp(date, waste_state.items[slot].date) < 0) {
-                snprintf(waste_state.items[slot].date, sizeof waste_state.items[slot].date, "%s", date);
+        if (date[0] && label[0] && strcmp(date, today) >= 0) {
+            /* Find this label's slot, or claim the next free one. */
+            int slot = -1;
+            for (int i = 0; i < WASTE_TYPES; i++)
+                if (waste_state.items[i].label[0] &&
+                    strcmp(waste_state.items[i].label, label) == 0) { slot = i; break; }
+            if (slot < 0)
+                for (int i = 0; i < WASTE_TYPES; i++)
+                    if (!waste_state.items[i].label[0]) {
+                        slot = i;
+                        snprintf(waste_state.items[i].label,
+                                 sizeof waste_state.items[i].label, "%s", label);
+                        break;
+                    }
+            if (slot >= 0 &&
+                (waste_state.items[slot].date[0] == 0 ||
+                 strcmp(date, waste_state.items[slot].date) < 0)) {
+                snprintf(waste_state.items[slot].date,
+                         sizeof waste_state.items[slot].date, "%s", date);
                 found = 1;
             }
         }
@@ -290,11 +388,37 @@ static int fetch_ics(void) {
     return parse_ics(body);
 }
 
+/* Provider-plugin path: run the wastefetch helper (embedded QuickJS runs the
+ * real ToonSoftwareCollective provider script) → normalized ICS → parse_ics.
+ * This is the full stock-app mimic; covers all ~42 providers. */
+static int fetch_plugin(void) {
+    if (!settings.waste_plugin[0] || strcmp(settings.waste_plugin, "0") == 0) return -1;
+    char cmd[1280];
+    snprintf(cmd, sizeof cmd,
+        "/mnt/data/wastefetch '%s' '%s' '%s' '%s' '%s' '%s' '%s' "
+        "/mnt/data/wastedates.ics >/dev/null 2>&1",
+        settings.waste_plugin, settings.waste_postcode, settings.waste_housenr,
+        settings.waste_icsid, settings.waste_street, settings.waste_city,
+        settings.waste_ics_url);
+    if (system(cmd) == -1) return -1;
+    FILE * f = fopen("/mnt/data/wastedates.ics", "r");
+    if (!f) return -1;
+    static char body[300 * 1024];
+    size_t n = fread(body, 1, sizeof body - 1, f);
+    body[n] = 0; fclose(f);
+    if (!strstr(body, "VEVENT")) return -1;
+    return parse_ics(body);
+}
+
 static void * waste_thread(void * arg) {
     (void)arg;
     while (1) {
         int ok = 0;
-        if (settings.waste_provider == 1 && settings.waste_ics_url[0]) {
+        /* Provider plugin (full stock-app mimic) wins when configured; then a
+         * direct iCal URL; then the legacy HVC postcode lookup. */
+        if (settings.waste_plugin[0] && strcmp(settings.waste_plugin, "0") != 0) {
+            ok = (fetch_plugin() == 0);
+        } else if (settings.waste_ics_url[0]) {
             ok = (fetch_ics() == 0);
         } else {
             char pc[16], huis[8];

@@ -14,6 +14,7 @@
  * authoritative list of DIDs OTGW is currently tracking. ~33 fields today.
  */
 #include "screens.h"
+#include "display.h"
 #include "http.h"
 #include "settings.h"
 #include <stdio.h>
@@ -86,7 +87,7 @@ static void rebuild_list(void) {
     while (next_field(&p, name, sizeof(name), value, sizeof(value),
                       unit, sizeof(unit))) {
         lv_obj_t * row = lv_obj_create(list_col);
-        lv_obj_set_size(row, 980, 40);
+        lv_obj_set_size(row, DISP_HOR - 44, 40);
         lv_obj_set_style_pad_all(row, 6, 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
@@ -153,7 +154,7 @@ lv_obj_t * screen_heater_advanced_create(void) {
 
     /* scrollable column for the field list */
     list_col = lv_obj_create(scr_root);
-    lv_obj_set_size(list_col, 1004, 510);
+    lv_obj_set_size(list_col, DISP_HOR - 20, DISP_VER - 90);
     lv_obj_align(list_col, LV_ALIGN_TOP_LEFT, 10, 82);
     lv_obj_set_style_bg_color(list_col, lv_color_hex(0x111111), 0);
     lv_obj_set_style_border_width(list_col, 0, 0);

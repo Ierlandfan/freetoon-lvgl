@@ -242,15 +242,24 @@ static void push_to_rrd(void) {
 
 static void * hw_thread(void * arg) {
     (void)arg;
-    /* 2 s loop. Water pours produce a 1-second update on the HWE-WTR side;
-     * at 5 s the live L/min lagged so much that the user couldn't see they
-     * had even turned the tap on. Push-to-RRD also lives inside this loop
-     * but is rate-limited by its own 5-min bucket so the extra ticks cost
-     * nothing on disk. */
+    /* 2 s loop for WATER: pours produce a 1-second update on the HWE-WTR side;
+     * at 5 s the live L/min lagged so much that the user couldn't see they had
+     * even turned the tap on.
+     *
+     * But the P1 meter (HWE-P1) is an ESP32 with a tiny TCP socket table. Each
+     * poll is a fresh HTTP/1.0 "Connection: close" request, so the P1 actively
+     * closes and holds the socket in TIME_WAIT for ~1-2 min. At one new
+     * connection every 2 s (plus HA + the HomeWizard app polling the same
+     * meter) the TIME_WAIT sockets exhaust its lwIP PCBs and the meter hangs /
+     * reboots — i.e. the "P1 keeps crashing" since this UI started polling it.
+     * So poll the P1 only every 5th tick (~10 s); water stays at 2 s. Push-to-
+     * RRD is rate-limited by its own 5-min bucket, so the extra ticks are free. */
+    unsigned tick = 0;
     while (1) {
-        poll_p1();
+        if (tick % 5 == 0) poll_p1();
         poll_water();
         push_to_rrd();
+        tick++;
         sleep(2);
     }
     return NULL;
