@@ -28,6 +28,20 @@
 
 #define CHOICE_FILE "/mnt/data/ui_choice"
 
+/* Above this system uptime (seconds) we treat a bootpick invocation as a WARM
+ * restart of toonui (update install, settings restart, crash respawn) rather
+ * than a cold power-on. Warm = no chooser, just a "Restarting…" splash. */
+#define BP_WARM_RESTART_S 120.0
+
+static double system_uptime(void) {
+    FILE * f = fopen("/proc/uptime", "r");
+    if (!f) return 1e9;                 /* unknown → treat as warm (no picker) */
+    double up = 1e9;
+    if (fscanf(f, "%lf", &up) != 1) up = 1e9;
+    fclose(f);
+    return up;
+}
+
 static int  bp_default_choice    = CHOICE_FREETOON;
 static int  bp_final_choice      = CHOICE_FREETOON;
 static int  bp_user_picked       = 0;       /* 1 once a button is tapped */
@@ -141,6 +155,28 @@ int bootpick_run(void) {
     disp_drv.hor_res  = BP_HOR;
     disp_drv.ver_res  = BP_VER;
     lv_disp_drv_register(&disp_drv);
+
+    /* WARM restart (box already up a while): toonui is respawning, not a cold
+     * boot — skip the chooser, show a brief "Restarting…" splash, then dispatch
+     * straight to the persisted UI. The picker only makes sense at power-on. */
+    if (system_uptime() > BP_WARM_RESTART_S) {
+        fprintf(stderr, "[bootpick] warm restart (uptime>%.0fs) — splash only, rc=%d\n",
+                BP_WARM_RESTART_S, bp_default_choice);
+        lv_obj_t * scr = lv_scr_act();
+        lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f1a2a), 0);
+        lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_t * msg = lv_label_create(scr);
+        lv_obj_set_style_text_font(msg, &lv_font_montserrat_28, 0);
+        lv_obj_set_style_text_color(msg, lv_color_hex(0xffffff), 0);
+        lv_label_set_text(msg, LV_SYMBOL_REFRESH "  Restarting...");
+        lv_obj_center(msg);
+        for (int i = 0; i < 300; i++) {     /* ~1.5 s so it actually shows */
+            lv_timer_handler();
+            usleep(5000);
+            lv_tick_inc(5);
+        }
+        return bp_default_choice;
+    }
 
     evdev_init();
     static lv_indev_drv_t indev_drv;
