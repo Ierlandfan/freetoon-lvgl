@@ -168,7 +168,7 @@ int bootpick_run(void) {
         lv_obj_t * msg = lv_label_create(scr);
         lv_obj_set_style_text_font(msg, &lv_font_montserrat_28, 0);
         lv_obj_set_style_text_color(msg, lv_color_hex(0xffffff), 0);
-        lv_label_set_text(msg, LV_SYMBOL_REFRESH "  Restarting...");
+        lv_label_set_text(msg, LV_SYMBOL_REFRESH "  UI restarting");
         lv_obj_center(msg);
         for (int i = 0; i < 300; i++) {     /* ~1.5 s so it actually shows */
             lv_timer_handler();
