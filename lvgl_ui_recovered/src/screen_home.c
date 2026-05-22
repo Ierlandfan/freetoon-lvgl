@@ -486,6 +486,20 @@ static void do_check_updates(lv_event_t * e) {
     if (pthread_create(&t, NULL, check_thread, NULL) == 0) pthread_detach(t);
 }
 
+/* Release-channel toggle: ON = beta/dev (newest incl. prereleases),
+ * OFF = stable/official only. Re-checks immediately so the banner updates. */
+static void on_channel_toggle(lv_event_t * e) {
+    lv_obj_t * sw = lv_event_get_target(e);
+    settings.update_channel = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+    if (about_status_lbl)
+        lv_label_set_text(about_status_lbl,
+            settings.update_channel ? "Channel: beta/dev - checking..."
+                                    : "Channel: stable - checking...");
+    pthread_t t;
+    if (pthread_create(&t, NULL, check_thread, NULL) == 0) pthread_detach(t);
+}
+
 /* About / Update modal — opened by the logo (always) and the update banner.
  * Shows version, status, release notes, and Check / Install / Skip actions. */
 static void open_about_modal(lv_event_t * e) {
@@ -596,6 +610,17 @@ static void open_about_modal(lv_event_t * e) {
     lv_obj_align(au_sw, LV_ALIGN_TOP_LEFT, 320, 344);
     if (settings.auto_update_enabled) lv_obj_add_state(au_sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(au_sw, on_auto_update_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* Release-channel toggle (same row, right side): on = beta/dev, off = stable. */
+    lv_obj_t * ch_lbl = lv_label_create(panel);
+    lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(ch_lbl, lv_color_hex(0xc8d4e0), 0);
+    lv_label_set_text(ch_lbl, "Beta / dev");
+    lv_obj_align(ch_lbl, LV_ALIGN_TOP_LEFT, 430, 350);
+    lv_obj_t * ch_sw = lv_switch_create(panel);
+    lv_obj_align(ch_sw, LV_ALIGN_TOP_LEFT, 600, 344);
+    if (settings.update_channel) lv_obj_add_state(ch_sw, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(ch_sw, on_channel_toggle, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* Button row. */
     lv_obj_t * b_check = lv_btn_create(panel);
