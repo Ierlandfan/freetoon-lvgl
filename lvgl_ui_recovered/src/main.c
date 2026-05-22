@@ -123,6 +123,7 @@ int main(int argc, char** argv) {
 
     extern void airhist_start(void);
     airhist_start();   /* record eCO2/TVOC history (RRD doesn't) for Stats graphs */
+    backlight_als_start();  /* poll the ambient sensor off the UI thread (auto-brightness) */
 
     ui_init();
 
