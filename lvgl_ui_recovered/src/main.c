@@ -17,6 +17,7 @@
 #include "wastecollection.h"
 #include "ventilation.h"
 #include "homeassistant.h"
+#include "doorbell.h"
 #include "healthcheck.h"
 #include "pwa_server.h"
 #include "packages.h"
@@ -121,6 +122,11 @@ int main(int argc, char** argv) {
         packages_start();
 
     ui_init();
+
+    /* Doorbell snapshot overlay — watches ha_state.doorbell_seq and shows the
+     * camera snapshot fullscreen over any screen. No-op unless configured. */
+    if (!settings.client_mode)
+        doorbell_ui_init();
 
     fprintf(stderr, "[main] entering LVGL loop\n");
     uint32_t last_idle_check = 0;

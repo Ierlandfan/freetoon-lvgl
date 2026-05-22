@@ -728,6 +728,8 @@ static int handle_settings_get(int fd) {
         "\"ha_host\":\"%s\",\"life360_a_entity\":\"%s\",\"life360_a_name\":\"%s\","
         "\"life360_b_entity\":\"%s\",\"life360_b_name\":\"%s\","
         "\"curtain_entity\":\"%s\",\"curtain_bat_a\":\"%s\",\"curtain_bat_b\":\"%s\","
+        "\"doorbell_entity\":\"%s\",\"doorbell_camera\":\"%s\",\"doorbell_seconds\":%d,"
+        "\"doorbell_stream_url\":\"%s\","
         "\"p1_elec_host\":\"%s\",\"p1_water_host\":\"%s\",\"vent_host\":\"%s\",\"opnsense_host\":\"%s\","
         "\"energy_source\":%d,\"auto_update_enabled\":%d,\"auto_update_hour\":%d,"
         "\"news_enabled\":%d,\"news_rss_url\":\"%s\","
@@ -751,6 +753,8 @@ static int handle_settings_get(int fd) {
         settings.ha_host, settings.life360_a_entity, settings.life360_a_name,
         settings.life360_b_entity, settings.life360_b_name,
         settings.curtain_entity, settings.curtain_bat_a, settings.curtain_bat_b,
+        settings.doorbell_entity, settings.doorbell_camera, settings.doorbell_seconds,
+        settings.doorbell_stream_url,
         settings.p1_elec_host, settings.p1_water_host, settings.vent_host, settings.opnsense_host,
         settings.energy_source, settings.auto_update_enabled, settings.auto_update_hour,
         settings.news_enabled, settings.news_rss_url,
@@ -844,6 +848,14 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.curtain_bat_a, sizeof settings.curtain_bat_a, "%s", sv);
     if (extract_str(body, "curtain_bat_b", sv, sizeof sv))
         snprintf(settings.curtain_bat_b, sizeof settings.curtain_bat_b, "%s", sv);
+    if (extract_str(body, "doorbell_entity", sv, sizeof sv))
+        snprintf(settings.doorbell_entity, sizeof settings.doorbell_entity, "%s", sv);
+    if (extract_str(body, "doorbell_camera", sv, sizeof sv))
+        snprintf(settings.doorbell_camera, sizeof settings.doorbell_camera, "%s", sv);
+    if (extract_int(body, "doorbell_seconds", &iv))
+        settings.doorbell_seconds = (iv < 3 || iv > 300) ? 30 : iv;
+    if (extract_str(body, "doorbell_stream_url", sv, sizeof sv))
+        snprintf(settings.doorbell_stream_url, sizeof settings.doorbell_stream_url, "%s", sv);
     /* Integration LAN hosts */
     if (extract_str(body, "p1_elec_host", sv, sizeof sv))
         snprintf(settings.p1_elec_host, sizeof settings.p1_elec_host, "%s", sv);
@@ -881,7 +893,9 @@ static const char SETTINGS_HTML[] =
 "input[type=text],input[type=number]{width:170px}input[type=checkbox]{width:24px;height:24px}"
 "button{background:#2e6e3a;color:#fff;border:0;border-radius:10px;padding:14px 22px;font-size:17px;margin-top:18px}"
 "#msg{color:#ffcc44;margin-left:12px}"
-"</style></head><body><h1>freetoon settings</h1><div id=f>loading...</div>"
+"</style></head><body><h1>freetoon settings</h1>"
+"<p style='margin:-6px 0 10px'><a href=/about style='color:#6fb3ff'>About / License</a></p>"
+"<div id=f>loading...</div>"
 "<button onclick=save()>Save</button><span id=msg></span>"
 "<script>"
 "var S={};"
@@ -913,6 +927,9 @@ static const char SETTINGS_HTML[] =
 "['enable_ha','Home Assistant enabled','b'],['ha_host','HA host (ip:port)','t'],"
 "['curtain_entity','Curtain cover entity','t'],"
 "['curtain_bat_a','Curtain battery sensor A','t'],['curtain_bat_b','Curtain battery sensor B','t'],"
+"['doorbell_entity','Doorbell trigger entity (on=ring)','t'],"
+"['doorbell_camera','Doorbell camera entity','t'],['doorbell_seconds','Snapshot shown (s)','n'],"
+"['doorbell_stream_url','Doorbell MJPEG stream URL (live; blank=still)','t'],"
 "['life360_a_entity','Person A device_tracker','t'],['life360_a_name','Person A name','t'],"
 "['life360_b_entity','Person B device_tracker','t'],['life360_b_name','Person B name','t'],"
 "['Domoticz','h'],"
@@ -958,6 +975,52 @@ static int handle_settings_page(int fd) {
     return sock_send_all(fd, SETTINGS_HTML, n);
 }
 
+/* About / license — the web mirror of the LVGL logo→About modal. */
+#ifndef BUILD_VERSION
+#define BUILD_VERSION "dev"
+#endif
+static int handle_about_page(int fd) {
+    char html[2048];
+    int n = snprintf(html, sizeof html,
+        "<!doctype html><html><head><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>freetoon - about</title><style>"
+        "body{font-family:system-ui,sans-serif;background:#0e1a2a;color:#dfe9f3;margin:0;padding:18px;line-height:1.5}"
+        "h1{font-size:22px;margin:0 0 2px}.v{color:#88aabb;font-size:14px;margin-bottom:14px}"
+        "h2{font-size:15px;color:#88aabb;border-bottom:1px solid #24385c;padding-bottom:4px;margin:18px 0 6px}"
+        "code{background:#16243a;padding:2px 6px;border-radius:6px}a{color:#6fb3ff}"
+        "ul{padding-left:20px}li{margin:3px 0}.mark{display:inline-block;background:#2e6e9e;color:#fff;"
+        "border-radius:10px;padding:6px 10px;font-weight:bold;margin-right:8px}"
+        "</style></head><body>"
+        "<span class=mark>ft</span><h1>freetoon</h1>"
+        "<div class=v>%s &nbsp;-&nbsp; beta &nbsp;-&nbsp; alternative UI by Ierlandfan &nbsp;-&nbsp; MIT License</div>"
+        "<p>An independent LVGL UI for the Eneco Toon. Released under the "
+        "<a href=https://github.com/Ierlandfan/freetoon-lvgl/blob/main/LICENSE>MIT License</a>.</p>"
+        "<h2>Thanks</h2><p>To <b>Quby / Eneco</b> for the underlying Toon platform and the "
+        "BoxTalk / Quby protocol structure this UI builds on. The stock Toon binaries and "
+        "keteladapter firmware remain &copy; Eneco / Quby and are not redistributed or "
+        "modified by this project.</p>"
+        "<h2>Built with</h2><ul>"
+        "<li>LVGL - embedded UI library (MIT) &copy; LVGL Kft</li>"
+        "<li>QR-Code-generator (MIT) &copy; Project Nayuki</li>"
+        "<li>LodePNG (zlib) &copy; Lode Vandevenne</li>"
+        "<li>TJpgDec - JPEG decoder (BSD-3) &copy; ChaN</li>"
+        "<li>OTGW HTTP firmware &copy; Robert van den Breemen</li>"
+        "<li>Itho-WiFi REST add-on &copy; Arjen Hiemstra</li>"
+        "<li>HomeWizard P1, Buienradar, NOS feeds - public APIs</li>"
+        "</ul>"
+        "<p><a href=/settings>&larr; Settings</a> &nbsp;&middot;&nbsp; "
+        "<a href=https://github.com/Ierlandfan/freetoon-lvgl>Project on GitHub</a></p>"
+        "</body></html>",
+        BUILD_VERSION);
+    char hdr[160];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+        "Content-Length: %d\r\n\r\n", n);
+    if (sock_send_all(fd, hdr, hn) < 0) return -1;
+    return sock_send_all(fd, html, n);
+}
+
 static int dispatch(int fd, char * req) {
     char method[8] = "", path[256] = "";
     if (sscanf(req, "%7s %255s", method, path) != 2) {
@@ -972,6 +1035,8 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/packages"))      return handle_packages_get(fd);
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);
         if (!strcmp(path, "/api/settings"))      return handle_settings_get(fd);
+        if (!strcmp(path, "/about") || !strcmp(path, "/about.html"))
+            return handle_about_page(fd);
         if (!strcmp(path, "/settings") || !strcmp(path, "/settings.html"))
             return handle_settings_page(fd);
         return serve_static(fd, path);

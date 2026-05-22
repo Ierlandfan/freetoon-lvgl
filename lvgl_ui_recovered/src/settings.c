@@ -78,6 +78,10 @@ settings_t settings = {
     .curtain_entity      = "",
     .curtain_bat_a       = "",
     .curtain_bat_b       = "",
+    .doorbell_entity     = "",
+    .doorbell_camera     = "",
+    .doorbell_seconds    = 30,
+    .doorbell_stream_url = "",
     .p1_elec_host        = "",
     .p1_water_host       = "",
     .vent_host           = "",
@@ -216,6 +220,10 @@ void settings_load(void) {
         else if (strcmp(k, "curtain_entity")   == 0) snprintf(settings.curtain_entity, sizeof settings.curtain_entity, "%s", v);
         else if (strcmp(k, "curtain_bat_a")    == 0) snprintf(settings.curtain_bat_a, sizeof settings.curtain_bat_a, "%s", v);
         else if (strcmp(k, "curtain_bat_b")    == 0) snprintf(settings.curtain_bat_b, sizeof settings.curtain_bat_b, "%s", v);
+        else if (strcmp(k, "doorbell_entity")  == 0) snprintf(settings.doorbell_entity, sizeof settings.doorbell_entity, "%s", v);
+        else if (strcmp(k, "doorbell_camera")  == 0) snprintf(settings.doorbell_camera, sizeof settings.doorbell_camera, "%s", v);
+        else if (strcmp(k, "doorbell_seconds") == 0) settings.doorbell_seconds = (iv < 3 || iv > 300) ? 30 : iv;
+        else if (strcmp(k, "doorbell_stream_url") == 0) snprintf(settings.doorbell_stream_url, sizeof settings.doorbell_stream_url, "%s", v);
         else if (strcmp(k, "p1_elec_host")     == 0) snprintf(settings.p1_elec_host, sizeof settings.p1_elec_host, "%s", v);
         else if (strcmp(k, "p1_water_host")    == 0) snprintf(settings.p1_water_host, sizeof settings.p1_water_host, "%s", v);
         else if (strcmp(k, "vent_host")        == 0) snprintf(settings.vent_host, sizeof settings.vent_host, "%s", v);
@@ -362,6 +370,10 @@ void settings_save(void) {
     fprintf(f, "curtain_entity=%s\n", settings.curtain_entity);
     fprintf(f, "curtain_bat_a=%s\n", settings.curtain_bat_a);
     fprintf(f, "curtain_bat_b=%s\n", settings.curtain_bat_b);
+    fprintf(f, "doorbell_entity=%s\n", settings.doorbell_entity);
+    fprintf(f, "doorbell_camera=%s\n", settings.doorbell_camera);
+    fprintf(f, "doorbell_seconds=%d\n", settings.doorbell_seconds);
+    fprintf(f, "doorbell_stream_url=%s\n", settings.doorbell_stream_url);
     fprintf(f, "p1_elec_host=%s\n", settings.p1_elec_host);
     fprintf(f, "p1_water_host=%s\n", settings.p1_water_host);
     fprintf(f, "vent_host=%s\n", settings.vent_host);

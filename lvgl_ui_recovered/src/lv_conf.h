@@ -653,8 +653,9 @@
 #define LV_USE_BMP 0
 
 /* JPG + split JPG decoder library.
- * Split JPG is a custom format optimized for embedded systems. */
-#define LV_USE_SJPG 0
+ * Split JPG is a custom format optimized for embedded systems.
+ * Enabled for the doorbell-snapshot feature (HA camera_proxy returns JPEG). */
+#define LV_USE_SJPG 1
 
 /*GIF decoder library*/
 #define LV_USE_GIF 1   /* Buienradar radar map is a GIF89a animation, not PNG. */

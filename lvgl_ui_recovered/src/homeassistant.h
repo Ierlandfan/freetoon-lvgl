@@ -21,7 +21,19 @@ typedef struct {
      * Dutch city + street names without truncation. */
     char           loc_a[128];
     char           loc_b[128];
+    /* Doorbell — doorbell_seq is bumped once when the trigger goes off->on
+     * (opens the overlay). While the overlay is up the UI sets doorbell_live=1,
+     * which makes the poll thread re-fetch the camera snapshot ~1x/s and bump
+     * doorbell_frame; the UI redraws the canvas on each new frame for near-live
+     * footage. The UI clears doorbell_live when the overlay closes. */
+    volatile int   doorbell_seq;
+    volatile int   doorbell_frame;
+    volatile int   doorbell_live;
 } ha_state_t;
+
+/* Where poll_doorbell() writes the fetched JPEG (LVGL stdio drive 'S'). */
+#define DOORBELL_SNAP_PATH "/tmp/toonui_doorbell.jpg"
+#define DOORBELL_SNAP_LV   "S:" DOORBELL_SNAP_PATH
 
 extern ha_state_t ha_state;
 

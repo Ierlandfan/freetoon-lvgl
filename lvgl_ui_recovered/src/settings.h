@@ -154,6 +154,16 @@ typedef struct {
     char curtain_entity[64];
     char curtain_bat_a[64];
     char curtain_bat_b[64];
+    /* Doorbell snapshot — when the HA trigger entity (binary_sensor / input_
+     * boolean / event) goes "on", fetch a snapshot of doorbell_camera and show
+     * it fullscreen on the Toon for doorbell_seconds. All empty/0 = disabled. */
+    char doorbell_entity[64];   /* HA entity that turns "on" when pressed */
+    char doorbell_camera[64];   /* HA camera.* entity to snapshot */
+    int  doorbell_seconds;      /* how long the snapshot stays up (default 30) */
+    /* Optional MJPEG stream for live footage (server-transcoded, e.g. a
+     * Frigate/go2rtc resized MJPEG). When set, the overlay plays this stream
+     * frame-by-frame instead of a single snapshot. Empty = still snapshot. */
+    char doorbell_stream_url[256];
 
     /* LAN hosts for the optional integrations + healthcheck probes. All
      * empty by default so no personal network topology ships in the binary;

@@ -157,6 +157,48 @@ if { [ -x /usr/bin/x11vnc ] || which x11vnc >/dev/null 2>&1 || [ -x "$DEST/x11vn
     fi
 fi
 
+# 4c) OPTIONAL: enable the USB host port (opt-in, OFF by default).
+# The i.MX6 SoloX has two USB controllers; the stock display device-tree
+# (imx6sx-nxt_display.dtb on the boot partition) leaves the second one in
+# peripheral mode. Quby also ships imx6sx-nxt_display_usbhost.dtb, which puts
+# it in host mode. Swapping the active dtb to that variant enables a usable
+# USB-A host port after a reboot.
+#
+# This touches the BOOT PARTITION, so it's gated behind FREETOON_USB_HOST=1
+# and is fully reversible (the original dtb is backed up to .orig). Enable with:
+#   curl -fsSL .../toon-selfinstall.sh | FREETOON_USB_HOST=1 sh
+if [ "${FREETOON_USB_HOST:-0}" = "1" ]; then
+    BP=/tmp/freetoon_boot.$$
+    DEV=/dev/mmcblk3p1
+    DTB=imx6sx-nxt_display.dtb
+    USBDTB=imx6sx-nxt_display_usbhost.dtb
+    if [ -b "$DEV" ]; then
+        mkdir -p "$BP"
+        if mount -t vfat "$DEV" "$BP" 2>/dev/null; then
+            if [ ! -f "$BP/$USBDTB" ]; then
+                say "USB host: $USBDTB not on boot partition — skipping (unsupported firmware)."
+            elif cmp -s "$BP/$DTB" "$BP/$USBDTB" 2>/dev/null; then
+                say "USB host: already enabled (active dtb is the usbhost variant)."
+            else
+                [ -f "$BP/$DTB.orig" ] || cp "$BP/$DTB" "$BP/$DTB.orig" 2>/dev/null || true
+                if cp "$BP/$USBDTB" "$BP/$DTB" 2>/dev/null; then
+                    sync
+                    say "USB host: enabled. REBOOT required to take effect."
+                    say "USB host: to revert -> mount $DEV, 'cp $DTB.orig $DTB', reboot."
+                else
+                    say "USB host: failed to write dtb (read-only?) — left unchanged."
+                fi
+            fi
+            umount "$BP" 2>/dev/null || true
+        else
+            say "USB host: could not mount $DEV — skipping."
+        fi
+        rmdir "$BP" 2>/dev/null || true
+    else
+        say "USB host: $DEV not found — skipping."
+    fi
+fi
+
 # 5) restart the UI: stop any stock qt-gui AND the old toonui so init respawns
 # through ui_launcher (single owner of the framebuffer).
 say "restarting UI"

@@ -361,6 +361,101 @@ static void poll_life360(void) {
                          ha_state.loc_b,   sizeof(ha_state.loc_b));
 }
 
+/* Fetch a fresh snapshot of the configured doorbell camera into
+ * DOORBELL_SNAP_PATH (JPEG). Returns 0 on success. */
+static int fetch_doorbell_snapshot(void) {
+    if (!g_token[0] || !settings.doorbell_camera[0]) return -1;
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "/usr/bin/curl -s --max-time 8 --connect-timeout 3 "
+        "-H 'Authorization: Bearer %s' "
+        "-o '%s' 'http://%s/api/camera_proxy/%s' 2>/dev/null",
+        g_token, DOORBELL_SNAP_PATH, HA_HOST, settings.doorbell_camera);
+    int rc = system(cmd);
+    return rc == 0 ? 0 : -1;
+}
+
+/* Stream an MJPEG (multipart/x-mixed-replace) feed while the overlay is up,
+ * writing each JPEG frame to DOORBELL_SNAP_PATH and bumping doorbell_frame so
+ * the UI redraws it. Server-transcoded MJPEG (e.g. a Frigate/go2rtc resized
+ * stream) keeps the Toon's job to cheap JPEG decode. Runs in the poll thread;
+ * returns when doorbell_live clears or the stream drops. */
+static void stream_doorbell_mjpeg(void) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+        "/usr/bin/curl -s --max-time 120 '%s' 2>/dev/null",
+        settings.doorbell_stream_url);
+    FILE * p = popen(cmd, "r");
+    if (!p) return;
+
+    /* Accumulate bytes, split on JPEG SOI(FFD8FF)/EOI(FFD9). We don't parse the
+     * MIME boundary — scanning for JPEG markers is simpler and boundary-agnostic. */
+    static unsigned char buf[256 * 1024];
+    size_t len = 0;
+    int have_soi = 0;
+    char tmp[160];
+    snprintf(tmp, sizeof(tmp), "%s.tmp", DOORBELL_SNAP_PATH);
+
+    while (ha_state.doorbell_live) {
+        size_t n = fread(buf + len, 1, sizeof(buf) - len, p);
+        if (n == 0) break;                 /* stream ended / timed out */
+        len += n;
+
+        for (;;) {
+            if (!have_soi) {
+                size_t i;
+                for (i = 0; i + 2 < len; i++)
+                    if (buf[i] == 0xFF && buf[i+1] == 0xD8 && buf[i+2] == 0xFF) break;
+                if (i + 2 >= len) {         /* no SOI yet — keep last 2 bytes */
+                    if (len > 2) { memmove(buf, buf + len - 2, 2); len = 2; }
+                    break;
+                }
+                memmove(buf, buf + i, len - i);   /* drop pre-SOI junk */
+                len -= i;
+                have_soi = 1;
+            }
+            /* find EOI (FFD9) after the SOI */
+            size_t j;
+            for (j = 2; j + 1 < len; j++)
+                if (buf[j] == 0xFF && buf[j+1] == 0xD9) break;
+            if (j + 1 >= len) {             /* incomplete frame */
+                if (len >= sizeof(buf)) { len = 0; have_soi = 0; }  /* oversized — resync */
+                break;
+            }
+            size_t framelen = j + 2;
+            FILE * fo = fopen(tmp, "wb");
+            if (fo) {
+                fwrite(buf, 1, framelen, fo);
+                fclose(fo);
+                rename(tmp, DOORBELL_SNAP_PATH);
+                ha_state.doorbell_frame++;
+            }
+            memmove(buf, buf + framelen, len - framelen);
+            len -= framelen;
+            have_soi = 0;
+        }
+    }
+    pclose(p);
+}
+
+/* Watch the doorbell trigger entity. On an off->on transition, fetch a camera
+ * snapshot and bump ha_state.doorbell_seq so the UI shows it fullscreen. */
+static void poll_doorbell(void) {
+    static int armed = 0;     /* 1 once we've seen the entity "off" — avoids
+                                 firing on the first poll if it's already on */
+    if (!settings.doorbell_entity[0]) return;
+    char body[1024], st[24] = {0};
+    if (ha_get_state(settings.doorbell_entity, body, sizeof(body)) != 0) return;
+    extract_str(body, "state", st, sizeof(st));
+    int on = (!strcmp(st, "on") || !strcmp(st, "true") ||
+              !strcmp(st, "pressed") || !strcmp(st, "ringing"));
+    if (!on) { armed = 1; return; }
+    if (!armed) return;           /* was already on at startup — ignore */
+    armed = 0;                    /* re-arm only after it returns to off */
+    if (fetch_doorbell_snapshot() == 0)
+        ha_state.doorbell_seq++;  /* signal the UI */
+}
+
 static void poll_once(void) {
     static int miss = 0;
     char body[1024];
@@ -400,16 +495,32 @@ static void poll_once(void) {
 static void * ha_thread(void * arg) {
     (void)arg;
     while (1) {
+        /* While the doorbell overlay is open, show live footage and skip the
+         * heavy polls. If a server-transcoded MJPEG stream is configured, play
+         * it frame-by-frame; otherwise re-fetch the still ~1x/s. */
+        if (ha_state.doorbell_live) {
+            if (settings.doorbell_stream_url[0]) {
+                stream_doorbell_mjpeg();    /* blocks until doorbell_live clears */
+            } else {
+                if (fetch_doorbell_snapshot() == 0) ha_state.doorbell_frame++;
+                sleep(1);
+            }
+            continue;
+        }
         poll_once();
         poll_lights();
         poll_life360();
+        poll_doorbell();
         /* Speed up the poll while the curtain is actively moving so the
          * spinner / position bar feel live. Back off to the normal 10 s
-         * cadence as soon as it parks. */
+         * cadence as soon as it parks. A configured doorbell also forces a
+         * tighter cadence so a brief press isn't missed between polls. */
         int moving = ha_state.curtain_state[0] &&
                      (!strcmp(ha_state.curtain_state, "opening") ||
                       !strcmp(ha_state.curtain_state, "closing"));
-        sleep(moving ? 2 : HA_POLL_S);
+        int period = moving ? 2 : HA_POLL_S;
+        if (settings.doorbell_entity[0] && period > 3) period = 3;
+        sleep(period);
     }
     return NULL;
 }

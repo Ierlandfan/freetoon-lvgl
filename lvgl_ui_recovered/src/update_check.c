@@ -86,20 +86,26 @@ static int nonempty(const char * s) {
  * just check string-inequality after trimming the leading 'v', so the
  * comparison treats "v0.7.10" > "v0.7.2" the same way semver does
  * lexically (good enough — we don't expect to ship >9 minors). */
+static void parse_ver(const char * s, int * a, int * b, int * c) {
+    if (*s == 'v' || *s == 'V') s++;
+    *a = *b = *c = 0;
+    /* sscanf stops at the first non-digit/dot, so any `-dirty` / `-3-gabc`
+     * git-describe suffix on the running build is ignored. */
+    sscanf(s, "%d.%d.%d", a, b, c);
+}
+
+/* Return 1 ONLY when `tag` is a strictly NEWER release than the running build
+ * (numeric major.minor.patch). Equal or older → 0, so we never offer a
+ * downgrade — a dev build (e.g. v0.9.5) won't flag the latest release v0.9.4
+ * as "available". */
 static int is_newer_than_build(const char * tag) {
     if (!nonempty(tag)) return 0;
-    const char * t = tag;
-    const char * b = BUILD_VERSION;
-    if (*t == 'v') t++;
-    if (*b == 'v') b++;
-    /* Compare only the release-tag base, ignoring any `git describe` suffix
-     * ("-3-gabc123") or "-dirty" marker on the running build — otherwise a
-     * build made from the tagged commit with a dirty submodule (very common
-     * here) reports "v0.8.7-dirty" and falsely flags itself as out of date
-     * against the "v0.8.7" release. */
-    size_t tn = strcspn(t, "-");
-    size_t bn = strcspn(b, "-");
-    return (tn != bn) || strncmp(t, b, tn) != 0;
+    int ta, tb, tc, ba, bb, bc;
+    parse_ver(tag, &ta, &tb, &tc);
+    parse_ver(BUILD_VERSION, &ba, &bb, &bc);
+    if (ta != ba) return ta > ba;
+    if (tb != bb) return tb > bb;
+    return tc > bc;
 }
 
 void update_check_now(void) {
