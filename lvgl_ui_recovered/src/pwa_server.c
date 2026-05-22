@@ -724,7 +724,7 @@ static int handle_settings_get(int fd) {
         "\"enable_ha\":%d,\"enable_zwave\":%d,\"vnc_enabled\":%d,"
         "\"enable_domoticz\":%d,\"domoticz_host\":\"%s\",\"domoticz_user\":\"%s\","
         "\"hide_offline_tiles\":%d,\"boot_picker_enabled\":%d,"
-        "\"update_check_enabled\":%d,"
+        "\"update_check_enabled\":%d,\"update_channel\":%d,"
         "\"ha_host\":\"%s\",\"life360_a_entity\":\"%s\",\"life360_a_name\":\"%s\","
         "\"life360_b_entity\":\"%s\",\"life360_b_name\":\"%s\","
         "\"curtain_entity\":\"%s\",\"curtain_bat_a\":\"%s\",\"curtain_bat_b\":\"%s\","
@@ -749,7 +749,7 @@ static int handle_settings_get(int fd) {
         settings.enable_ha, settings.enable_zwave, settings.vnc_enabled,
         settings.enable_domoticz, settings.domoticz_host, settings.domoticz_user,
         settings.hide_offline_tiles, settings.boot_picker_enabled,
-        settings.update_check_enabled,
+        settings.update_check_enabled, settings.update_channel,
         settings.ha_host, settings.life360_a_entity, settings.life360_a_name,
         settings.life360_b_entity, settings.life360_b_name,
         settings.curtain_entity, settings.curtain_bat_a, settings.curtain_bat_b,
@@ -803,6 +803,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "hide_offline_tiles", &iv)) settings.hide_offline_tiles = !!iv;
     if (extract_int(body, "boot_picker_enabled", &iv))settings.boot_picker_enabled = !!iv;
     if (extract_int(body, "update_check_enabled", &iv))settings.update_check_enabled = !!iv;
+    if (extract_int(body, "update_channel", &iv))      settings.update_channel = !!iv;
     if (extract_int(body, "mqtt_enabled", &iv))       settings.mqtt_enabled = !!iv;
     /* City name is authoritative: when it changes, auto-resolve the Buienradar
      * location id (Open-Meteo geocoding). Only fall back to a manually-entered
@@ -942,6 +943,7 @@ static const char SETTINGS_HTML[] =
 "['tile_rotate_members','Rotate members (id1,id2,..)','t'],"
 "['Updates','h'],"
 "['update_check_enabled','Update check','b'],"
+"['update_channel','Update channel (1 beta/dev, 0 stable)','n'],"
 "['auto_update_enabled','Auto-update nightly','b'],['auto_update_hour','Auto-update hour (0-23)','n'],"
 "['Client mode (slave Toon / tablet)','h'],"
 "['client_mode','Client mode (mirror a master Toon)','b'],['master_host','Master Toon IP/host','t'],"

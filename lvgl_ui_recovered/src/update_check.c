@@ -18,11 +18,16 @@
 #include <unistd.h>
 
 #define UPDATE_CHECK_INTERVAL_S (6 * 3600)   /* 6 h between polls */
-/* per_page=1 returns the single newest release INCLUDING prereleases (beta).
- * /releases/latest would skip prereleases, and all freetoon releases are beta,
- * so it would never see them. The response is a 1-element array; the JSON
- * field extractor reads the first (newest) entry. */
-#define RELEASES_API_URL "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=1"
+/* Two update channels (settings.update_channel):
+ *   1 = beta/dev (default): newest release INCLUDING prereleases. The
+ *       per_page=1 list returns a 1-element array; the JSON field extractor
+ *       reads the first (newest) entry.
+ *   0 = stable/official only: /releases/latest, which GitHub returns only for
+ *       non-prerelease, non-draft releases (404 → no update, banner stays off).
+ * All freetoon releases are currently beta, so "stable" finds nothing until a
+ * non-prerelease is published. */
+#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=1"
+#define RELEASES_API_STABLE "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases/latest"
 
 update_state_t g_update_state = {0};
 
@@ -115,7 +120,9 @@ void update_check_now(void) {
      * close the read pipe before it's finished writing. */
     static char body[32768];
     body[0] = 0;
-    int rc = http_fetch(RELEASES_API_URL, body, sizeof body);
+    const char * api = settings.update_channel == 0
+                       ? RELEASES_API_STABLE : RELEASES_API_BETA;
+    int rc = http_fetch(api, body, sizeof body);
     g_update_state.last_check_epoch = (long)time(NULL);
     /* http_fetch returns 0 on success (not byte count). Treat anything
      * non-zero as failure. body[] is also empty after a failure since

@@ -22,6 +22,31 @@ LOG=/var/volatile/tmp/ui_launcher.log
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
+# --- log rotation watchdog -------------------------------------------------
+# toonui logs verbosely to stderr (init redirects it to toonui.log); left
+# unbounded it fills /var/volatile (tmpfs) and makes the whole device flaky.
+# Cap each log at LOG_MAX bytes, keeping one .1 generation. We truncate the
+# live log IN PLACE (`: >`), not mv/rm — init holds an O_APPEND fd on that
+# inode, so a rename would orphan the fd and never free the space. Runs as a
+# detached child that survives the `exec` below.
+LOG_MAX=2097152          # 2 MB per file
+TOONLOG=/var/volatile/tmp/toonui.log
+VNCLOG=/var/volatile/tmp/x11vnc.log
+(
+    set +e   # a stray failure must never kill the watchdog
+    while :; do
+        for f in "$TOONLOG" "$LOG" "$VNCLOG"; do
+            [ -f "$f" ] || continue
+            sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+            if [ "${sz:-0}" -gt "$LOG_MAX" ]; then
+                cp "$f" "$f.1" 2>/dev/null || true   # keep one previous gen
+                : > "$f"                              # truncate in place
+            fi
+        done
+        sleep 120
+    done
+) >/dev/null 2>&1 &
+
 # Expose the PWA (pwa_server :10081) and VNC (x11vnc :5900) on the LAN. The
 # stock Toon firewall's HCB-INPUT chain drops all inbound TCP except 22/80, so
 # these are unreachable otherwise. Re-add the ACCEPTs every boot (idempotent,

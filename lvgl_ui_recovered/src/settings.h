@@ -111,6 +111,9 @@ typedef struct {
      * Default 1; flip to 0 in toonui.cfg to disable the background
      * fetch entirely (no network call, no banner). */
     int update_check_enabled;
+    /* Update channel: 1 = beta/dev (newest release incl. prereleases, default),
+     * 0 = stable/official only (/releases/latest, skips prereleases). */
+    int update_channel;
 
     /* Hide offline tiles on the home screen. Default 0 → tiles for
      * disabled / disconnected integrations stay visible with an

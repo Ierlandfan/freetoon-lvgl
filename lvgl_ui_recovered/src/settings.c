@@ -91,6 +91,7 @@ settings_t settings = {
     .boot_picker_enabled = 1,
     .hide_offline_tiles  = 0,
     .update_check_enabled = 1,
+    .update_channel       = 1,   /* beta/dev by default */
     .energy_source       = 0,   /* meteradapter (official) by default */
 };
 
@@ -237,6 +238,7 @@ void settings_load(void) {
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
         else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
         else if (strcmp(k, "update_check_enabled") == 0) settings.update_check_enabled = iv;
+        else if (strcmp(k, "update_channel")       == 0) settings.update_channel = !!iv;
         else if (strcmp(k, "vnc_enabled")     == 0) settings.vnc_enabled = iv;
         else if (strcmp(k, "vnc_pass")        == 0)
             snprintf(settings.vnc_pass, sizeof settings.vnc_pass, "%s", v);
@@ -385,6 +387,7 @@ void settings_save(void) {
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
     fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fprintf(f, "update_check_enabled=%d\n", settings.update_check_enabled);
+    fprintf(f, "update_channel=%d\n", settings.update_channel);
     if (settings.tile_slot_energy[0]) fprintf(f, "tile_slot_energy=%s\n", settings.tile_slot_energy);
     if (settings.tile_slot_family[0]) fprintf(f, "tile_slot_family=%s\n", settings.tile_slot_family);
     if (settings.tile_slot_vent  [0]) fprintf(f, "tile_slot_vent=%s\n",   settings.tile_slot_vent);
