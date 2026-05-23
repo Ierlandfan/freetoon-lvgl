@@ -249,7 +249,11 @@ static int ws_connect(void) {
         "Sec-WebSocket-Key: %s\r\n"
         "Sec-WebSocket-Version: 13\r\n"
         "Sec-WebSocket-Protocol: domoticz\r\n"
-        "%s\r\n", host, port, key, auth);
+        /* Domoticz's cWebem rejects the WS upgrade with 400 unless BOTH the
+         * 'domoticz' subprotocol AND an Origin header are present (verified
+         * live against Domoticz 2026.1). */
+        "Origin: http://%s:%s\r\n"
+        "%s\r\n", host, port, key, host, port, auth);
     if (write_n(fd, req, (size_t)rl) < 0) { close(fd); return -1; }
 
     /* Read response headers up to the blank line. */

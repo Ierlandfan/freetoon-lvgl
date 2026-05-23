@@ -1121,27 +1121,34 @@ static void on_domoticz_apply_click(lv_event_t * e) {
     if (!lbl_domoticz_result) return;
     if (!settings.domoticz_host[0]) { lv_label_set_text(lbl_domoticz_result, "Vul eerst de host in (ip:poort)."); return; }
 
-    /* Real connection test: hit Domoticz getversion and report the result. */
+    /* Real connection test: hit getdevices (the auth-gated path the tile uses),
+     * not getversion — getversion needs no auth, so it falsely reports
+     * "connected" even when the credentials are wrong/missing. Report the
+     * device count, the auth error, or a connection error. Creds are embedded
+     * in the URL (Domoticz requires auth for getdevices). */
     lv_label_set_text(lbl_domoticz_result, "Bezig met testen...");
     lv_refr_now(NULL);
     extern int http_fetch(const char *, char *, size_t);
-    char url[320]; static char body[4096];
-    snprintf(url, sizeof url, "http://%s/json.htm?type=command&param=getversion", settings.domoticz_host);
+    const char * host = settings.domoticz_host;
+    if (strncmp(host, "http://", 7) == 0)  host += 7;
+    else if (strncmp(host, "https://", 8) == 0) host += 8;
+    char url[400]; static char body[64 * 1024];
+    if (settings.domoticz_user[0])
+        snprintf(url, sizeof url,
+            "http://%s:%s@%s/json.htm?type=command&param=getdevices&filter=light&used=true",
+            settings.domoticz_user, settings.domoticz_pass, host);
+    else
+        snprintf(url, sizeof url,
+            "http://%s/json.htm?type=command&param=getdevices&filter=light&used=true", host);
     int rc = http_fetch(url, body, sizeof body);
-    if (rc == 0 && strstr(body, "\"version\"")) {
-        char ver[40] = "?";
-        const char * v = strstr(body, "\"version\"");
-        const char * c = v ? strchr(v, ':') : NULL;
-        const char * q1 = c ? strchr(c, '"') : NULL;
-        const char * q2 = q1 ? strchr(q1 + 1, '"') : NULL;
-        if (q1 && q2 && q2 - q1 - 1 < (int)sizeof ver) {
-            int n = (int)(q2 - q1 - 1); memcpy(ver, q1 + 1, n); ver[n] = 0;
-        }
-        lv_label_set_text_fmt(lbl_domoticz_result, "Verbonden - Domoticz %s", ver);
+    if (rc == 0 && strstr(body, "\"result\"")) {
+        int n = 0; const char * p = body;
+        while ((p = strstr(p, "\"idx\"")) != NULL) { n++; p += 5; }
+        lv_label_set_text_fmt(lbl_domoticz_result, "Verbonden - %d apparaten", n);
     } else if (rc == 0 && (strstr(body, "401") || strstr(body, "nauthorized"))) {
         lv_label_set_text(lbl_domoticz_result, "Fout: inloggen vereist (gebruiker/wachtwoord).");
-    } else if (rc == 0 && body[0]) {
-        lv_label_set_text_fmt(lbl_domoticz_result, "Fout: onverwacht antwoord (%.48s)", body);
+    } else if (rc == 0 && strstr(body, "\"status\"")) {
+        lv_label_set_text(lbl_domoticz_result, "Verbonden - geen licht/blind-apparaten gevonden.");
     } else {
         lv_label_set_text(lbl_domoticz_result, "Fout: geen verbinding - controleer host/poort.");
     }
