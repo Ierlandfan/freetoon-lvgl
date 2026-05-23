@@ -59,6 +59,18 @@ static int extract_int(const char * json, const char * key, int * out) {
     return 1;
 }
 
+static int extract_double(const char * json, const char * key, double * out) {
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char * p = strstr(json, needle);
+    if (!p) return 0;
+    p += strlen(needle);
+    while (*p == ' ') p++;
+    if (*p == '"' || *p == 'n') return 0;   /* string / null */
+    *out = strtod(p, NULL);
+    return 1;
+}
+
 static int extract_str(const char * json, const char * key, char * out, size_t outsz) {
     char needle[64];
     snprintf(needle, sizeof(needle), "\"%s\":", key);
@@ -310,9 +322,17 @@ static const char * strip_postcode(const char * city) {
  *   else → "<city/region> > <street> > <number>"
  * Falls back gracefully when fields are missing: drops the empty
  * segments instead of leaving stray "> >" markers. */
-static void poll_life360_one(const char * entity_id, char * out, size_t outsz) {
+static void poll_life360_one(const char * entity_id, char * out, size_t outsz,
+                             volatile float * lat, volatile float * lon) {
     char body[1536];
     if (ha_get_state(entity_id, body, sizeof(body)) != 0) return;
+    if (lat && lon) {
+        double dlat, dlon;
+        if (extract_double(body, "latitude", &dlat) &&
+            extract_double(body, "longitude", &dlon)) {
+            *lat = (float)dlat; *lon = (float)dlon;
+        }
+    }
     char state[24] = {0};
     extract_str(body, "state", state, sizeof(state));
     if (strcmp(state, "home") == 0) {
@@ -355,10 +375,12 @@ static void poll_life360_one(const char * entity_id, char * out, size_t outsz) {
 static void poll_life360(void) {
     if (settings.life360_a_entity[0])
         poll_life360_one(settings.life360_a_entity,
-                         ha_state.loc_a, sizeof(ha_state.loc_a));
+                         ha_state.loc_a, sizeof(ha_state.loc_a),
+                         &ha_state.lat_a, &ha_state.lon_a);
     if (settings.life360_b_entity[0])
         poll_life360_one(settings.life360_b_entity,
-                         ha_state.loc_b,   sizeof(ha_state.loc_b));
+                         ha_state.loc_b,   sizeof(ha_state.loc_b),
+                         &ha_state.lat_b, &ha_state.lon_b);
 }
 
 /* Fetch a fresh snapshot of the configured doorbell camera into
