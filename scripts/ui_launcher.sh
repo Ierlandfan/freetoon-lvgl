@@ -18,9 +18,28 @@ set -eu
 CHOICE_FILE=/mnt/data/ui_choice
 TOONUI=/mnt/data/toonui
 QTGUI=/qmf/sbin/qt-gui
+STARTQT=/usr/bin/startqt
 LOG=/var/volatile/tmp/ui_launcher.log
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+
+# True if the stock UI can be launched (via startqt or qt-gui directly).
+have_qtgui() { [ -x "$STARTQT" ] || [ -x "$QTGUI" ]; }
+
+# Launch the stock UI the way the device itself does. Toon 1 (and TSC-modified
+# Toons) start qt-gui through /usr/bin/startqt, which sets the correct Qt
+# platform (-platform linuxfb -plugin Tslib on Toon 1); exec'ing
+# /qmf/sbin/qt-gui directly there gives a blank screen / no touch. So prefer
+# startqt when present, else source qt-env.sh (Toon 2 eglfs) and exec qt-gui.
+exec_qtgui() {
+    if [ -x "$STARTQT" ]; then
+        log "exec startqt"
+        exec "$STARTQT"
+    fi
+    [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
+    log "exec qt-gui"
+    exec "$QTGUI"
+}
 
 # --- log rotation watchdog -------------------------------------------------
 # toonui logs verbosely to stderr (init redirects it to toonui.log); left
@@ -84,13 +103,13 @@ read_choice() {
 }
 
 CHOICE=$(read_choice)
-log "boot: ui_choice=$CHOICE  toonui=$([ -x $TOONUI ] && echo yes || echo no)  qtgui=$([ -x $QTGUI ] && echo yes || echo no)"
+log "boot: ui_choice=$CHOICE  toonui=$([ -x $TOONUI ] && echo yes || echo no)  qtgui=$(have_qtgui && echo yes || echo no)  startqt=$([ -x $STARTQT ] && echo yes || echo no)"
 
 # If toonui isn't on disk, there's nothing to picker with — fall straight
 # through to qt-gui (safest fallback so we never leave the device UI-less).
 if [ ! -x "$TOONUI" ]; then
-    log "toonui missing → exec qt-gui"
-    [ -x "$QTGUI" ] && exec "$QTGUI"
+    log "toonui missing → stock UI"
+    have_qtgui && exec_qtgui
     log "qt-gui ALSO missing — sleeping 60 then exiting so init can retry"
     sleep 60
     exit 1
@@ -112,11 +131,10 @@ last=0; fails=0
 [ -n "$last" ]  || last=0
 [ -n "$fails" ] || fails=0
 [ $((now - last)) -ge "$FAIL_WINDOW" ] && fails=0    # healthy gap → reset
-if [ "$fails" -ge "$FAIL_LIMIT" ] && [ -x "$QTGUI" ] && [ "$CHOICE" != "qt-gui" ]; then
+if [ "$fails" -ge "$FAIL_LIMIT" ] && have_qtgui && [ "$CHOICE" != "qt-gui" ]; then
     log "toonui crash-looped ($fails fast exits) → forcing qt-gui fallback"
     : > "$FAILF"     # reset so a later manual switch back to freetoon works
-    [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
-    exec "$QTGUI"
+    exec_qtgui
 fi
 echo "$now $((fails + 1))" > "$FAILF"   # record this attempt
 
@@ -136,17 +154,11 @@ log "bootpick exited rc=$rc"
 
 case "$rc" in
     99)
-        if [ -x "$QTGUI" ]; then
-            log "exec qt-gui"
-            # qt-gui must run on the Toon's eglfs (framebuffer) Qt platform
-            # plugin, not xcb. The init env doesn't set QT_QPA_PLATFORM so
-            # the binary defaults to xcb and dies immediately ("Could not
-            # find the Qt platform plugin xcb"). /etc/profile.d/qt-env.sh
-            # exports the right values (QT_QPA_PLATFORM, evdev params,
-            # physical screen mm dimensions). Source it before exec so qt-gui
-            # gets the same environment the stock `flas` inittab row used.
-            [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
-            exec "$QTGUI"
+        # exec_qtgui prefers /usr/bin/startqt (which sets the right Qt platform
+        # — -platform linuxfb -plugin Tslib on Toon 1, eglfs on Toon 2); only
+        # when there's no startqt does it source qt-env.sh + exec qt-gui direct.
+        if have_qtgui; then
+            exec_qtgui
         fi
         log "qt-gui binary missing — falling back to toonui"
         exec "$TOONUI"
@@ -159,8 +171,8 @@ case "$rc" in
         # Any unexpected exit (bootpick crashed, segfault, etc.) — pick by
         # ui_choice so we never strand the user without a UI.
         log "unexpected rc — falling back to ui_choice=$CHOICE"
-        if [ "$CHOICE" = "qt-gui" ] && [ -x "$QTGUI" ]; then
-            exec "$QTGUI"
+        if [ "$CHOICE" = "qt-gui" ] && have_qtgui; then
+            exec_qtgui
         fi
         exec "$TOONUI"
         ;;
