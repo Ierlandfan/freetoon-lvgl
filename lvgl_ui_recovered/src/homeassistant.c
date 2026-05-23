@@ -17,6 +17,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 /* Host comes from settings (settings.ha_host, "ip:port" no scheme) so no
  * personal address ships in the binary. Empty host = HA disabled. */
@@ -205,6 +212,17 @@ static void ha_lights_load(void) {
 /* Refresh every light's on/availability/brightness. Cheap — one
  * /api/states/<id> call per light. ~14 small requests, runs in the same
  * thread as the curtain poll. */
+/* Parse a light state object into one ha_light_t. */
+static void apply_light(ha_light_t * L, const char * body) {
+    char st[24] = {0};
+    extract_str(body, "state", st, sizeof(st));
+    if (!strcmp(st, "on"))        { L->available = 1; L->on = 1; }
+    else if (!strcmp(st, "off"))  { L->available = 1; L->on = 0; }
+    else                          { L->available = 0; L->on = 0; }
+    int v;
+    if (extract_int(body, "brightness", &v)) L->brightness = v;
+}
+
 static void poll_lights(void) {
     char body[512];
     for (int i = 0; i < ha_light_count; i++) {
@@ -213,13 +231,7 @@ static void poll_lights(void) {
             L->available = 0;
             continue;
         }
-        char st[24] = {0};
-        extract_str(body, "state", st, sizeof(st));
-        if (!strcmp(st, "on"))        { L->available = 1; L->on = 1; }
-        else if (!strcmp(st, "off"))  { L->available = 1; L->on = 0; }
-        else                          { L->available = 0; L->on = 0; }
-        int v;
-        if (extract_int(body, "brightness", &v)) L->brightness = v;
+        apply_light(L, body);
     }
 }
 
@@ -352,10 +364,10 @@ static void reverse_city(double lat, double lon, int person, char * out, size_t 
     snprintf(geo_city[person], sizeof geo_city[person], "%s", out);
 }
 
-static void poll_life360_one(const char * entity_id, char * out, size_t outsz,
-                             volatile float * lat, volatile float * lon, int person) {
-    char body[1536];
-    if (ha_get_state(entity_id, body, sizeof(body)) != 0) return;
+/* Parse a life360 state object (REST /api/states body or a WS new_state) into
+ * the location string + coords. */
+static void apply_life360(const char * body, char * out, size_t outsz,
+                          volatile float * lat, volatile float * lon, int person) {
     if (lat && lon) {
         double dlat, dlon;
         if (extract_double(body, "latitude", &dlat) &&
@@ -405,6 +417,13 @@ static void poll_life360_one(const char * entity_id, char * out, size_t outsz,
     if (num[0])    n += snprintf(tmp + n, sizeof(tmp) - n,
                                  "%s%s", (n ? " > " : ""), num);
     snprintf(out, outsz, "%s", n ? tmp : addr);
+}
+
+static void poll_life360_one(const char * entity_id, char * out, size_t outsz,
+                             volatile float * lat, volatile float * lon, int person) {
+    char body[1536];
+    if (ha_get_state(entity_id, body, sizeof(body)) == 0)
+        apply_life360(body, out, outsz, lat, lon, person);
 }
 
 static void poll_life360(void) {
@@ -497,20 +516,37 @@ static void stream_doorbell_mjpeg(void) {
 
 /* Watch the doorbell trigger entity. On an off->on transition, fetch a camera
  * snapshot and bump ha_state.doorbell_seq so the UI shows it fullscreen. */
-static void poll_doorbell(void) {
+/* Edge-detect the doorbell trigger from a state object. On off->on, fetch a
+ * snapshot and bump doorbell_seq so the UI shows it fullscreen. */
+static void apply_doorbell(const char * body) {
     static int armed = 0;     /* 1 once we've seen the entity "off" — avoids
-                                 firing on the first poll if it's already on */
-    if (!settings.doorbell_entity[0]) return;
-    char body[1024], st[24] = {0};
-    if (ha_get_state(settings.doorbell_entity, body, sizeof(body)) != 0) return;
+                                 firing if it's already on at startup */
+    char st[24] = {0};
     extract_str(body, "state", st, sizeof(st));
     int on = (!strcmp(st, "on") || !strcmp(st, "true") ||
               !strcmp(st, "pressed") || !strcmp(st, "ringing"));
     if (!on) { armed = 1; return; }
-    if (!armed) return;           /* was already on at startup — ignore */
+    if (!armed) return;           /* was already on — ignore */
     armed = 0;                    /* re-arm only after it returns to off */
     if (fetch_doorbell_snapshot() == 0)
         ha_state.doorbell_seq++;  /* signal the UI */
+}
+
+static void poll_doorbell(void) {
+    if (!settings.doorbell_entity[0]) return;
+    char body[1024];
+    if (ha_get_state(settings.doorbell_entity, body, sizeof(body)) == 0)
+        apply_doorbell(body);
+}
+
+/* Parse a curtain (cover) state object into ha_state. */
+static void apply_curtain(const char * body) {
+    ha_state.connected = 1;
+    extract_str(body, "state",
+                ha_state.curtain_state, sizeof(ha_state.curtain_state));
+    int v;
+    if (extract_int(body, "current_position", &v)) ha_state.curtain_pos = v;
+    if (extract_int(body, "is_closed",        &v)) ha_state.curtain_is_closed = v;
 }
 
 static void poll_once(void) {
@@ -525,12 +561,7 @@ static void poll_once(void) {
         return;
     }
     miss = 0;
-    ha_state.connected = 1;
-    extract_str(body, "state",
-                ha_state.curtain_state, sizeof(ha_state.curtain_state));
-    int v;
-    if (extract_int(body, "current_position", &v)) ha_state.curtain_pos = v;
-    if (extract_int(body, "is_closed",        &v)) ha_state.curtain_is_closed = v;
+    apply_curtain(body);
 
     /* Battery — take the min of the two child curtain sensors so the UI
      * shows the one that needs charging first. */
@@ -549,35 +580,208 @@ static void poll_once(void) {
     ha_state.curtain_battery = bat_min;
 }
 
-static void * ha_thread(void * arg) {
+/* ======================= Home Assistant WebSocket ======================= */
+/* Push instead of polling: connect ws://host/api/websocket, authenticate with
+ * the long-lived token, then subscribe_events(state_changed) and update state
+ * as events arrive. Current state is seeded once over REST on each (re)connect,
+ * since the event stream only carries future changes. */
+
+static const char WS_B64[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static void ws_b64(const unsigned char * in, int n, char * out) {
+    int o = 0;
+    for (int i = 0; i < n; i += 3) {
+        int v = in[i] << 16;
+        if (i + 1 < n) v |= in[i + 1] << 8;
+        if (i + 2 < n) v |= in[i + 2];
+        out[o++] = WS_B64[(v >> 18) & 63];
+        out[o++] = WS_B64[(v >> 12) & 63];
+        out[o++] = (i + 1 < n) ? WS_B64[(v >> 6) & 63] : '=';
+        out[o++] = (i + 2 < n) ? WS_B64[v & 63] : '=';
+    }
+    out[o] = 0;
+}
+static int ws_write_n(int fd, const void * b, size_t n) {
+    const char * p = b; size_t left = n;
+    while (left) { ssize_t w = send(fd, p, left, MSG_NOSIGNAL);
+        if (w <= 0) { if (errno == EINTR) continue; return -1; } p += w; left -= (size_t)w; }
+    return 0;
+}
+static int ws_read_n(int fd, void * b, size_t n) {
+    char * p = b; size_t left = n;
+    while (left) { ssize_t r = recv(fd, p, left, 0);
+        if (r == 0) return -1; if (r < 0) { if (errno == EINTR) continue; return -1; }
+        p += r; left -= (size_t)r; }
+    return 0;
+}
+/* Send one masked client frame (opcode 1=text, 9=ping). */
+static int ws_send(int fd, int opcode, const unsigned char * data, size_t len) {
+    unsigned char h[8]; int n = 0;
+    h[n++] = (unsigned char)(0x80 | opcode);
+    if (len < 126) h[n++] = (unsigned char)(0x80 | len);
+    else if (len < 65536) { h[n++] = 0x80 | 126; h[n++] = (len >> 8) & 0xff; h[n++] = len & 0xff; }
+    else return -1;
+    unsigned char mask[4];
+    for (int i = 0; i < 4; i++) mask[i] = (unsigned char)(rand() & 0xff);
+    if (ws_write_n(fd, h, n) < 0 || ws_write_n(fd, mask, 4) < 0) return -1;
+    unsigned char tmp[1024];
+    for (size_t i = 0; i < len; ) {
+        size_t c = len - i; if (c > sizeof tmp) c = sizeof tmp;
+        for (size_t j = 0; j < c; j++) tmp[j] = data[i + j] ^ mask[(i + j) & 3];
+        if (ws_write_n(fd, tmp, c) < 0) return -1;
+        i += c;
+    }
+    return 0;
+}
+/* Receive one (possibly fragmented) message; replies to pings. */
+static int ws_recv_msg(int fd, char * buf, size_t bufsz) {
+    size_t total = 0;
+    for (;;) {
+        unsigned char h2[2];
+        if (ws_read_n(fd, h2, 2) < 0) return -1;
+        int fin = h2[0] & 0x80, opcode = h2[0] & 0x0f;
+        unsigned long len = h2[1] & 0x7f;
+        if (len == 126) { unsigned char e[2]; if (ws_read_n(fd, e, 2) < 0) return -1; len = (e[0] << 8) | e[1]; }
+        else if (len == 127) { unsigned char e[8]; if (ws_read_n(fd, e, 8) < 0) return -1;
+            len = 0; for (int i = 4; i < 8; i++) len = (len << 8) | e[i]; }
+        size_t room = (total < bufsz - 1) ? bufsz - 1 - total : 0;
+        size_t take = (len < room) ? (size_t)len : room;
+        if (take && ws_read_n(fd, buf + total, take) < 0) return -1;
+        size_t drop = (size_t)len - take;
+        while (drop) { char j[512]; size_t d = drop > sizeof j ? sizeof j : drop;
+            if (ws_read_n(fd, j, d) < 0) return -1; drop -= d; }
+        if (opcode == 0x8) return -1;                         /* close */
+        if (opcode == 0x9) { ws_send(fd, 0xA, NULL, 0); continue; }  /* ping→pong */
+        if (opcode == 0xA) continue;                          /* pong */
+        total += take;
+        if (fin) { buf[total] = 0; return (int)total; }
+    }
+}
+static int ws_connect(void) {
+    char host[80], port[8];
+    snprintf(host, sizeof host, "%s", HA_HOST);
+    char * colon = strrchr(host, ':');
+    if (colon) { *colon = 0; snprintf(port, sizeof port, "%s", colon + 1); }
+    else snprintf(port, sizeof port, "8123");
+    struct addrinfo hints = {0}, * res = NULL;
+    hints.ai_family = AF_INET; hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, port, &hints, &res) != 0 || !res) return -1;
+    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (fd < 0) { freeaddrinfo(res); return -1; }
+    int rc = connect(fd, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+    if (rc < 0) { close(fd); return -1; }
+    int one = 1; setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+    unsigned char rnd[16];
+    FILE * u = fopen("/dev/urandom", "rb");
+    if (u) { if (fread(rnd, 1, 16, u) != 16) {} fclose(u); }
+    for (int i = 0; i < 16; i++) rnd[i] ^= (unsigned char)(rand() & 0xff);
+    char key[28]; ws_b64(rnd, 16, key);
+    char req[400];
+    int rl = snprintf(req, sizeof req,
+        "GET /api/websocket HTTP/1.1\r\nHost: %s:%s\r\nUpgrade: websocket\r\n"
+        "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+        host, port, key);
+    if (ws_write_n(fd, req, (size_t)rl) < 0) { close(fd); return -1; }
+    char resp[1024]; size_t got = 0;
+    while (got < sizeof resp - 1) {
+        ssize_t r = recv(fd, resp + got, 1, 0);
+        if (r <= 0) { close(fd); return -1; }
+        got += (size_t)r; resp[got] = 0;
+        if (got >= 4 && !strcmp(resp + got - 4, "\r\n\r\n")) break;
+    }
+    if (!strstr(resp, " 101")) { close(fd); return -1; }
+    return fd;
+}
+
+/* Curtain battery (one of the two child sensors) — track both, show the min. */
+static int s_bat_a = 100, s_bat_b = 100;
+static void apply_curtain_bat(const char * ns, int side) {
+    char st[16] = {0};
+    if (!extract_str(ns, "state", st, sizeof st)) return;
+    int p = atoi(st);
+    if (p <= 0) return;
+    if (side == 0) s_bat_a = p; else s_bat_b = p;
+    ha_state.curtain_battery = s_bat_a < s_bat_b ? s_bat_a : s_bat_b;
+}
+
+/* Seed all watched state once over REST (events carry only future changes). */
+static void seed_all(void) {
+    poll_once();        /* curtain group + battery */
+    poll_lights();
+    poll_life360();
+    poll_doorbell();    /* arms the trigger edge-detector */
+}
+
+/* Route a state_changed event to the right apply_*. Scopes parsing to the
+ * event's new_state object. */
+static void dispatch_event(const char * msg) {
+    char ent[96] = {0};
+    extract_str(msg, "entity_id", ent, sizeof ent);   /* data.entity_id (first) */
+    if (!ent[0]) return;
+    const char * ns = strstr(msg, "\"new_state\"");
+    if (!ns) return;
+    if (CURTAIN_GROUP[0] && !strcmp(ent, CURTAIN_GROUP)) { apply_curtain(ns); return; }
+    if (CURTAIN_LEFT[0]  && !strcmp(ent, CURTAIN_LEFT))  { apply_curtain_bat(ns, 0); return; }
+    if (CURTAIN_RIGHT[0] && !strcmp(ent, CURTAIN_RIGHT)) { apply_curtain_bat(ns, 1); return; }
+    if (settings.life360_a_entity[0] && !strcmp(ent, settings.life360_a_entity)) {
+        apply_life360(ns, ha_state.loc_a, sizeof ha_state.loc_a, &ha_state.lat_a, &ha_state.lon_a, 0); return; }
+    if (settings.life360_b_entity[0] && !strcmp(ent, settings.life360_b_entity)) {
+        apply_life360(ns, ha_state.loc_b, sizeof ha_state.loc_b, &ha_state.lat_b, &ha_state.lon_b, 1); return; }
+    if (settings.doorbell_entity[0] && !strcmp(ent, settings.doorbell_entity)) { apply_doorbell(ns); return; }
+    for (int i = 0; i < ha_light_count; i++)
+        if (!strcmp(ent, ha_lights[i].entity_id)) { apply_light(&ha_lights[i], ns); return; }
+}
+
+/* Doorbell live footage runs on its own thread so it never blocks the event
+ * stream: when the overlay is up, stream MJPEG or re-fetch the still ~1x/s. */
+static void * doorbell_thread(void * arg) {
     (void)arg;
     while (1) {
-        /* While the doorbell overlay is open, show live footage and skip the
-         * heavy polls. If a server-transcoded MJPEG stream is configured, play
-         * it frame-by-frame; otherwise re-fetch the still ~1x/s. */
         if (ha_state.doorbell_live) {
-            if (settings.doorbell_stream_url[0]) {
-                stream_doorbell_mjpeg();    /* blocks until doorbell_live clears */
-            } else {
-                if (fetch_doorbell_snapshot() == 0) ha_state.doorbell_frame++;
-                sleep(1);
-            }
-            continue;
+            if (settings.doorbell_stream_url[0]) stream_doorbell_mjpeg();
+            else { if (fetch_doorbell_snapshot() == 0) ha_state.doorbell_frame++; sleep(1); }
+        } else {
+            sleep(1);
         }
-        poll_once();
-        poll_lights();
-        poll_life360();
-        poll_doorbell();
-        /* Speed up the poll while the curtain is actively moving so the
-         * spinner / position bar feel live. Back off to the normal 10 s
-         * cadence as soon as it parks. A configured doorbell also forces a
-         * tighter cadence so a brief press isn't missed between polls. */
-        int moving = ha_state.curtain_state[0] &&
-                     (!strcmp(ha_state.curtain_state, "opening") ||
-                      !strcmp(ha_state.curtain_state, "closing"));
-        int period = moving ? 2 : HA_POLL_S;
-        if (settings.doorbell_entity[0] && period > 3) period = 3;
-        sleep(period);
+    }
+    return NULL;
+}
+
+static void * ha_thread(void * arg) {
+    (void)arg;
+    srand((unsigned)time(NULL) ^ (unsigned)getpid());
+    static char msg[64 * 1024];
+    while (1) {
+        int fd = ws_connect();
+        if (fd < 0) { ha_state.connected = 0; sleep(8); continue; }
+        /* auth_required → auth → auth_ok */
+        if (ws_recv_msg(fd, msg, sizeof msg) < 0) { close(fd); sleep(5); continue; }
+        char auth[320];
+        snprintf(auth, sizeof auth, "{\"type\":\"auth\",\"access_token\":\"%s\"}", g_token);
+        if (ws_send(fd, 0x1, (unsigned char *)auth, strlen(auth)) < 0) { close(fd); sleep(5); continue; }
+        if (ws_recv_msg(fd, msg, sizeof msg) < 0 || !strstr(msg, "auth_ok")) {
+            fprintf(stderr, "[ha] WS auth failed\n"); close(fd); sleep(15); continue;
+        }
+        seed_all();
+        const char * sub = "{\"id\":1,\"type\":\"subscribe_events\",\"event_type\":\"state_changed\"}";
+        if (ws_send(fd, 0x1, (unsigned char *)sub, strlen(sub)) < 0) { close(fd); continue; }
+        fprintf(stderr, "[ha] WebSocket connected + subscribed to state_changed\n");
+        time_t last_ping = time(NULL);
+        while (1) {
+            fd_set rs; FD_ZERO(&rs); FD_SET(fd, &rs);
+            struct timeval tv = { .tv_sec = 20, .tv_usec = 0 };
+            int s = select(fd + 1, &rs, NULL, NULL, &tv);
+            if (s < 0) { if (errno == EINTR) continue; break; }
+            if (s == 0) { if (ws_send(fd, 0x9, NULL, 0) < 0) break; last_ping = time(NULL); continue; }
+            int n = ws_recv_msg(fd, msg, sizeof msg);
+            if (n < 0) break;
+            if (strstr(msg, "state_changed")) dispatch_event(msg);
+            if (time(NULL) - last_ping > 40) { if (ws_send(fd, 0x9, NULL, 0) < 0) break; last_ping = time(NULL); }
+        }
+        close(fd);
+        ha_state.connected = 0;
+        sleep(3);
     }
     return NULL;
 }
@@ -624,7 +828,11 @@ int ha_start(void) {
     pthread_t t;
     pthread_create(&t, NULL, ha_thread, NULL);
     pthread_detach(t);
-    fprintf(stderr, "[ha] poller started (host=%s every %ds)\n",
-            HA_HOST, HA_POLL_S);
+    /* Doorbell live-footage runs separately so it never blocks the WS stream. */
+    if (settings.doorbell_entity[0] || settings.doorbell_camera[0]) {
+        pthread_t d;
+        if (pthread_create(&d, NULL, doorbell_thread, NULL) == 0) pthread_detach(d);
+    }
+    fprintf(stderr, "[ha] WebSocket client started (host=%s)\n", HA_HOST);
     return 0;
 }
