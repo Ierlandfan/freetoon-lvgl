@@ -453,7 +453,7 @@ static void do_install_now(lv_event_t * e) {
     }
     if (about_status_lbl)
         lv_label_set_text(about_status_lbl, "Installing... the screen will restart shortly.");
-    system("setsid sh -c 'sleep 1; curl -fsSL "
+    system("nohup sh -c 'sleep 1; curl -fsSL "
            "https://raw.githubusercontent.com/Ierlandfan/freetoon-lvgl/main/scripts/toon-selfinstall.sh "
            "| sh' >/var/volatile/tmp/selfinstall.log 2>&1 &");
 }
@@ -1975,6 +1975,10 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_add_event_cb(x, news_modal_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x); lv_label_set_text(xl, "Sluiten"); lv_obj_center(xl);
 }
+
+/* Open the news reader from elsewhere (e.g. Settings → News) so it's reachable
+   even when the home-screen ticker is turned off. */
+void screen_home_open_news(void) { on_news_tap(NULL); }
 
 lv_obj_t * screen_home_create(void) {
     if (scr_root) return scr_root;

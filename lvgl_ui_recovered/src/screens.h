@@ -16,6 +16,7 @@ lv_obj_t * screen_home_create(void);
  * when idle. No-op if already there. */
 void screen_home_reset_to_main(void);
 void screen_home_set_ticker_speed(int spd);
+void screen_home_open_news(void);
 lv_obj_t * screen_thermostat_create(void);
 lv_obj_t * screen_dim_create(void);
 lv_obj_t * screen_settings_create(void);
