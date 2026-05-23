@@ -34,6 +34,15 @@ extern domoticz_state_t domoticz_state;
 
 int  domoticz_start(void);
 
+/* Synchronous connection test for the Settings screen. Runs the same auth
+ * ladder as the live client (session cookie → re-login → HTTP Basic). Returns
+ * the light/blind device count (>=0) on success, or:
+ *   DZ_PROBE_AUTH   (-1) reached Domoticz but auth failed (bad user/pass)
+ *   DZ_PROBE_NOCONN (-2) could not reach the host at all */
+#define DZ_PROBE_AUTH   (-1)
+#define DZ_PROBE_NOCONN (-2)
+int  domoticz_probe(void);
+
 /* Fire-and-forget control (async; HTTP runs on a detached thread). */
 void domoticz_switch_async(int idx, const char * cmd);   /* "On"/"Off"/"Toggle"/"Open"/"Close"/"Stop" */
 void domoticz_set_level_async(int idx, int level);        /* 0..100 */

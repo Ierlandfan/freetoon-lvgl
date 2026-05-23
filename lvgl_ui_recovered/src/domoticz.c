@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
@@ -32,6 +33,82 @@
 #include <netinet/tcp.h>
 
 domoticz_state_t domoticz_state = {0};
+
+/* --------------------------------------------------------------- MD5 (RFC1321)
+ * Self-contained, used only to hash the Domoticz login password for the
+ * session-login handshake (Domoticz's logincheck expects password=md5(plain)).
+ * Verified against the standard test vectors on the host before shipping. */
+static void md5_transform(uint32_t st[4], const unsigned char b[64]) {
+    static const uint32_t K[64] = {
+        0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
+        0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,
+        0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
+        0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
+        0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
+        0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
+        0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
+        0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391 };
+    static const unsigned char S[64] = {
+        7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22, 5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+        4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23, 6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21 };
+    uint32_t M[16];
+    for (int i = 0; i < 16; i++)
+        M[i] = (uint32_t)b[i*4] | ((uint32_t)b[i*4+1] << 8) |
+               ((uint32_t)b[i*4+2] << 16) | ((uint32_t)b[i*4+3] << 24);
+    uint32_t A = st[0], B = st[1], C = st[2], D = st[3];
+    for (int i = 0; i < 64; i++) {
+        uint32_t F; int g;
+        if (i < 16)      { F = (B & C) | (~B & D);        g = i; }
+        else if (i < 32) { F = (D & B) | (~D & C);        g = (5*i + 1) & 15; }
+        else if (i < 48) { F = B ^ C ^ D;                 g = (3*i + 5) & 15; }
+        else             { F = C ^ (B | ~D);              g = (7*i) & 15; }
+        F = F + A + K[i] + M[g]; A = D; D = C; C = B;
+        B = B + ((F << S[i]) | (F >> (32 - S[i])));
+    }
+    st[0] += A; st[1] += B; st[2] += C; st[3] += D;
+}
+static void md5_hex(const char * data, char out[33]) {
+    uint32_t st[4] = { 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 };
+    size_t len = strlen(data), i = 0; uint64_t bitlen = (uint64_t)len * 8;
+    unsigned char block[64];
+    while (len - i >= 64) { memcpy(block, data + i, 64); md5_transform(st, block); i += 64; }
+    size_t rem = len - i; unsigned char tail[128]; memset(tail, 0, sizeof tail);
+    memcpy(tail, data + i, rem); tail[rem] = 0x80;
+    size_t padlen = (rem < 56) ? 64 : 128;
+    for (int j = 0; j < 8; j++) tail[padlen - 8 + j] = (unsigned char)((bitlen >> (8*j)) & 0xff);
+    for (size_t off = 0; off < padlen; off += 64) md5_transform(st, tail + off);
+    for (int j = 0; j < 4; j++) for (int k = 0; k < 4; k++)
+        sprintf(out + (j*4 + k) * 2, "%02x", (st[j] >> (8*k)) & 0xff);
+    out[32] = 0;
+}
+
+/* --------------------------------------------------------------- session auth
+ * Modern Domoticz (2026.x and the default "Login Page" auth mode) ignores HTTP
+ * Basic and authenticates via a DMZSID session cookie obtained from logincheck.
+ * We keep a curl cookie jar; g_dmzsid mirrors its DMZSID for the WS handshake
+ * (the WS upgrade is a raw socket, not curl). HTTP Basic is still sent too, so
+ * a Domoticz set to "Basic Authentication" mode keeps working unchanged. */
+static pthread_mutex_t g_sess_lock = PTHREAD_MUTEX_INITIALIZER;
+static char g_jar[96];      /* curl cookie-jar file path (per-process) */
+static char g_dmzsid[96];   /* current DMZSID value, "" if none */
+
+static void session_jar_path(void) {
+    if (!g_jar[0])
+        snprintf(g_jar, sizeof g_jar, "/var/volatile/tmp/.dz_cookies_%d", (int)getpid());
+}
+
+/* Percent-encode the base64 reserved chars so the username survives the query
+ * string intact (+ would otherwise be read as a space by the server). */
+static void url_pct(const char * in, char * out, size_t osz) {
+    size_t o = 0;
+    for (const char * p = in; *p && o + 3 < osz; p++) {
+        if (*p == '+')      { out[o++]='%'; out[o++]='2'; out[o++]='B'; }
+        else if (*p == '/') { out[o++]='%'; out[o++]='2'; out[o++]='F'; }
+        else if (*p == '=') { out[o++]='%'; out[o++]='3'; out[o++]='D'; }
+        else out[o++] = *p;
+    }
+    out[o] = 0;
+}
 
 /* Build "http://[user:pass@]host/<path>" for the control GETs. host may include
  * a scheme; we normalise to bare host:port. */
@@ -233,6 +310,10 @@ static int ws_connect(void) {
     for (int i = 0; i < 16; i++) rnd[i] ^= (unsigned char)(rand() & 0xff);
     char key[28]; b64enc(rnd, 16, key);
 
+    /* Send both auth schemes so either Domoticz mode is satisfied: HTTP Basic
+     * (for "Basic Authentication" mode) and the DMZSID session cookie (for the
+     * default "Login Page" / 2026.x mode, which ignores Basic). g_dmzsid is
+     * seeded by the http_getdevices()→dz_login() that runs before we connect. */
     char auth[160] = "";
     if (settings.domoticz_user[0]) {
         char up[100]; snprintf(up, sizeof up, "%s:%s",
@@ -240,7 +321,9 @@ static int ws_connect(void) {
         char b[140]; b64enc((unsigned char *)up, (int)strlen(up), b);
         snprintf(auth, sizeof auth, "Authorization: Basic %s\r\n", b);
     }
-    char req[512];
+    char cookie[160] = "";
+    if (g_dmzsid[0]) snprintf(cookie, sizeof cookie, "Cookie: DMZSID=%s\r\n", g_dmzsid);
+    char req[640];
     int rl = snprintf(req, sizeof req,
         "GET /json HTTP/1.1\r\n"
         "Host: %s:%s\r\n"
@@ -253,7 +336,7 @@ static int ws_connect(void) {
          * 'domoticz' subprotocol AND an Origin header are present (verified
          * live against Domoticz 2026.1). */
         "Origin: http://%s:%s\r\n"
-        "%s\r\n", host, port, key, host, port, auth);
+        "%s%s\r\n", host, port, key, host, port, cookie, auth);
     if (write_n(fd, req, (size_t)rl) < 0) { close(fd); return -1; }
 
     /* Read response headers up to the blank line. */
@@ -269,18 +352,111 @@ static int ws_connect(void) {
 }
 
 
-/* Fetch the light/blind list over HTTP (the proven json.htm path — same as the
- * Settings "test connection" button) and parse it into domoticz_state.
- * Returns 0 on success. This is the DATA path; the WebSocket below is only used
- * as a change-notification trigger. */
+/* Read the DMZSID value out of the curl Netscape cookie jar into g_dmzsid. */
+static void read_dmzsid(void) {
+    g_dmzsid[0] = 0;
+    FILE * f = fopen(g_jar, "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        char * k = strstr(line, "DMZSID");
+        if (!k) continue;
+        k += 6;
+        while (*k == '\t' || *k == ' ') k++;        /* skip to the value field */
+        size_t n = 0;
+        while (k[n] && k[n] != '\n' && k[n] != '\r' && k[n] != '\t'
+               && n + 1 < sizeof g_dmzsid) { g_dmzsid[n] = k[n]; n++; }
+        g_dmzsid[n] = 0;
+    }
+    fclose(f);
+    if (strcmp(g_dmzsid, "none") == 0) g_dmzsid[0] = 0;
+}
+
+/* Establish a Domoticz session: logincheck with base64(user)+md5(pass) seeds a
+ * DMZSID cookie in the jar. Returns 1 if a real session was obtained. No-op
+ * (returns 0) when no credentials are configured. */
+static int dz_login(void) {
+    if (!settings.domoticz_user[0]) return 0;
+    session_jar_path();
+    char host[80], port[8];
+    parse_host(host, sizeof host, port, sizeof port);
+    char ub[160];
+    b64enc((unsigned char *)settings.domoticz_user, (int)strlen(settings.domoticz_user), ub);
+    char ube[256]; url_pct(ub, ube, sizeof ube);
+    char pmd5[33]; md5_hex(settings.domoticz_pass, pmd5);
+    char url[512];
+    snprintf(url, sizeof url,
+        "http://%s:%s/json.htm?type=command&param=logincheck&username=%s&password=%s",
+        host, port, ube, pmd5);
+    pthread_mutex_lock(&g_sess_lock);
+    char body[2048];
+    if (http_fetch_cookies(url, g_jar, body, sizeof body) == 0) read_dmzsid();
+    int ok = g_dmzsid[0] != 0;
+    pthread_mutex_unlock(&g_sess_lock);
+    return ok;
+}
+
+/* Fetch the light/blind list and parse it into domoticz_state. Returns 0 on
+ * success. This is the DATA path; the WebSocket below is only a change-trigger.
+ *
+ * Auth is tried in the order that covers every Domoticz config: (1) the session
+ * cookie jar — also the right path for an open (no-auth) instance; (2) on
+ * failure, (re)login and retry once; (3) finally HTTP Basic embedded in the URL
+ * for a Domoticz explicitly set to "Basic Authentication" mode. */
 static int http_getdevices(void) {
-    char url[320];
-    build_url(url, sizeof url,
-        "json.htm?type=command&param=getdevices&filter=light&used=true&order=Name");
+    static const char QUERY[] =
+        "json.htm?type=command&param=getdevices&filter=light&used=true&order=Name";
+    char host[80], port[8];
+    parse_host(host, sizeof host, port, sizeof port);
     static char body[64 * 1024];
-    if (http_fetch(url, body, sizeof body) != 0) return -1;
-    if (!strstr(body, "\"result\"")) return -1;     /* error / empty */
-    return parse_devices(body);
+    char url[400];
+
+    session_jar_path();
+    snprintf(url, sizeof url, "http://%s:%s/%s", host, port, QUERY);
+    if (http_fetch_cookies(url, g_jar, body, sizeof body) == 0 && strstr(body, "\"result\""))
+        return parse_devices(body);
+
+    if (settings.domoticz_user[0] && dz_login() &&
+        http_fetch_cookies(url, g_jar, body, sizeof body) == 0 && strstr(body, "\"result\""))
+        return parse_devices(body);
+
+    build_url(url, sizeof url, QUERY);              /* Basic-auth-mode fallback */
+    if (http_fetch(url, body, sizeof body) == 0 && strstr(body, "\"result\""))
+        return parse_devices(body);
+    return -1;
+}
+
+/* Settings "test connection": run the auth ladder once and report a granular
+ * result. `reached` tracks whether any HTTP body came back at all, so we can
+ * tell "wrong credentials" (got the server's 401 page) from "host unreachable"
+ * (curl returned nothing). */
+int domoticz_probe(void) {
+    if (!settings.domoticz_host[0]) return DZ_PROBE_NOCONN;
+    static const char QUERY[] =
+        "json.htm?type=command&param=getdevices&filter=light&used=true&order=Name";
+    char host[80], port[8];
+    parse_host(host, sizeof host, port, sizeof port);
+    static char body[64 * 1024];
+    char url[400];
+    int reached = 0;
+
+    session_jar_path();
+    snprintf(url, sizeof url, "http://%s:%s/%s", host, port, QUERY);
+    if (http_fetch_cookies(url, g_jar, body, sizeof body) == 0) {
+        reached = 1;
+        if (strstr(body, "\"result\"")) { parse_devices(body); return domoticz_state.count; }
+    }
+    if (settings.domoticz_user[0] && dz_login() &&
+        http_fetch_cookies(url, g_jar, body, sizeof body) == 0) {
+        reached = 1;
+        if (strstr(body, "\"result\"")) { parse_devices(body); return domoticz_state.count; }
+    }
+    build_url(url, sizeof url, QUERY);
+    if (http_fetch(url, body, sizeof body) == 0) {
+        reached = 1;
+        if (strstr(body, "\"result\"")) { parse_devices(body); return domoticz_state.count; }
+    }
+    return reached ? DZ_PROBE_AUTH : DZ_PROBE_NOCONN;
 }
 
 static void * dz_thread(void * arg) {
@@ -352,7 +528,7 @@ typedef struct { int idx; char cmd[16]; int level; } dz_action_t;
 
 static void * action_thread(void * arg) {
     dz_action_t * a = arg;
-    char path[160], url[360];
+    char path[160];
     if (a->cmd[0])
         snprintf(path, sizeof path,
                  "json.htm?type=command&param=switchlight&idx=%d&switchcmd=%s", a->idx, a->cmd);
@@ -360,9 +536,20 @@ static void * action_thread(void * arg) {
         snprintf(path, sizeof path,
                  "json.htm?type=command&param=switchlight&idx=%d&switchcmd=Set%%20Level&level=%d",
                  a->idx, a->level);
-    build_url(url, sizeof url, path);
-    char body[1024];
-    http_fetch(url, body, sizeof body);
+    char body[1024], url[400];
+
+    /* Same auth ladder as http_getdevices: session cookie first (re-login once
+     * on failure), HTTP Basic as the last resort. */
+    char host[80], port[8];
+    parse_host(host, sizeof host, port, sizeof port);
+    session_jar_path();
+    snprintf(url, sizeof url, "http://%s:%s/%s", host, port, path);
+    int ok = http_fetch_cookies(url, g_jar, body, sizeof body) == 0 &&
+             strstr(body, "\"status\"");
+    if (!ok && settings.domoticz_user[0] && dz_login())
+        ok = http_fetch_cookies(url, g_jar, body, sizeof body) == 0 &&
+             strstr(body, "\"status\"");
+    if (!ok) { build_url(url, sizeof url, path); http_fetch(url, body, sizeof body); }
     free(a);
     return NULL;
 }
