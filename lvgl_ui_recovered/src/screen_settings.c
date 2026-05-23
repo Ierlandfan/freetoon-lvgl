@@ -238,6 +238,21 @@ static lv_obj_t * row_switch(lv_obj_t * row, int checked, lv_event_cb_t cb) {
  * settings_attach_kb_async() so it runs once the modal's textareas exist. */
 static lv_obj_t * g_kb = NULL;
 
+/* Numeric keypad with ':' and '.' (host:port / IP entry) — mirrors LVGL's
+   default number map but swaps the unused '+/-' for ':'. */
+static const char * const kb_num_map[] = {
+    "1", "2", "3", LV_SYMBOL_KEYBOARD, "\n",
+    "4", "5", "6", LV_SYMBOL_OK, "\n",
+    "7", "8", "9", LV_SYMBOL_BACKSPACE, "\n",
+    ":", "0", ".", LV_SYMBOL_LEFT, LV_SYMBOL_RIGHT, ""
+};
+static const lv_btnmatrix_ctrl_t kb_num_ctrl[] = {
+    1, 1, 1, LV_KEYBOARD_CTRL_BTN_FLAGS | 2,
+    1, 1, 1, LV_KEYBOARD_CTRL_BTN_FLAGS | 2,
+    1, 1, 1, 2,
+    1, 1, 1, 1, 1
+};
+
 static void kb_hide(void) { if (g_kb) lv_obj_add_flag(g_kb, LV_OBJ_FLAG_HIDDEN); }
 
 static void kb_event(lv_event_t * e) {
@@ -259,6 +274,7 @@ static void ta_kb_event(lv_event_t * e) {
             lv_obj_set_size(g_kb, LV_HOR_RES, 240);
             lv_obj_align(g_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
             lv_obj_add_event_cb(g_kb, kb_event, LV_EVENT_ALL, NULL);
+            lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, kb_num_map, kb_num_ctrl);
         }
         lv_keyboard_set_textarea(g_kb, ta);
         lv_keyboard_set_mode(g_kb, lv_obj_get_user_data(ta) == KB_NUMERIC
@@ -622,9 +638,9 @@ static void waste_load_providers(void) {
     while (g_prov_count < WASTE_MAX_PROV) {
         const char * fn = strstr(p, "\"friendlyName\"");
         if (!fn) break;
-        const char * q1 = strchr(strchr(fn, ':') ? strchr(fn, ':') : fn, '"');
-        q1 = q1 ? strchr(q1 + 1, '"') : NULL;          /* opening quote of value */
-        const char * q2 = q1 ? strchr(q1 + 1, '"') : NULL;
+        const char * colon = strchr(fn, ':');
+        const char * q1 = colon ? strchr(colon, '"') : NULL;   /* opening quote of value */
+        const char * q2 = q1 ? strchr(q1 + 1, '"') : NULL;     /* closing quote of value */
         if (!q1 || !q2) break;
         char name[64]; int nl = (int)(q2 - q1 - 1); if (nl > 63) nl = 63;
         memcpy(name, q1 + 1, nl); name[nl] = 0;
@@ -1101,9 +1117,33 @@ static void on_domoticz_apply_click(lv_event_t * e) {
     settings_save();
     extern int domoticz_start(void);
     domoticz_start();    /* (re)connect with the new host */
-    if (lbl_domoticz_result)
-        lv_label_set_text(lbl_domoticz_result, settings.domoticz_host[0]
-            ? "Saved. Connecting to Domoticz..." : "Saved (host empty).");
+    if (!lbl_domoticz_result) return;
+    if (!settings.domoticz_host[0]) { lv_label_set_text(lbl_domoticz_result, "Vul eerst de host in (ip:poort)."); return; }
+
+    /* Real connection test: hit Domoticz getversion and report the result. */
+    lv_label_set_text(lbl_domoticz_result, "Bezig met testen...");
+    lv_refr_now(NULL);
+    extern int http_fetch(const char *, char *, size_t);
+    char url[320]; static char body[4096];
+    snprintf(url, sizeof url, "http://%s/json.htm?type=command&param=getversion", settings.domoticz_host);
+    int rc = http_fetch(url, body, sizeof body);
+    if (rc == 0 && strstr(body, "\"version\"")) {
+        char ver[40] = "?";
+        const char * v = strstr(body, "\"version\"");
+        const char * c = v ? strchr(v, ':') : NULL;
+        const char * q1 = c ? strchr(c, '"') : NULL;
+        const char * q2 = q1 ? strchr(q1 + 1, '"') : NULL;
+        if (q1 && q2 && q2 - q1 - 1 < (int)sizeof ver) {
+            int n = (int)(q2 - q1 - 1); memcpy(ver, q1 + 1, n); ver[n] = 0;
+        }
+        lv_label_set_text_fmt(lbl_domoticz_result, "Verbonden - Domoticz %s", ver);
+    } else if (rc == 0 && (strstr(body, "401") || strstr(body, "nauthorized"))) {
+        lv_label_set_text(lbl_domoticz_result, "Fout: inloggen vereist (gebruiker/wachtwoord).");
+    } else if (rc == 0 && body[0]) {
+        lv_label_set_text_fmt(lbl_domoticz_result, "Fout: onverwacht antwoord (%.48s)", body);
+    } else {
+        lv_label_set_text(lbl_domoticz_result, "Fout: geen verbinding - controleer host/poort.");
+    }
 }
 
 static void open_domoticz(lv_event_t * e) {
@@ -1342,6 +1382,7 @@ static void on_news_test(lv_event_t * e) {
     news_test_feed(lv_textarea_get_text(ta_news_url), msg, sizeof msg);
     lv_label_set_text(lbl_news_status, msg);
 }
+static void on_news_open_click(lv_event_t * e) { (void)e; screen_home_open_news(); }
 static void on_news_speed_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
     settings.news_scroll_speed = v;
@@ -1360,6 +1401,16 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_t * r = panel_row(p, y, "News ticker on home screen", NULL);
     sw_news = row_switch(r, settings.news_enabled, NULL);
     y += 90;
+
+    /* Open the reader directly — so the news is reachable even with the ticker
+       turned off (the ticker tap is otherwise the only entry point). */
+    lv_obj_t * onb = lv_btn_create(p);
+    lv_obj_set_size(onb, 220, 46);
+    lv_obj_align(onb, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_style_bg_color(onb, lv_color_hex(0x2a4060), 0);
+    lv_obj_add_event_cb(onb, on_news_open_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * onl = lv_label_create(onb); lv_label_set_text(onl, "Nieuws openen"); lv_obj_center(onl);
+    y += 64;
 
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);

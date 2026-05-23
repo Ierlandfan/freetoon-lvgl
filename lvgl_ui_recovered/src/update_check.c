@@ -168,7 +168,7 @@ void update_install_now(void) {
              g_update_state.latest_version[0] ? g_update_state.latest_version : "nieuwste versie");
     notify_show("update", "freetoon", msg);
     fprintf(stderr, "[update] installing now: %s\n", g_update_state.latest_version);
-    system("setsid sh -c 'sleep 2; curl -fsSL "
+    system("nohup sh -c 'sleep 2; curl -fsSL "
            "https://raw.githubusercontent.com/Ierlandfan/freetoon-lvgl/main/scripts/toon-selfinstall.sh "
            "| sh' >/var/volatile/tmp/selfinstall.log 2>&1 &");
 }
