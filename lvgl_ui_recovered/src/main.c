@@ -15,6 +15,7 @@
 #include "backlight.h"
 #include "homewizard.h"
 #include "weather.h"
+#include "otgw.h"
 #include "wastecollection.h"
 #include "ventilation.h"
 #include "homeassistant.h"
@@ -22,8 +23,6 @@
 #include "healthcheck.h"
 #include "pwa_server.h"
 #include "packages.h"
-#include "weather.h"
-#include "homewizard.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,6 +99,8 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[main] meteradapter_start failed\n");
         if (weather_start() != 0)
             fprintf(stderr, "[main] weather_start failed\n");
+        if (otgw_start() != 0)
+            fprintf(stderr, "[main] otgw_start failed\n");
         if (waste_start() != 0)
             fprintf(stderr, "[main] waste_start failed\n");
         if (vent_start() != 0)
