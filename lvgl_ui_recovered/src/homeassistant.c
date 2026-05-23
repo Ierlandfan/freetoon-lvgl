@@ -322,8 +322,38 @@ static const char * strip_postcode(const char * city) {
  *   else → "<city/region> > <street> > <number>"
  * Falls back gracefully when fields are missing: drops the empty
  * segments instead of leaving stray "> >" markers. */
+/* Life360's address attribute often lacks the city (just "street, province"),
+ * so reverse-geocode the GPS via OSM Nominatim to get the real town/city.
+ * Cached per person on a ~100m grid so we don't hammer the service. */
+static char geo_key[2][32];
+static char geo_city[2][48];
+static void reverse_city(double lat, double lon, int person, char * out, size_t osz) {
+    out[0] = 0;
+    if (person < 0 || person > 1) return;
+    char key[32];
+    snprintf(key, sizeof key, "%.3f,%.3f", lat, lon);   /* ~100m bucket */
+    if (strcmp(key, geo_key[person]) == 0) { snprintf(out, osz, "%s", geo_city[person]); return; }
+    char cmd[400];
+    snprintf(cmd, sizeof cmd,
+        "/usr/bin/curl -fsSL -k --max-time 8 -A 'freetoon-lvgl/1.0' "
+        "'https://nominatim.openstreetmap.org/reverse?lat=%.5f&lon=%.5f"
+        "&format=json&zoom=14&addressdetails=1'", lat, lon);
+    FILE * fp = popen(cmd, "r");
+    if (!fp) return;
+    static char body[4096];
+    size_t n = fread(body, 1, sizeof body - 1, fp);
+    pclose(fp);
+    body[n] = 0;
+    /* Nominatim address sub-object: prefer city, then town/village/municipality. */
+    const char * keys[] = { "city", "town", "village", "municipality", "suburb", NULL };
+    for (int i = 0; keys[i]; i++)
+        if (extract_str(body, keys[i], out, osz) && out[0]) break;
+    snprintf(geo_key[person], sizeof geo_key[person], "%s", key);
+    snprintf(geo_city[person], sizeof geo_city[person], "%s", out);
+}
+
 static void poll_life360_one(const char * entity_id, char * out, size_t outsz,
-                             volatile float * lat, volatile float * lon) {
+                             volatile float * lat, volatile float * lon, int person) {
     char body[1536];
     if (ha_get_state(entity_id, body, sizeof(body)) != 0) return;
     if (lat && lon) {
@@ -359,7 +389,12 @@ static void poll_life360_one(const char * entity_id, char * out, size_t outsz,
 
     char street[96] = {0}, num[16] = {0};
     split_street(work, street, sizeof(street), num, sizeof(num));
-    const char * city = c1 ? strip_postcode(trim(c1 + 1)) : "";
+    /* Prefer the reverse-geocoded city (Life360 only gives the province); fall
+     * back to the address's region segment when geocoding has nothing yet. */
+    char gcity[48] = {0};
+    if (lat && lon && (*lat != 0.0f || *lon != 0.0f))
+        reverse_city(*lat, *lon, person, gcity, sizeof gcity);
+    const char * city = gcity[0] ? gcity : (c1 ? strip_postcode(trim(c1 + 1)) : "");
 
     /* Compose "city > street > number" with graceful elision. */
     char tmp[160];
@@ -376,11 +411,11 @@ static void poll_life360(void) {
     if (settings.life360_a_entity[0])
         poll_life360_one(settings.life360_a_entity,
                          ha_state.loc_a, sizeof(ha_state.loc_a),
-                         &ha_state.lat_a, &ha_state.lon_a);
+                         &ha_state.lat_a, &ha_state.lon_a, 0);
     if (settings.life360_b_entity[0])
         poll_life360_one(settings.life360_b_entity,
                          ha_state.loc_b,   sizeof(ha_state.loc_b),
-                         &ha_state.lat_b, &ha_state.lon_b);
+                         &ha_state.lat_b, &ha_state.lon_b, 1);
 }
 
 /* Fetch a fresh snapshot of the configured doorbell camera into

@@ -288,7 +288,8 @@ static float energy_gas_m3(void) {
 static const char * energy_offline_label(void) {
     if (settings.energy_source == 1)        /* HomeWizard P1 */
         return hw_state.polled_p1 ? "P1 offline" : "Initializing...";
-    return "meter offline";                 /* meteradapter */
+    /* meteradapter: last_flow_s == 0 means no notify has arrived yet */
+    return meter_state.last_flow_s ? "meter offline" : "Initializing...";
 }
 
 /* ---------- tile builder helpers ---------- */
