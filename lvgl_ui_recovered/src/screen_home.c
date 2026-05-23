@@ -1012,6 +1012,37 @@ static void render_meta_into(const integration_meta_t * m,
     }
 }
 
+/* Render a built-in ("local:") integration's live value into the rotate slot's
+ * labels — energy/water/vent/family/air. Mirrors the fixed tiles' data sources
+ * so the auto-rotate tile can cycle the local integrations too. */
+static void render_local_into(const char * id, lv_obj_t * title,
+                              lv_obj_t * main, lv_obj_t * sub) {
+    if (sub) lv_label_set_text(sub, "");
+    if (!strcmp(id, "local:energy")) {
+        if (title) lv_label_set_text(title, "Energie");
+        if (main)  lv_label_set_text_fmt(main, "%.0f W", energy_power_w());
+    } else if (!strcmp(id, "local:water")) {
+        if (title) lv_label_set_text(title, "Water");
+        if (hw_state.connected_water) {
+            if (main) lv_label_set_text_fmt(main, "%.1f L/min", hw_state.water_lpm);
+            if (sub)  lv_label_set_text_fmt(sub, "%.2f m3", hw_state.water_total_m3);
+        } else if (main) lv_label_set_text(main, "offline");
+    } else if (!strcmp(id, "local:vent")) {
+        if (title) lv_label_set_text(title, "Ventilatie");
+        if (vent_state.connected) {
+            if (main) lv_label_set_text_fmt(main, "%d%%", vent_state.exh_fan_pct);
+        } else if (main) lv_label_set_text(main, "offline");
+    } else if (!strcmp(id, "local:family")) {
+        if (title) lv_label_set_text(title, "Familie");
+        if (main)  lv_label_set_text(main, ha_state.loc_a[0] ? (const char *)ha_state.loc_a : "-");
+        if (sub)   lv_label_set_text(sub,  (const char *)ha_state.loc_b);
+    } else if (!strcmp(id, "local:air")) {
+        if (title) lv_label_set_text(title, "Lucht");
+        if (main)  lv_label_set_text_fmt(main, "%d ppm", toon_state.eco2);
+        if (sub)   lv_label_set_text(sub, air_quality_label(toon_state.eco2, toon_state.tvoc));
+    }
+}
+
 /* Return the n-th (wrapping) integration id from the comma-separated
  * settings.tile_rotate_members list. Returns 0 if the list is empty. */
 static int rotate_member_at(int n, char * out, size_t sz) {
@@ -1110,8 +1141,12 @@ static void refresh_cb(lv_timer_t * t) {
         if (++rot_ctr >= period) { rot_ctr = 0; rot_idx++; }
         char id[48];
         if (rotate_member_at(rot_idx, id, sizeof id)) {
-            const integration_meta_t * m = tile_slots_integration_by_id(id);
-            if (m) render_meta_into(m, p1_title[0], p1_main[0], p1_sub[0]);
+            if (strncmp(id, "local:", 6) == 0) {
+                render_local_into(id, p1_title[0], p1_main[0], p1_sub[0]);
+            } else {
+                const integration_meta_t * m = tile_slots_integration_by_id(id);
+                if (m) render_meta_into(m, p1_title[0], p1_main[0], p1_sub[0]);
+            }
         }
     }
 

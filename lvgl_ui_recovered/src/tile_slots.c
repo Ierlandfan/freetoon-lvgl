@@ -131,6 +131,34 @@ const integration_meta_t * tile_slots_integration_by_id(const char * id) {
     return NULL;
 }
 
+/* Built-in local integrations selectable for the auto-rotate tile. */
+static const struct { const char * id; const char * label; } g_locals[] = {
+    { "local:energy", "Energie" },
+    { "local:water",  "Water (P1)" },
+    { "local:vent",   "Ventilatie" },
+    { "local:family", "Familie" },
+    { "local:air",    "Luchtkwaliteit" },
+};
+int tile_slots_local_count(void) {
+    return (int)(sizeof g_locals / sizeof g_locals[0]);
+}
+const char * tile_slots_local_id(int i) {
+    return (i >= 0 && i < tile_slots_local_count()) ? g_locals[i].id : "";
+}
+const char * tile_slots_local_label(int i) {
+    return (i >= 0 && i < tile_slots_local_count()) ? g_locals[i].label : "";
+}
+int tile_slots_local_enabled(int i) {
+    switch (i) {
+        case 0: return 1;                                 /* energy — core (meteradapter/P1) */
+        case 1: return settings.enable_p1_water;
+        case 2: return settings.enable_vent;
+        case 3: return settings.enable_ha && settings.life360_a_entity[0] != 0;
+        case 4: return 1;                                 /* air quality — core sensor */
+        default: return 0;
+    }
+}
+
 integration_meta_t * tile_slots_integration_by_service(const char * service_id) {
     if (!service_id || !service_id[0]) return NULL;
     for (int i = 0; i < g_integ_count; i++)

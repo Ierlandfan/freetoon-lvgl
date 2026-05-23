@@ -62,17 +62,25 @@ if [ -x /usr/sbin/iptables ]; then
     log "ensured firewall open for PWA 10081 + VNC 5900"
 fi
 
-# Read the persisted preference; default to freetoon when missing/garbled
-# so a fresh basic-install boots into our UI without configuring anything.
+# Default UI when no explicit choice exists: freetoon on Toon 2 (i.MX6 "nxt"),
+# but qt-gui on Toon 1 — its 800x480 freetoon layout isn't finished, so the
+# stock UI is the safe out-of-box default there.
+default_ui() {
+    if grep -q nxt /etc/opkg/arch.conf 2>/dev/null; then echo freetoon; else echo qt-gui; fi
+}
+
+# Read the persisted preference; fall back to the arch default when
+# missing/garbled so a fresh basic-install boots into a working UI.
 read_choice() {
     if [ -r "$CHOICE_FILE" ]; then
         c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d '[:space:]')
         case "$c" in
-            qt-gui|qtgui|stock) echo qt-gui; return ;;
-            freetoon|toonui|*)  echo freetoon; return ;;
+            qt-gui|qtgui|stock) echo qt-gui;     return ;;
+            freetoon|toonui)    echo freetoon;   return ;;
+            *)                  default_ui;      return ;;
         esac
     fi
-    echo freetoon
+    default_ui
 }
 
 CHOICE=$(read_choice)

@@ -1284,6 +1284,23 @@ static void on_rotate_apply(lv_event_t * e) {
     snprintf(settings.tile_rotate_members, sizeof settings.tile_rotate_members, "%s", buf);
     settings_save();
 }
+static lv_obj_t * marketplace_button(lv_obj_t * parent);   /* defined below */
+
+/* Add one rotate-member checkbox (id + label) to the scroll container. */
+static void rotate_add_cb(lv_obj_t * sc, const char * id, const char * label, int * cy) {
+    if (rotate_cb_count >= 16) return;
+    lv_obj_t * cb = lv_checkbox_create(sc);
+    lv_checkbox_set_text(cb, label);
+    lv_obj_set_style_text_font(cb, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(cb, lv_color_hex(0xffffff), 0);
+    lv_obj_align(cb, LV_ALIGN_TOP_LEFT, 6, *cy);
+    if (rotate_member_is_checked(id)) lv_obj_add_state(cb, LV_STATE_CHECKED);
+    rotate_cb[rotate_cb_count] = cb;
+    snprintf(rotate_cb_id[rotate_cb_count], 48, "%s", id);
+    rotate_cb_count++;
+    *cy += 48;
+}
+
 static void open_rotate_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("Auto-rotate tile", 540);
@@ -1308,17 +1325,7 @@ static void open_rotate_modal(lv_event_t * e) {
     y += 58;
 
     rotate_cb_count = 0;
-    int ni = tile_slots_integration_count();
-    if (ni == 0) {
-        lv_obj_t * m = lv_label_create(p);
-        lv_obj_set_style_text_color(m, lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(m, &lv_font_montserrat_18, 0);
-        lv_obj_set_width(m, 800);
-        lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
-        lv_label_set_text(m, "Install marketplace integrations first, then pick which ones to rotate here.");
-        lv_obj_align(m, LV_ALIGN_TOP_LEFT, 4, y);
-        return;
-    }
+
     lv_obj_t * pick = lv_label_create(p);
     lv_obj_set_style_text_color(pick, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(pick, &lv_font_montserrat_18, 0);
@@ -1327,27 +1334,45 @@ static void open_rotate_modal(lv_event_t * e) {
     y += 34;
 
     lv_obj_t * sc = lv_obj_create(p);
-    lv_obj_set_size(sc, 820, 230);
+    lv_obj_set_size(sc, 820, 200);
     lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, y);
     lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sc, 0, 0);
     lv_obj_set_scroll_dir(sc, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(sc, LV_SCROLLBAR_MODE_AUTO);
     int cy = 0;
-    for (int i = 0; i < ni && i < 16; i++) {
+
+    /* Built-in local integrations that are switched on. */
+    int nl = tile_slots_local_count();
+    for (int i = 0; i < nl; i++)
+        if (tile_slots_local_enabled(i))
+            rotate_add_cb(sc, tile_slots_local_id(i), tile_slots_local_label(i), &cy);
+
+    /* Plus any installed marketplace integrations. */
+    int ni = tile_slots_integration_count();
+    for (int i = 0; i < ni; i++) {
         const integration_meta_t * im = tile_slots_integration_at(i);
-        if (!im) continue;
-        lv_obj_t * cb = lv_checkbox_create(sc);
-        lv_checkbox_set_text(cb, im->name[0] ? im->name : im->id);
-        lv_obj_set_style_text_font(cb, &lv_font_montserrat_22, 0);
-        lv_obj_set_style_text_color(cb, lv_color_hex(0xffffff), 0);
-        lv_obj_align(cb, LV_ALIGN_TOP_LEFT, 6, cy);
-        if (rotate_member_is_checked(im->id)) lv_obj_add_state(cb, LV_STATE_CHECKED);
-        rotate_cb[rotate_cb_count] = cb;
-        snprintf(rotate_cb_id[rotate_cb_count], 48, "%s", im->id);
-        rotate_cb_count++;
-        cy += 48;
+        if (im) rotate_add_cb(sc, im->id, im->name[0] ? im->name : im->id, &cy);
     }
+
+    if (rotate_cb_count == 0) {
+        lv_obj_t * m = lv_label_create(sc);
+        lv_obj_set_style_text_color(m, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(m, &lv_font_montserrat_18, 0);
+        lv_obj_set_width(m, 780);
+        lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(m, "Geen integraties aan. Zet ze aan bij Integraties, of installeer er een uit de Marketplace.");
+    }
+    y += 208;
+
+    /* Remark pointing at the marketplace for more. */
+    lv_obj_t * note = lv_label_create(p);
+    lv_obj_set_style_text_color(note, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(note, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(note, 540);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(note, "Meer integraties vind je in de Marketplace.");
+    lv_obj_align(note, LV_ALIGN_TOP_LEFT, 4, y);
 
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, 160, 50);
@@ -1356,6 +1381,8 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_add_event_cb(btn, on_rotate_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, "Apply");
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0); lv_obj_center(bl);
+
+    marketplace_button(p);   /* bottom-right → opens the Marketplace screen */
 }
 
 /* WiFi tile-tap: push the WiFi scan/connect/status screen. */

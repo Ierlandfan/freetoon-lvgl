@@ -88,6 +88,15 @@ const integration_meta_t * tile_slots_integration_at(int i);
 /* Look up an integration by id. Returns NULL if not installed. */
 const integration_meta_t * tile_slots_integration_by_id(const char * id);
 
+/* Built-in ("local") integrations the auto-rotate tile can also cycle. These
+ * aren't marketplace daemons — toonui renders them from its own live state
+ * (energy/water/vent/family/air). The picker lists the enabled ones; their ids
+ * are "local:<name>". */
+int          tile_slots_local_count(void);
+const char * tile_slots_local_id(int i);
+const char * tile_slots_local_label(int i);
+int          tile_slots_local_enabled(int i);   /* 1 if its integration is on */
+
 /* Look up by serviceId (what BoxTalk notify frames carry). */
 integration_meta_t * tile_slots_integration_by_service(const char * service_id);
 

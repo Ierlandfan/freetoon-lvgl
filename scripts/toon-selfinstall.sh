@@ -53,10 +53,20 @@ dl() {  # dl <asset> <out>
 # Toon 1 = i.MX27 "qb2"/armv5e, no "nxt" in arch.conf (asset "toonui-toon1").
 if grep -q nxt /etc/opkg/arch.conf 2>/dev/null; then
     BIN_ASSET="toonui"
+    IS_TOON1=0
 else
     BIN_ASSET="toonui-toon1"
+    IS_TOON1=1
 fi
 say "device binary asset: $BIN_ASSET"
+
+# Toon 1: default the boot UI to the stock qt-gui until the 800x480 freetoon
+# layout is finished. Only seed when no choice exists yet, so we never override
+# a user who later picks freetoon at the boot picker / in Settings.
+if [ "$IS_TOON1" = 1 ] && [ ! -f "$DEST/ui_choice" ]; then
+    echo qt-gui > "$DEST/ui_choice"
+    say "Toon 1 detected — defaulting boot UI to qt-gui (switch in the boot picker / Settings)"
+fi
 
 # 1) toonui binary (required) — sanity-check the size (a GitHub error page or
 # truncated download is tiny; the real binary is ~1 MB). busybox-safe.
