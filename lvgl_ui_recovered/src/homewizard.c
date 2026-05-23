@@ -61,6 +61,7 @@ static double parse_num(const char * json, const char * key, double dflt) {
 
 static void poll_p1(void) {
     if (!settings.enable_p1_elec || !settings.p1_elec_host[0]) { hw_state.connected_p1 = 0; return; }
+    hw_state.polled_p1 = 1;             /* a poll is being attempted */
     static char body[4096];
     if (http_get(settings.p1_elec_host, "/api/v1/data", body, sizeof(body)) != 0) {
         hw_state.connected_p1 = 0;
@@ -107,6 +108,7 @@ static void poll_water(void) {
         hw_state.water_lpm = 0;
         return;
     }
+    hw_state.polled_water = 1;          /* a poll is being attempted */
     static char body[2048];
     if (http_get(settings.p1_water_host, "/api/v1/data", body, sizeof(body)) != 0) {
         hw_state.connected_water = 0;

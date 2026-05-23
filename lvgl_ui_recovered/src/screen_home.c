@@ -286,7 +286,9 @@ static float energy_gas_m3(void) {
     return -1.0f;
 }
 static const char * energy_offline_label(void) {
-    return settings.energy_source == 0 ? "meter offline" : "P1 offline";
+    if (settings.energy_source == 1)        /* HomeWizard P1 */
+        return hw_state.polled_p1 ? "P1 offline" : "Initializing...";
+    return "meter offline";                 /* meteradapter */
 }
 
 /* ---------- tile builder helpers ---------- */
@@ -1367,10 +1369,10 @@ static void refresh_cb(lv_timer_t * t) {
         /* Windowed + per-type cutoff, same source as the dim screen: only show
            pickups within the lead window (default 3 days, up to 7), so when
            only Plastic falls inside the window only Plastic shows. */
-        waste_pickup_t wp[2];
-        int lead = settings.dim_waste_lead_days > 0 ? settings.dim_waste_lead_days : 3;
-        int n = waste_state.connected ? waste_next_n_windowed(lead, wp, 2) : 0;
-        waste_pickup_t p1 = wp[0], p2 = wp[1];
+        /* Home tile shows the actual NEXT pickup(s), not limited to a window —
+           the lead-day window is a dim-screen-only concept (show_dim_waste). */
+        waste_pickup_t p1 = {0}, p2 = {0};
+        int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
         if (n >= 1) {
             int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
             lv_label_set_text_fmt(lbl_waste_date, "%d-%d", d, mo);
@@ -1605,7 +1607,8 @@ static void refresh_cb(lv_timer_t * t) {
             else if (hw_state.connected_water)
                 lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
             else
-                lv_label_set_text(lbl_inbox_main, "WTR offline");
+                lv_label_set_text(lbl_inbox_main,
+                                  hw_state.polled_water ? "WTR offline" : "Initializing...");
         }
         if (lbl_inbox_sub) {
             if (!settings.enable_p1_water || !hw_state.connected_water) {
@@ -1859,7 +1862,8 @@ static void refresh_cb(lv_timer_t * t) {
             else if (hw_state.connected_water)
                 lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
             else
-                lv_label_set_text(lbl_inbox_main, "WTR offline");
+                lv_label_set_text(lbl_inbox_main,
+                                  hw_state.polled_water ? "WTR offline" : "Initializing...");
         }
         if (lbl_inbox_sub) {
             if (!settings.enable_p1_water || !hw_state.connected_water) {
@@ -2208,6 +2212,9 @@ static lv_obj_t  * map_box      = NULL;
 static lv_obj_t  * map_imgs[4]  = {0};
 static lv_obj_t  * map_marker   = NULL;
 static lv_obj_t  * map_addr_lbl = NULL;
+static lv_obj_t  * map_top_lbl  = NULL;   /* header: who + address */
+static lv_obj_t  * map_btn_a    = NULL;
+static lv_obj_t  * map_btn_b    = NULL;
 static lv_obj_t  * map_status   = NULL;
 static lv_timer_t * map_timer   = NULL;
 static volatile int g_map_ready = 0;            /* 0 loading, 1 ok, -1 fail */
@@ -2275,6 +2282,12 @@ static void start_map_fetch(int person) {
         : (settings.life360_a_name[0] ? settings.life360_a_name : "A");
     const char * loc = person ? (const char *)ha_state.loc_b : (const char *)ha_state.loc_a;
     if (map_addr_lbl) lv_label_set_text_fmt(map_addr_lbl, "%s\n%s", who, loc[0] ? loc : "?");
+    if (map_top_lbl)  lv_label_set_text_fmt(map_top_lbl, "%s  -  %s", who, loc[0] ? loc : "?");
+    /* Highlight which person is selected. */
+    if (map_btn_a) lv_obj_set_style_bg_color(map_btn_a,
+                       lv_color_hex(person == 0 ? 0x2e6e3a : 0x2b3f5c), 0);
+    if (map_btn_b) lv_obj_set_style_bg_color(map_btn_b,
+                       lv_color_hex(person == 1 ? 0x2e6e3a : 0x2b3f5c), 0);
     if (map_marker)   lv_obj_add_flag(map_marker, LV_OBJ_FLAG_HIDDEN);
     if (map_status)   lv_obj_clear_flag(map_status, LV_OBJ_FLAG_HIDDEN);
 
@@ -2299,6 +2312,7 @@ static void map_close(lv_event_t * e) {
     if (map_modal) { lv_obj_del(map_modal); map_modal = NULL; }
     for (int i = 0; i < 4; i++) map_imgs[i] = NULL;
     map_box = map_marker = map_addr_lbl = map_status = NULL;
+    map_top_lbl = map_btn_a = map_btn_b = NULL;
 }
 static void on_map_a(lv_event_t * e) { (void)e; start_map_fetch(0); }
 static void on_map_b(lv_event_t * e) { (void)e; start_map_fetch(1); }
@@ -2330,7 +2344,16 @@ static void open_family_map(lv_event_t * e) {
     lv_obj_set_style_text_font(h, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(h, lv_color_hex(0xffffff), 0);
     lv_label_set_text(h, "Locatie");
-    lv_obj_align(h, LV_ALIGN_TOP_LEFT, 16, 12);
+    lv_obj_align(h, LV_ALIGN_TOP_LEFT, 16, 10);
+
+    /* Header subtitle: who is selected + their address. */
+    map_top_lbl = lv_label_create(card);
+    lv_obj_set_style_text_font(map_top_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(map_top_lbl, lv_color_hex(0x9fd0ff), 0);
+    lv_label_set_long_mode(map_top_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(map_top_lbl, 596);
+    lv_obj_align(map_top_lbl, LV_ALIGN_TOP_LEFT, 150, 18);
+    lv_label_set_text(map_top_lbl, "");
 
     /* Map area — 2x2 OSM tiles downscaled to MAP_TILE_DISP each. */
     map_box = lv_obj_create(card);
@@ -2384,20 +2407,20 @@ static void open_family_map(lv_event_t * e) {
     lv_obj_set_style_text_font(zil, &lv_font_montserrat_28, 0);
     lv_label_set_text(zil, LV_SYMBOL_PLUS); lv_obj_center(zil);
 
-    lv_obj_t * ba = lv_btn_create(card);
-    lv_obj_set_size(ba, 168, 50);
-    lv_obj_align(ba, LV_ALIGN_TOP_LEFT, px, 240);
-    lv_obj_add_event_cb(ba, on_map_a, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bal = lv_label_create(ba);
+    map_btn_a = lv_btn_create(card);
+    lv_obj_set_size(map_btn_a, 168, 50);
+    lv_obj_align(map_btn_a, LV_ALIGN_TOP_LEFT, px, 240);
+    lv_obj_add_event_cb(map_btn_a, on_map_a, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bal = lv_label_create(map_btn_a);
     lv_label_set_text(bal, settings.life360_a_name[0] ? settings.life360_a_name : "A");
     lv_obj_center(bal);
 
     if (settings.life360_b_entity[0]) {
-        lv_obj_t * bb = lv_btn_create(card);
-        lv_obj_set_size(bb, 168, 50);
-        lv_obj_align(bb, LV_ALIGN_TOP_LEFT, px, 300);
-        lv_obj_add_event_cb(bb, on_map_b, LV_EVENT_CLICKED, NULL);
-        lv_obj_t * bbl = lv_label_create(bb);
+        map_btn_b = lv_btn_create(card);
+        lv_obj_set_size(map_btn_b, 168, 50);
+        lv_obj_align(map_btn_b, LV_ALIGN_TOP_LEFT, px, 300);
+        lv_obj_add_event_cb(map_btn_b, on_map_b, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * bbl = lv_label_create(map_btn_b);
         lv_label_set_text(bbl, settings.life360_b_name[0] ? settings.life360_b_name : "B");
         lv_obj_center(bbl);
     }

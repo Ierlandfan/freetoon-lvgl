@@ -5,6 +5,10 @@
    Updated by homewizard_thread (poll every 5s). */
 typedef struct {
     volatile int    connected_p1;
+    /* 1 once a poll has been attempted (success or fail) — lets the UI show
+     * "Initializing" before the first poll vs "offline" after one fails. */
+    volatile int    polled_p1;
+    volatile int    polled_water;
     volatile float  power_w;          /* active_power_w (signed; negative = export) */
     volatile float  kwh_import_t1;    /* total_power_import_t1_kwh */
     volatile float  kwh_import_t2;    /* total_power_import_t2_kwh */
