@@ -98,6 +98,7 @@ static lv_obj_t * ta_news_url     = NULL;
 static lv_obj_t * lbl_news_status = NULL;
 static lv_obj_t * lbl_news_speed  = NULL;
 static lv_obj_t * sl_news_speed   = NULL;
+static lv_obj_t * news_feeds_list = NULL;   /* multi-feed list */
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
     int city_changed = 0;
@@ -1383,6 +1384,53 @@ static void on_news_test(lv_event_t * e) {
     lv_label_set_text(lbl_news_status, msg);
 }
 static void on_news_open_click(lv_event_t * e) { (void)e; screen_home_open_news(); }
+static void on_news_enabled_change(lv_event_t * e) {
+    settings.news_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_news_feed_remove(lv_event_t * e);   /* fwd */
+/* Rebuild the feed list from settings.news_rss_url (one URL per line). Tapping a
+   row (trash icon) removes that feed. */
+static void news_feeds_rebuild(void) {
+    if (!news_feeds_list) return;
+    lv_obj_clean(news_feeds_list);
+    char tmp[sizeof settings.news_rss_url];
+    snprintf(tmp, sizeof tmp, "%s", settings.news_rss_url);
+    int i = 0; char * save = NULL;
+    for (char * u = strtok_r(tmp, "\n", &save); u && i < 12; u = strtok_r(NULL, "\n", &save)) {
+        while (*u == ' ' || *u == '\r') u++;
+        if (!*u) continue;
+        lv_obj_t * b = lv_list_add_btn(news_feeds_list, LV_SYMBOL_TRASH, u);
+        lv_obj_set_style_text_font(b, &lv_font_montserrat_14, 0);
+        lv_obj_add_event_cb(b, on_news_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        i++;
+    }
+    if (i == 0) lv_list_add_text(news_feeds_list, "(nog geen feeds - voeg er een toe)");
+}
+static void on_news_feed_remove(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    char tmp[sizeof settings.news_rss_url], out[sizeof settings.news_rss_url] = "";
+    snprintf(tmp, sizeof tmp, "%s", settings.news_rss_url);
+    int i = 0; char * save = NULL;
+    for (char * u = strtok_r(tmp, "\n", &save); u; u = strtok_r(NULL, "\n", &save)) {
+        if (i++ == idx) continue;
+        if (out[0]) strncat(out, "\n", sizeof out - strlen(out) - 1);
+        strncat(out, u, sizeof out - strlen(out) - 1);
+    }
+    snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", out);
+    settings_save();
+    news_feeds_rebuild();
+}
+static void on_news_add_click(lv_event_t * e) {
+    (void)e;
+    const char * u = ta_news_url ? lv_textarea_get_text(ta_news_url) : NULL;
+    if (!u || !u[0]) return;
+    if (settings.news_rss_url[0])
+        strncat(settings.news_rss_url, "\n", sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
+    strncat(settings.news_rss_url, u, sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
+    settings_save();
+    if (ta_news_url) lv_textarea_set_text(ta_news_url, "");
+    news_feeds_rebuild();
+}
 static void on_news_speed_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
     settings.news_scroll_speed = v;
@@ -1399,7 +1447,7 @@ static void open_news_modal(lv_event_t * e) {
     int y = 70;
 
     lv_obj_t * r = panel_row(p, y, "News ticker on home screen", NULL);
-    sw_news = row_switch(r, settings.news_enabled, NULL);
+    sw_news = row_switch(r, settings.news_enabled, on_news_enabled_change);
     y += 90;
 
     /* Open the reader directly — so the news is reachable even with the ticker
@@ -1412,30 +1460,44 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_t * onl = lv_label_create(onb); lv_label_set_text(onl, "Nieuws openen"); lv_obj_center(onl);
     y += 64;
 
+    /* RSS feeds — a list (tap a row to remove) + an Add box below it. */
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl, "RSS feed URL:");
+    lv_label_set_text(lbl, "RSS feeds (tik om te verwijderen):");
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
-    ta_news_url = lv_textarea_create(p);
-    lv_obj_set_size(ta_news_url, 640, 44);
-    lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, 4, y + 34);
-    lv_textarea_set_one_line(ta_news_url, true);
-    lv_textarea_set_text(ta_news_url, settings.news_rss_url);
+    y += 36;
+    news_feeds_list = lv_list_create(p);
+    lv_obj_set_size(news_feeds_list, 740, 150);
+    lv_obj_align(news_feeds_list, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_style_bg_color(news_feeds_list, lv_color_hex(0x0e1a2a), 0);
+    news_feeds_rebuild();
+    y += 158;
 
+    ta_news_url = lv_textarea_create(p);
+    lv_obj_set_size(ta_news_url, 470, 44);
+    lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_textarea_set_one_line(ta_news_url, true);
+    lv_textarea_set_placeholder_text(ta_news_url, "https://… RSS feed");
+    lv_obj_t * addb = lv_btn_create(p);
+    lv_obj_set_size(addb, 120, 44);
+    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, 484, y);
+    lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(addb, on_news_add_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, "Toevoegen"); lv_obj_center(al);
     lv_obj_t * tbtn = lv_btn_create(p);
-    lv_obj_set_size(tbtn, 150, 44);
-    lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, 656, y + 34);
+    lv_obj_set_size(tbtn, 120, 44);
+    lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, 614, y);
     lv_obj_set_style_bg_color(tbtn, lv_color_hex(0x33445a), 0);
     lv_obj_add_event_cb(tbtn, on_news_test, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, "Test");
-    lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0); lv_obj_center(tl);
-    y += 86;
+    lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, "Test"); lv_obj_center(tl);
+    lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0);
+    y += 64;
 
-    int spd = settings.news_scroll_speed > 0 ? settings.news_scroll_speed : 30;
+    int spd = settings.news_scroll_speed >= 30 ? settings.news_scroll_speed : 30;
     lv_obj_t * rs = panel_row(p, y, "Ticker speed (px/s)", &lbl_news_speed);
     lv_label_set_text_fmt(lbl_news_speed, "%d", spd);
-    sl_news_speed = row_slider(rs, 10, 120, spd, on_news_speed_change);
+    sl_news_speed = row_slider(rs, 30, 150, spd, on_news_speed_change);
     y += 86;
 
     lbl_news_status = lv_label_create(p);

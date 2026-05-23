@@ -22,4 +22,10 @@ int  news_item(int i, char * title, size_t tsz, char * link, size_t lsz);
 /* Copy the i-th article body (RSS <description>, HTML-stripped). 0 on success. */
 int  news_body(int i, char * body, size_t bsz);
 
+#define NEWS_MAX_FEEDS   8
+/* Per-feed grouping for the detailed reader. */
+int  news_feed_count(void);                          /* number of distinct feeds */
+int  news_feed_name(int f, char * name, size_t nsz); /* feed f's channel title */
+int  news_item_feed(int i);                          /* feed index of item i, or -1 */
+
 #endif

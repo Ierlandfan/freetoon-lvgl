@@ -221,7 +221,7 @@ void settings_load(void) {
         else if (strcmp(k, "news_enabled")    == 0) settings.news_enabled = iv;
         else if (strcmp(k, "news_rss_url")    == 0)
             snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", v);
-        else if (strcmp(k, "news_scroll_speed") == 0) settings.news_scroll_speed = iv;
+        else if (strcmp(k, "news_scroll_speed") == 0) settings.news_scroll_speed = (iv > 0 && iv < 30) ? 30 : (iv > 150 ? 150 : iv);
         else if (strcmp(k, "auto_update_enabled") == 0) settings.auto_update_enabled = iv;
         else if (strcmp(k, "auto_update_hour")    == 0) settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;
         else if (strcmp(k, "ha_host")          == 0) snprintf(settings.ha_host, sizeof settings.ha_host, "%s", v);

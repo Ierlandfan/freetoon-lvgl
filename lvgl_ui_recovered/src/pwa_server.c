@@ -885,7 +885,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "news_enabled", &iv))       settings.news_enabled = !!iv;
     if (extract_str(body, "news_rss_url", sv, sizeof sv))
         snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", sv);
-    if (extract_int(body, "news_scroll_speed", &iv)) settings.news_scroll_speed = iv;
+    if (extract_int(body, "news_scroll_speed", &iv)) settings.news_scroll_speed = (iv > 0 && iv < 30) ? 30 : (iv > 150 ? 150 : iv);
     /* Tile auto-rotate */
     if (extract_int(body, "tile_rotate_enabled", &iv))settings.tile_rotate_enabled = !!iv;
     if (extract_int(body, "tile_rotate_seconds", &iv))settings.tile_rotate_seconds = iv < 3 ? 3 : (iv > 120 ? 120 : iv);
@@ -952,7 +952,7 @@ static const char SETTINGS_HTML[] =
 "['domoticz_user','Domoticz user (opt)','t'],"
 "['Newsreader','h'],"
 "['news_enabled','News ticker','b'],['news_rss_url','RSS feed URL','t'],"
-"['news_scroll_speed','News ticker speed (px/s, 10-120)','n'],"
+"['news_scroll_speed','News ticker speed (px/s, 30-150)','n'],"
 "['Tile auto-rotate','h'],"
 "['tile_rotate_enabled','Rotate a tile','b'],['tile_rotate_seconds','Rotate every (s)','n'],"
 "['tile_rotate_members','Rotate members (id1,id2,..)','t'],"

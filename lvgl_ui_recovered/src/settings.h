@@ -192,7 +192,7 @@ typedef struct {
     /* Newsreader — built-in RSS ticker above the forecast on the home screen.
      * Tapping a headline shows a QR to open the article on your phone. */
     int  news_enabled;
-    char news_rss_url[256];
+    char news_rss_url[640];    /* one or more RSS feed URLs, newline-separated */
     int  news_scroll_speed;   /* ticker scroll speed, px/sec (0 → default 30) */
 
     /* Client mode — this Toon is a "slave" that mirrors a master Toon over

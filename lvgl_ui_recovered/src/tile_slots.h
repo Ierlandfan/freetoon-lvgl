@@ -56,12 +56,19 @@ typedef struct {
     char value_unit[INTEG_UNIT_MAX];
     char subtitle_field[INTEG_FIELD_MAX];
     char subtitle_unit[INTEG_UNIT_MAX];
+    /* Optional alert channel — a generic way for any integration to raise an
+     * Inbox/banner notification. When the notify frame's <alert_field> element
+     * is non-empty, toonui posts it via notify_show() (keyed on the service);
+     * when it goes empty again the notification is cleared. The integration
+     * owns the decision (threshold logic etc.); toonui owns the UUIDs/path. */
+    char alert_field[INTEG_FIELD_MAX];
 
     /* Last value seen on BoxTalk for this integration's service. Updated
      * by tile_slots_on_notify() from a non-UI thread; refresh_cb reads
      * these straight (single-writer / single-reader on home-tile fields). */
     volatile char latest_value[INTEG_VALUE_MAX];
     volatile char latest_subtitle[INTEG_VALUE_MAX];
+    volatile char latest_alert[INTEG_VALUE_MAX];   /* last alert text posted */
     volatile long  latest_epoch;
 } integration_meta_t;
 

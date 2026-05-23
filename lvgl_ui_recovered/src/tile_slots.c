@@ -7,6 +7,7 @@
 #include "tile_slots.h"
 #include "settings.h"
 #include "boxtalk.h"
+#include "notify.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,6 +103,7 @@ static int load_manifest(const char * dir_path) {
     extract_tile_str(json, "value_unit",    m->value_unit,    sizeof m->value_unit);
     extract_tile_str(json, "subtitle_field",m->subtitle_field,sizeof m->subtitle_field);
     extract_tile_str(json, "subtitle_unit", m->subtitle_unit, sizeof m->subtitle_unit);
+    extract_tile_str(json, "alert_field",   m->alert_field,   sizeof m->alert_field);
 
     g_integ_count++;
     fprintf(stderr,
@@ -210,6 +212,17 @@ void tile_slots_on_notify(const char * service_id, const char * xml) {
         extract_field_value(xml, m->subtitle_field, buf, sizeof buf);
         if (buf[0]) snprintf((char *)m->latest_subtitle,
                              sizeof m->latest_subtitle, "%s", buf);
+    }
+    /* Generic alert channel: integration sets <alert_field> non-empty to raise
+     * a notification, empty to clear it. Edge-triggered on a change of text so
+     * we don't re-post the same alert every notify cycle. */
+    if (m->alert_field[0]) {
+        extract_field_value(xml, m->alert_field, buf, sizeof buf);
+        if (strcmp(buf, (char *)m->latest_alert) != 0) {
+            if (buf[0]) notify_show("integration", m->service_id, buf);
+            else        notify_clear("integration", m->service_id);
+            snprintf((char *)m->latest_alert, sizeof m->latest_alert, "%s", buf);
+        }
     }
     m->latest_epoch = (long)time(NULL);
 }

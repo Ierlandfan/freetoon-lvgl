@@ -21,6 +21,7 @@ typedef struct {
     char title[NEWS_TITLE_MAX];
     char link[NEWS_LINK_MAX];
     char body[NEWS_BODY_MAX];   /* RSS <description>, HTML-stripped */
+    int  feed;                  /* index into g_feeds[] — which source it came from */
 } news_item_t;
 
 /* Strip HTML tags in place, then collapse the whitespace they leave behind. */
@@ -43,6 +44,8 @@ static void strip_html(char * s) {
 
 static news_item_t     g_items[NEWS_MAX_ITEMS];
 static int             g_count = 0;
+static char            g_feeds[NEWS_MAX_FEEDS][64];  /* feed display names */
+static int             g_feed_n = 0;
 static pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 static int url_ok(const char * u) {
@@ -143,11 +146,38 @@ static int tag_text(const char * blk, const char * blk_end, const char * tag,
     return 0;
 }
 
-static void parse_feed(const char * xml, size_t len) {
+/* The channel/feed display name: the <title> that appears before the first
+   <item>/<entry>. Falls back to "" if none — caller substitutes the host. */
+static void feed_title(const char * xml, size_t len, char * out, size_t outsz) {
+    out[0] = 0;
+    const char * end = xml + len;
+    const char * it = memmem(xml, len, "<item", 5);
+    if (!it) it = memmem(xml, len, "<entry", 6);
+    const char * hi = it ? it : end;
+    tag_text(xml, hi, "title", out, outsz);
+}
+
+/* host part of a URL (after scheme, up to the next '/') for a fallback name. */
+static void url_host(const char * u, char * out, size_t outsz) {
+    const char * p = strstr(u, "://");
+    p = p ? p + 3 : u;
+    size_t i = 0;
+    while (p[i] && p[i] != '/' && i < outsz - 1) { out[i] = p[i]; i++; }
+    out[i] = 0;
+}
+
+/* Parse one feed, appending items starting at `start`; returns the new total
+   (so multiple feeds merge into the shared list, capped at NEWS_MAX_ITEMS).
+   Items added by this feed are stamped with a feed slot named `feed_name`.
+   When start==0 this is the first feed of a refresh cycle, so the feed table
+   is reset. */
+static int parse_feed(const char * xml, size_t len, int start, const char * feed_name) {
     const char * p = xml;
     const char * end = xml + len;
-    int n = 0;
+    int n = start;
     pthread_mutex_lock(&g_mtx);
+    if (start == 0) g_feed_n = 0;
+    int feed_slot = -1;                 /* assigned lazily on the first item */
     while (n < NEWS_MAX_ITEMS) {
         const char * it = memmem(p, end - p, "<item", 5);
         if (!it) it = memmem(p, end - p, "<entry", 6);   /* Atom fallback */
@@ -161,9 +191,16 @@ static void parse_feed(const char * xml, size_t len) {
             tag_text(it, it_end, "link", link, sizeof link);  /* link optional */
             if (tag_text(it, it_end, "description", body, sizeof body) == 0)
                 strip_html(body);                              /* article summary */
+            if (feed_slot < 0) {        /* register this feed on its first item */
+                feed_slot = g_feed_n < NEWS_MAX_FEEDS ? g_feed_n : NEWS_MAX_FEEDS - 1;
+                snprintf(g_feeds[feed_slot], sizeof g_feeds[feed_slot], "%s",
+                         feed_name && feed_name[0] ? feed_name : "Nieuws");
+                if (g_feed_n < NEWS_MAX_FEEDS) g_feed_n++;
+            }
             snprintf(g_items[n].title, sizeof g_items[n].title, "%s", title);
             snprintf(g_items[n].link,  sizeof g_items[n].link,  "%s", link);
             snprintf(g_items[n].body,  sizeof g_items[n].body,  "%s", body);
+            g_items[n].feed = feed_slot;
             n++;
         }
         p = it_end + 1;
@@ -171,25 +208,41 @@ static void parse_feed(const char * xml, size_t len) {
     }
     g_count = n;
     pthread_mutex_unlock(&g_mtx);
-    fprintf(stderr, "[news] parsed %d headlines\n", n);
+    fprintf(stderr, "[news] total %d headlines\n", n);
+    return n;
 }
 
 static void * fetch_thread(void * arg) {
     (void)arg;
     static char buf[131072];     /* RSS feeds fit comfortably in 128 KB */
     for (;;) {
-        if (settings.news_enabled && url_ok(settings.news_rss_url)) {
-            char cmd[400];
-            snprintf(cmd, sizeof cmd,
-                "curl -s -L -m 20 -A 'freetoon-news/1.0' '%s' 2>/dev/null",
-                settings.news_rss_url);
-            FILE * f = popen(cmd, "r");
-            if (f) {
+        if (settings.news_enabled && settings.news_rss_url[0]) {
+            /* news_rss_url holds one feed URL per line — fetch each, merge. */
+            char urls[sizeof settings.news_rss_url];
+            snprintf(urls, sizeof urls, "%s", settings.news_rss_url);
+            int total = 0, did = 0;
+            char * save = NULL;
+            for (char * u = strtok_r(urls, "\n", &save); u && total < NEWS_MAX_ITEMS;
+                 u = strtok_r(NULL, "\n", &save)) {
+                while (*u == ' ' || *u == '\t' || *u == '\r') u++;
+                if (!url_ok(u)) continue;
+                char cmd[600];
+                snprintf(cmd, sizeof cmd,
+                    "curl -s -L -m 20 -A 'freetoon-news/1.0' '%s' 2>/dev/null", u);
+                FILE * f = popen(cmd, "r");
+                if (!f) continue;
                 size_t got = fread(buf, 1, sizeof buf - 1, f);
                 pclose(f);
                 buf[got] = 0;
-                if (got > 64) parse_feed(buf, got);
+                if (got > 64) {
+                    char fname[64];
+                    feed_title(buf, got, fname, sizeof fname);
+                    if (!fname[0]) url_host(u, fname, sizeof fname);
+                    total = parse_feed(buf, got, total, fname);
+                    did = 1;
+                }
             }
+            (void)did;
         }
         sleep(900);   /* refresh every 15 min */
     }
@@ -267,6 +320,29 @@ int news_body(int i, char * body, size_t bsz) {
         snprintf(body, bsz, "%s", g_items[i].body);
         rc = 0;
     }
+    pthread_mutex_unlock(&g_mtx);
+    return rc;
+}
+
+int news_feed_count(void) {
+    pthread_mutex_lock(&g_mtx);
+    int c = g_feed_n;
+    pthread_mutex_unlock(&g_mtx);
+    return c;
+}
+
+int news_feed_name(int f, char * name, size_t nsz) {
+    int rc = -1;
+    pthread_mutex_lock(&g_mtx);
+    if (f >= 0 && f < g_feed_n) { snprintf(name, nsz, "%s", g_feeds[f]); rc = 0; }
+    pthread_mutex_unlock(&g_mtx);
+    return rc;
+}
+
+int news_item_feed(int i) {
+    int rc = -1;
+    pthread_mutex_lock(&g_mtx);
+    if (i >= 0 && i < g_count) rc = g_items[i].feed;
     pthread_mutex_unlock(&g_mtx);
     return rc;
 }

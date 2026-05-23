@@ -224,6 +224,8 @@ static lv_obj_t * news_ticker    = NULL;
 static lv_obj_t * news_modal     = NULL;
 static lv_obj_t * news_body_lbl  = NULL;   /* reading pane (was a QR) */
 static lv_obj_t * news_body_title = NULL;
+static lv_obj_t * news_list      = NULL;   /* collapsible per-feed headline list */
+static bool       news_collapsed[NEWS_MAX_FEEDS];  /* per-feed collapse state */
 /* Small banner at the top of the home screen — shown when the update
  * checker finds a newer freetoon-lvgl release. Tapping it opens a modal
  * with the release notes + the one-line install command. */
@@ -1886,7 +1888,7 @@ static void on_home_gesture(lv_event_t * e) {
 static void news_modal_close(lv_event_t * e) {
     (void)e;
     if (news_modal) { lv_obj_del(news_modal); news_modal = NULL;
-                      news_body_lbl = NULL; news_body_title = NULL; }
+                      news_body_lbl = NULL; news_body_title = NULL; news_list = NULL; }
 }
 /* Show the i-th article's title + summary in the reading pane. */
 static void news_show_body(int i) {
@@ -1902,8 +1904,66 @@ static void on_news_item(lv_event_t * e) {
 }
 /* Live ticker scroll-speed change from Settings (px/sec). */
 void screen_home_set_ticker_speed(int spd) {
-    if (news_ticker) lv_obj_set_style_anim_speed(news_ticker, spd > 0 ? spd : 30, 0);
+    if (!news_ticker) return;
+    /* Below ~33 px/s the offset moves <1px per 30ms refresh, so the integer
+       scroll position steps once a second instead of gliding — looks broken
+       and choppy. Floor it to a smooth value. */
+    if (spd < 30) spd = 30;
+    lv_obj_set_style_anim_speed(news_ticker, spd, 0);
+    /* lv_label only reads anim_speed when it (re)builds the scroll animation
+       inside lv_label_refr_text — setting the style alone leaves the running
+       anim at its old speed. Re-apply the long mode to rebuild it now so the
+       change is visible immediately rather than at the next headline rotation. */
+    lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
 }
+static void news_list_rebuild(void);
+
+/* Tap a feed header → toggle that feed's section collapsed/expanded. */
+static void on_news_feed_toggle(lv_event_t * e) {
+    int f = (int)(intptr_t)lv_event_get_user_data(e);
+    if (f >= 0 && f < NEWS_MAX_FEEDS) news_collapsed[f] = !news_collapsed[f];
+    news_list_rebuild();
+}
+
+/* Add one tappable headline row (article i) to the list. */
+static void news_add_item_row(int i) {
+    char ti[NEWS_TITLE_MAX];
+    if (news_item(i, ti, sizeof ti, NULL, 0) != 0) return;
+    lv_obj_t * b = lv_list_add_btn(news_list, NULL, ti);
+    lv_obj_set_style_text_font(b, &lv_font_montserrat_18, 0);
+    lv_obj_add_event_cb(b, on_news_item, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    lv_obj_t * bl = lv_obj_get_child(b, lv_obj_get_child_cnt(b) - 1);
+    if (bl) { lv_label_set_long_mode(bl, LV_LABEL_LONG_DOT); lv_obj_set_width(bl, 360); }
+}
+
+/* Rebuild the headline list grouped by feed, honouring per-feed collapse. */
+static void news_list_rebuild(void) {
+    if (!news_list) return;
+    lv_obj_clean(news_list);
+    int nf = news_feed_count();
+    int n  = news_count();
+    for (int f = 0; f < nf; f++) {
+        char fname[64]; news_feed_name(f, fname, sizeof fname);
+        int cnt = 0;
+        for (int i = 0; i < n; i++) if (news_item_feed(i) == f) cnt++;
+        char hdr[128];
+        snprintf(hdr, sizeof hdr, "%s  %s  (%d)",
+                 news_collapsed[f] ? LV_SYMBOL_RIGHT : LV_SYMBOL_DOWN, fname, cnt);
+        lv_obj_t * h = lv_list_add_btn(news_list, NULL, hdr);
+        lv_obj_set_style_text_font(h, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_bg_color(h, lv_color_hex(0x24364f), 0);
+        lv_obj_set_style_bg_opa(h, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(h, lv_color_hex(0x9fd0ff), 0);
+        lv_obj_add_event_cb(h, on_news_feed_toggle, LV_EVENT_CLICKED, (void *)(intptr_t)f);
+        if (news_collapsed[f]) continue;
+        for (int i = 0; i < n; i++)
+            if (news_item_feed(i) == f) news_add_item_row(i);
+    }
+    /* No feed grouping (e.g. pre-upgrade data) → flat list. */
+    if (nf == 0)
+        for (int i = 0; i < n; i++) news_add_item_row(i);
+}
+
 static void on_news_tap(lv_event_t * e) {
     (void)e;
     if (news_modal || news_count() == 0) return;
@@ -1930,21 +1990,13 @@ static void on_news_tap(lv_event_t * e) {
     lv_label_set_text(t, "Nieuws");
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 16, 12);
 
-    lv_obj_t * list = lv_list_create(card);
-    lv_obj_set_size(list, 430, 432);
-    lv_obj_align(list, LV_ALIGN_TOP_LEFT, 12, 52);
-    lv_obj_set_style_bg_color(list, lv_color_hex(0x0e1a2a), 0);
-    int n = news_count();
-    for (int i = 0; i < n; i++) {
-        char ti[NEWS_TITLE_MAX];
-        if (news_item(i, ti, sizeof ti, NULL, 0) != 0) continue;
-        lv_obj_t * b = lv_list_add_btn(list, NULL, ti);
-        lv_obj_set_style_text_font(b, &lv_font_montserrat_18, 0);
-        lv_obj_add_event_cb(b, on_news_item, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-        /* one-line, ellipsised titles so more headlines fit without wrapping */
-        lv_obj_t * bl = lv_obj_get_child(b, lv_obj_get_child_cnt(b) - 1);
-        if (bl) { lv_label_set_long_mode(bl, LV_LABEL_LONG_DOT); lv_obj_set_width(bl, 380); }
-    }
+    news_list = lv_list_create(card);
+    lv_obj_set_size(news_list, 430, 432);
+    lv_obj_align(news_list, LV_ALIGN_TOP_LEFT, 12, 52);
+    lv_obj_set_style_bg_color(news_list, lv_color_hex(0x0e1a2a), 0);
+    /* Start with every feed expanded; headers collapse/expand on tap. */
+    for (int f = 0; f < NEWS_MAX_FEEDS; f++) news_collapsed[f] = false;
+    news_list_rebuild();
 
     /* Reading pane (right) — selected article's title + summary; tap a headline. */
     news_body_title = lv_label_create(card);
@@ -2653,7 +2705,7 @@ lv_obj_t * screen_home_create(void) {
     news_ticker = lv_label_create(scr_root);
     lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_style_anim_speed(news_ticker,
-        settings.news_scroll_speed > 0 ? settings.news_scroll_speed : 30, 0);
+        settings.news_scroll_speed >= 30 ? settings.news_scroll_speed : 30, 0);
     lv_obj_set_width(news_ticker, 1000);
     lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 12, 432);
     lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);
