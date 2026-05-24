@@ -656,8 +656,14 @@ lv_obj_t * screen_dim_create(void) {
     lbl_waste = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_waste, &lv_font_montserrat_22, 0);
+    /* Cap the width and word-wrap so a long pickup string ("vrijdag: GFT en
+     * etensresten") stacks onto a 2nd line in the left column instead of
+     * running rightward into the centered clock. */
+    lv_obj_set_width(lbl_waste, 300);
+    lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(lbl_waste, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(lbl_waste, "");
-    lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, 30, SY(140));
+    lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, 20, SY(140));
     lv_obj_add_flag(lbl_waste, LV_OBJ_FLAG_HIDDEN);
 
     /* City header above the forecast strip — same content as the home
