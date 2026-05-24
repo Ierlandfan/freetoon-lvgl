@@ -24,6 +24,7 @@
 #include "settings.h"
 #include "weather.h"
 #include "notify.h"
+#include "update_check.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -969,6 +970,7 @@ static const char SETTINGS_HTML[] =
 "['update_check_enabled','Update check','b'],"
 "['update_channel','Update channel (1 beta/dev, 0 stable)','n'],"
 "['auto_update_enabled','Auto-update nightly','b'],['auto_update_hour','Auto-update hour (0-23)','n'],"
+"['__update__','','U'],"
 "['Client mode (slave Toon / tablet)','h'],"
 "['client_mode','Client mode (mirror a master Toon)','b'],['master_host','Master Toon IP/host','t'],"
 "['Display options','h'],"
@@ -981,6 +983,8 @@ static const char SETTINGS_HTML[] =
 "'Tile auto-rotate':'\\uD83D\\uDD01','Updates':'\\u2B07\\uFE0F','Display options':'\\u2699\\uFE0F'};"
 "return m[n]||'\\u2699\\uFE0F';}"
 "function rowHtml(s){var k=s[0],lbl=s[1],t=s[2],v=S[k];var inp;"
+"if(t=='U')return '<div class=r><button type=button onclick=doUpd() id=updbtn>Update now</button>"
+"<span id=updmsg style=\"margin-left:8px;font-size:13px;color:#9ab\"></span></div>';"
 "if(t=='b')inp='<input type=checkbox id=\"'+k+'\"'+(v?' checked':'')+'>';"
 "else if(t=='n')inp='<input type=number id=\"'+k+'\" value=\"'+(v==null?'':v)+'\">';"
 "else inp='<input type=text id=\"'+k+'\" value=\"'+(v==null?'':String(v).replace(/\"/g,'&quot;'))+'\">';"
@@ -1004,7 +1008,15 @@ static const char SETTINGS_HTML[] =
 "for(var j=0;j<SECS.length;j++)document.getElementById('pan'+j).classList.remove('show');"
 "document.getElementById('savebar').classList.remove('show');"
 "document.getElementById('msg').textContent='';window.scrollTo(0,0);}"
-"function load(){fetch('/api/settings').then(r=>r.json()).then(j=>{S=j;build();});}"
+"function updStatus(){var m=document.getElementById('updmsg');if(!m)return;"
+"fetch('/api/update/status').then(r=>r.json()).then(j=>{"
+"m.textContent='Huidig: '+j.build+(j.available&&j.latest?(' \\u2192 nieuw: '+j.latest):'');});}"
+"function doUpd(){var b=document.getElementById('updbtn'),m=document.getElementById('updmsg');"
+"b.disabled=true;m.textContent='Updaten\\u2026 de Toon herstart zo.';"
+"fetch('/api/update',{method:'POST'}).then(r=>r.json()).then(j=>{"
+"m.textContent=j.ok?'Update gestart \\u2014 even geduld, de UI herstart.':'Fout bij starten update';"
+"if(!j.ok)b.disabled=false;}).catch(function(){m.textContent='Fout bij starten update';b.disabled=false;});}"
+"function load(){fetch('/api/settings').then(r=>r.json()).then(j=>{S=j;build();updStatus();});}"
 "function save(){var o={};for(var i=0;i<SCHEMA.length;i++){var s=SCHEMA[i];if(s[1]=='h')continue;"
 "var k=s[0],t=s[2],e=document.getElementById(k);if(!e)continue;"
 "o[k]=t=='b'?(e.checked?1:0):(t=='n'?parseInt(e.value||'0'):e.value);}"
@@ -1021,6 +1033,26 @@ static int handle_settings_page(int fd) {
         "Content-Length: %zu\r\n\r\n", n);
     if (sock_send_all(fd, hdr, hn) < 0) return -1;
     return sock_send_all(fd, SETTINGS_HTML, n);
+}
+
+/* GET /api/update/status — current build + whether the background poll has
+ * found a newer release (so the PWA can show "v0.9.13 → v0.9.14"). */
+static int handle_update_status(int fd) {
+    char body[512];
+    snprintf(body, sizeof body,
+        "{\"build\":\"%s\",\"available\":%d,\"latest\":\"%s\",\"channel\":%d,"
+        "\"last_check_ok\":%d}",
+        BUILD_VERSION, g_update_state.available,
+        g_update_state.latest_version, settings.update_channel,
+        g_update_state.last_check_ok);
+    return send_status(fd, 200, "OK", body);
+}
+
+/* POST /api/update — kick the self-installer now (detached), same path as the
+ * on-device "Update now" button. Pulls the newest matching release. */
+static int handle_update_post(int fd) {
+    update_install_now();
+    return send_status(fd, 200, "OK", "{\"ok\":1}");
 }
 
 /* About / license — the web mirror of the LVGL logo→About modal. */
@@ -1083,6 +1115,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/packages"))      return handle_packages_get(fd);
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);
         if (!strcmp(path, "/api/settings"))      return handle_settings_get(fd);
+        if (!strcmp(path, "/api/update/status")) return handle_update_status(fd);
         if (!strcmp(path, "/about") || !strcmp(path, "/about.html"))
             return handle_about_page(fd);
         if (!strcmp(path, "/settings") || !strcmp(path, "/settings.html"))
@@ -1095,6 +1128,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/schedule")) return handle_schedule_post(fd, body);
         if (!strcmp(path, "/api/curtain"))  return handle_curtain(fd, body);
         if (!strcmp(path, "/api/settings")) return handle_settings_post(fd, body);
+        if (!strcmp(path, "/api/update"))   return handle_update_post(fd);
         if (!strcmp(path, "/api/packages")) return handle_packages_post(fd, body);
         if (!strcmp(path, "/api/email"))    return handle_email_post(fd, body);
         /* POST /api/packages/<id>/receive */
