@@ -335,7 +335,45 @@ autodetect:
     }
 }
 
+/* Strip control characters (< 0x20: newline, CR, tab, etc.) in place. Keeps
+ * every string value on a single, well-formed cfg line — a raw newline in a
+ * value would otherwise split the key=value line and corrupt the config (the
+ * bug that dropped news feeds). Safe for hosts/URLs/names/entities; none of
+ * them legitimately contain control characters. */
+void settings_sanitize_str(char * s) {
+    if (!s) return;
+    char * w = s;
+    for (char * r = s; *r; r++)
+        if ((unsigned char)*r >= 0x20) *w++ = *r;
+    *w = 0;
+}
+
+/* Sanitize every free-text setting before persisting, regardless of whether it
+ * came from the LVGL textareas, the PWA, or a client-mode mirror. news_rss_url
+ * is excluded — it is newline-separated in memory and tab-encoded on write. */
+static void sanitize_all_strings(void) {
+    char * fields[] = {
+        settings.waste_postcode, settings.waste_housenr, settings.waste_ics_url,
+        settings.waste_plugin, settings.waste_icsid, settings.waste_street,
+        settings.waste_city, settings.vnc_pass, settings.weather_location,
+        settings.ot_bridge_mode, settings.otgw_host, settings.otgw_user,
+        settings.otgw_pass, settings.mqtt_host, settings.mqtt_user,
+        settings.mqtt_pass, settings.domoticz_host, settings.master_host,
+        settings.tile_rotate_members, settings.calendar_ha_entity,
+        settings.calendar_ics_url, settings.ha_host, settings.curtain_entity,
+        settings.curtain_bat_a, settings.curtain_bat_b, settings.doorbell_entity,
+        settings.doorbell_camera, settings.doorbell_stream_url, settings.vent_host,
+        settings.opnsense_host, settings.domoticz_user, settings.domoticz_pass,
+        settings.tile_slot_energy, settings.tile_slot_family, settings.tile_slot_vent,
+        settings.tile_slot_water, settings.life360_a_entity, settings.life360_a_name,
+        settings.life360_b_entity, settings.life360_b_name,
+    };
+    for (size_t i = 0; i < sizeof fields / sizeof fields[0]; i++)
+        settings_sanitize_str(fields[i]);
+}
+
 void settings_save(void) {
+    sanitize_all_strings();
     FILE * f = fopen(CFG_PATH, "w");
     if (!f) return;
     fprintf(f, "auto_dim_enabled=%d\n",  settings.auto_dim_enabled);

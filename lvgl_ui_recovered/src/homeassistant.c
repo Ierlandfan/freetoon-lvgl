@@ -51,6 +51,20 @@ static void load_token(void) {
     fclose(f);
 }
 
+/* An entity id / cover group goes straight into a popen'd curl command line,
+ * so guard against shell-metachar injection: HA ids are only [A-Za-z0-9._-].
+ * Reject anything else (and empty). Defence-in-depth alongside the input
+ * sanitizer — values reach here from settings the user types. */
+static int ha_id_safe(const char * s) {
+    if (!s || !s[0]) return 0;
+    for (const char * p = s; *p; p++) {
+        char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) return 0;
+    }
+    return 1;
+}
+
 /* Lifted from ventilation.c — tiny flat-JSON helpers, no recursion. */
 static int extract_int(const char * json, const char * key, int * out) {
     char needle[64];
@@ -98,7 +112,7 @@ static int extract_str(const char * json, const char * key, char * out, size_t o
  * http.c's http_fetch doesn't take headers, and adding a header parameter
  * everywhere is more churn than just inlining popen here. */
 static int ha_get_state(const char * entity_id, char * out, size_t out_max) {
-    if (!g_token[0]) return -1;
+    if (!g_token[0] || !ha_id_safe(entity_id)) return -1;
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "
@@ -120,7 +134,7 @@ static int ha_get_state(const char * entity_id, char * out, size_t out_max) {
 int ha_fetch_calendar(const char * entity, const char * start_iso,
                       const char * end_iso, char * out, size_t out_max) {
     if (!g_token[0]) load_token();
-    if (!g_token[0] || !entity || !entity[0] || !HA_HOST[0]) return -1;
+    if (!g_token[0] || !ha_id_safe(entity) || !HA_HOST[0]) return -1;
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s --max-time 8 --connect-timeout 4 "
@@ -139,7 +153,7 @@ int ha_fetch_calendar(const char * entity, const char * start_iso,
  * On failure, also fires a Toon-side notification so the user knows the
  * curtain button didn't actually do anything (cleared once HA recovers). */
 static int ha_call_cover_service(const char * action) {
-    if (!g_token[0]) return -1;
+    if (!g_token[0] || !ha_id_safe(CURTAIN_GROUP)) return -1;
     char cmd[1024], out[256];
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "
@@ -169,7 +183,7 @@ static int ha_call_cover_service(const char * action) {
  * helper) so users pressing the lights tile while HA is dead get a
  * visible signal rather than silent no-op. */
 static int ha_call_light_service(const char * action, const char * entity_id) {
-    if (!g_token[0]) return -1;
+    if (!g_token[0] || !ha_id_safe(entity_id)) return -1;
     char cmd[1024], out[256];
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "

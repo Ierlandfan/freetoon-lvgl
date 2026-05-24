@@ -225,4 +225,8 @@ extern settings_t settings;
 void settings_load(void);
 void settings_save(void);
 
+/* Strip control chars (<0x20) from a string in place — keeps user-entered
+ * values from corrupting the cfg or injecting newlines. */
+void settings_sanitize_str(char * s);
+
 #endif

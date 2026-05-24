@@ -228,6 +228,12 @@ static int extract_str(const char * body, const char * key,
     if (!e) return 0;
     size_t L = e - p; if (L > outsz - 1) L = outsz - 1;
     memcpy(out, p, L); out[L] = 0;
+    /* Strip control chars (a non-browser client could send raw newlines etc.)
+     * so PWA-supplied values can't corrupt the cfg or inject into shell-outs.
+     * Mirrors settings_sanitize_str on the LVGL side. */
+    char * w = out;
+    for (char * r = out; *r; r++) if ((unsigned char)*r >= 0x20) *w++ = *r;
+    *w = 0;
     return 1;
 }
 
