@@ -19,14 +19,16 @@
 
 #define UPDATE_CHECK_INTERVAL_S (6 * 3600)   /* 6 h between polls */
 /* Two update channels (settings.update_channel):
- *   1 = beta/dev (default): newest release INCLUDING prereleases. The
- *       per_page=1 list returns a 1-element array; the JSON field extractor
- *       reads the first (newest) entry.
+ *   1 = beta/dev (default): newest release INCLUDING prereleases. We fetch a
+ *       page of recent releases and pick the HIGHEST SEMVER tag ourselves —
+ *       NOT index 0 — because GitHub orders /releases by created_at, so a
+ *       later edit/re-create of an older release (e.g. v0.9.8) could otherwise
+ *       surface as "newest" and mask v0.9.13+.
  *   0 = stable/official only: /releases/latest, which GitHub returns only for
  *       non-prerelease, non-draft releases (404 → no update, banner stays off).
  * All freetoon releases are currently beta, so "stable" finds nothing until a
  * non-prerelease is published. */
-#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=1"
+#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=30"
 #define RELEASES_API_STABLE "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases/latest"
 
 update_state_t g_update_state = {0};
@@ -113,6 +115,16 @@ static int is_newer_than_build(const char * tag) {
     return tc > bc;
 }
 
+/* Numeric major.minor.patch compare: >0 if a newer than b, <0 older, 0 equal. */
+static int ver_cmp(const char * a, const char * b) {
+    int aa, ab, ac, ba, bb, bc;
+    parse_ver(a, &aa, &ab, &ac);
+    parse_ver(b, &ba, &bb, &bc);
+    if (aa != ba) return aa - ba;
+    if (ab != bb) return ab - bb;
+    return ac - bc;
+}
+
 void update_check_now(void) {
     if (!settings.update_check_enabled) return;
     /* GitHub's /releases/latest payload runs ~8-12 KB once asset metadata
@@ -137,9 +149,37 @@ void update_check_now(void) {
     char tag[UPDATE_VERSION_MAX] = {0};
     char url[UPDATE_URL_MAX]     = {0};
     char notes[UPDATE_NOTES_MAX] = {0};
-    json_extract_str(body, "tag_name",    tag,   sizeof tag);
-    json_extract_str(body, "html_url",    url,   sizeof url);
-    json_extract_str(body, "body",        notes, sizeof notes);
+
+    if (settings.update_channel == 0) {
+        /* /releases/latest → a single release object. */
+        json_extract_str(body, "tag_name", tag,   sizeof tag);
+        json_extract_str(body, "html_url", url,   sizeof url);
+        json_extract_str(body, "body",     notes, sizeof notes);
+    } else {
+        /* Beta channel: body is an array of releases. Walk every "tag_name"
+         * and keep the highest semver — don't trust GitHub's date order. */
+        const char * best_at = NULL;
+        const char * pos = body;
+        char cur[UPDATE_VERSION_MAX];
+        const char * t;
+        while ((t = strstr(pos, "\"tag_name\"")) != NULL) {
+            if (json_extract_str(t, "tag_name", cur, sizeof cur) && cur[0] &&
+                (!tag[0] || ver_cmp(cur, tag) > 0)) {
+                snprintf(tag, sizeof tag, "%s", cur);
+                best_at = t;
+            }
+            pos = t + 10;
+        }
+        if (tag[0]) {
+            /* html_url is deterministic — build it instead of parsing the
+             * matching release object out of the array (brittle with nested
+             * author/assets objects). */
+            snprintf(url, sizeof url,
+                "https://github.com/Ierlandfan/freetoon-lvgl/releases/tag/%s", tag);
+            /* notes = the "body" field that follows this release's tag_name. */
+            if (best_at) json_extract_str(best_at, "body", notes, sizeof notes);
+        }
+    }
 
     if (is_newer_than_build(tag)) {
         snprintf(g_update_state.latest_version,
