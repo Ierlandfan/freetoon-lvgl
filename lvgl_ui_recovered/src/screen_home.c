@@ -20,6 +20,7 @@
 #include "news.h"
 #include "packages.h"
 #include "tile_slots.h"
+#include "layout.h"
 #include "update_check.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -300,13 +301,28 @@ typedef struct {
     lv_obj_t * sub;    /* sub-line under value */
 } tile_t;
 
-/* Generic tile: w x h pixels, given title, optional click handler */
-static void make_tile(lv_obj_t * parent, int x, int y, int w, int h,
+/* Generic tile: w x h pixels, given title, optional click handler.
+ * `ltype` is the layout_tile_type_t for this tile; when custom_layout_enabled
+ * is set, the position/size/visibility come from the grid layout instead of
+ * the passed x/y/w/h (a tile absent from the layout is created hidden). When
+ * the flag is off, x/y/w/h are used verbatim — original behaviour unchanged. */
+static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
                       const char * title, uint32_t accent_color,
                       lv_event_cb_t click_cb, tile_t * out) {
+    int start_hidden = 0;
+    if (settings.custom_layout_enabled && ltype != LT_NONE) {
+        const layout_tile_t * L = layout_find(ltype);
+        if (L) {
+            layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &w, &h);
+            if (!L->visible) start_hidden = 1;
+        } else {
+            start_hidden = 1;   /* not in the user's layout → don't show */
+        }
+    }
     lv_obj_t * t = lv_obj_create(parent);
     lv_obj_set_size(t, w, h);
     lv_obj_set_pos(t, x, y);
+    if (start_hidden) lv_obj_add_flag(t, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(t, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_border_width(t, 0, 0);
     lv_obj_set_style_radius(t, 14, 0);
@@ -954,15 +970,25 @@ static void apply_offline_tile_visibility(void) {
                                              * HA poller running; absent
                                              * Life360 data falls through
                                              * to "?" naturally. */
-    struct { lv_obj_t * tile; int live; } v[] = {
-        { tile_energy,   energy_live },
-        { tile_water,    water_live  },
-        { tile_vent,     vent_live   },
-        { tile_family,   family_live },
-        { tile_curtains, family_live },   /* curtains share the HA gate */
+    struct { lv_obj_t * tile; int live; int ltype; } v[] = {
+        { tile_energy,   energy_live, LT_ENERGY },
+        { tile_water,    water_live,  LT_WATER  },
+        { tile_vent,     vent_live,   LT_VENT   },
+        { tile_family,   family_live, LT_FAMILY },
+        { tile_curtains, family_live, LT_NONE   },   /* curtains share the HA gate */
     };
     for (size_t i = 0; i < sizeof(v)/sizeof(v[0]); i++) {
         if (!v[i].tile) continue;
+        /* With a custom layout, the layout decides visibility: a tile the user
+         * removed/hid (or that isn't in the layout, e.g. curtains) stays hidden
+         * — don't let the offline-gate re-show it every tick. */
+        if (settings.custom_layout_enabled) {
+            const layout_tile_t * L =
+                (v[i].ltype != LT_NONE) ? layout_find(v[i].ltype) : NULL;
+            if (!L || !L->visible) { lv_obj_add_flag(v[i].tile, LV_OBJ_FLAG_HIDDEN); continue; }
+            lv_obj_clear_flag(v[i].tile, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
         if (hide && !v[i].live) lv_obj_add_flag(v[i].tile, LV_OBJ_FLAG_HIDDEN);
         else                    lv_obj_clear_flag(v[i].tile, LV_OBJ_FLAG_HIDDEN);
     }
@@ -2760,7 +2786,7 @@ lv_obj_t * screen_home_create(void) {
        milk carton for Plastic/PMD, leaf for GFT, trashcan fallback) so
        the user can read at a glance what's coming when. */
     tile_t waste_big;
-    make_tile(scr_root, 560, 20, 220, 200, "Waste", 0x88dd66,
+    make_tile(scr_root, 560, 20, 220, 200, LT_WASTE, "Waste", 0x88dd66,
               open_placeholder, &waste_big);
     tile_waste = waste_big.tile;
 
@@ -2810,7 +2836,7 @@ lv_obj_t * screen_home_create(void) {
        on the Heater bottom strip). Big live power on top, gas total below,
        today's kWh in the corner. */
     tile_t energy_t;
-    make_tile(scr_root, 790, 20, 214, 130, "Energy", 0xaa77ff,
+    make_tile(scr_root, 790, 20, 214, 130, LT_ENERGY, "Energy", 0xaa77ff,
               open_stats, &energy_t);
     tile_energy = energy_t.tile;
     /* Compressed for the new 130-px tile: 28-pt W value (was 48), gas
@@ -2839,7 +2865,7 @@ lv_obj_t * screen_home_create(void) {
        % above and rpm below the fan. Tap on the fan itself opens the remote
        (the buttons get their own click handlers so they don't bubble). */
     tile_t vent;
-    make_tile(scr_root, 560, 230, 220, 200, "Vent", 0x66bbdd,
+    make_tile(scr_root, 560, 230, 220, 200, LT_VENT, "Vent", 0x66bbdd,
               (lv_event_cb_t)open_vent, &vent);
     tile_vent = vent.tile;
 
@@ -2916,7 +2942,7 @@ lv_obj_t * screen_home_create(void) {
     /* Family tile — Life360 locations for the two tracked people. Sits
      * between the shrunken Energy and Water tiles in the right column. */
     tile_t family_t;
-    make_tile(scr_root, 790, 160, 214, 130, "Family", 0xff8866,
+    make_tile(scr_root, 790, 160, 214, 130, LT_FAMILY, "Family", 0xff8866,
               open_family_map, &family_t);
     tile_family = family_t.tile;
     /* Two scrolling labels — the formatted address ("City > Street > Num")
@@ -2946,7 +2972,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_align(lbl_life360_b, LV_ALIGN_TOP_LEFT, 0, 76);
 
     tile_t water_t;
-    make_tile(scr_root, 790, 300, 214, 130, "Water", 0x44aaff, open_placeholder, &water_t);
+    make_tile(scr_root, 790, 300, 214, 130, LT_WATER, "Water", 0x44aaff, open_placeholder, &water_t);
     tile_water = water_t.tile;
 
     /* Long-press on any of the four right-column tiles → tile-slots picker.
@@ -2998,7 +3024,7 @@ lv_obj_t * screen_home_create(void) {
         };
         for (int i = 0; i < 4; i++) {
             tile_t s;
-            make_tile(home_page1, slots[i].x, slots[i].y, 214, 196,
+            make_tile(home_page1, slots[i].x, slots[i].y, 214, 196, LT_NONE,
                       "", slots[i].c, on_page1_slot, &s);
             p1_title[i] = s.title;   /* make_tile's title label, reused */
             p1_main[i] = lv_label_create(s.tile);

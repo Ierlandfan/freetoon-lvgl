@@ -72,6 +72,7 @@ settings_t settings = {
     .calendar_enabled    = 0,
     .calendar_ha_entity  = "",
     .calendar_ics_url    = "",
+    .custom_layout_enabled = 0,
     .auto_update_enabled = 0,
     .auto_update_hour    = 2,
     .ha_host             = "",
@@ -233,6 +234,7 @@ void settings_load(void) {
         else if (strcmp(k, "calendar_enabled")   == 0) settings.calendar_enabled = iv;
         else if (strcmp(k, "calendar_ha_entity") == 0) snprintf(settings.calendar_ha_entity, sizeof settings.calendar_ha_entity, "%s", v);
         else if (strcmp(k, "calendar_ics_url")   == 0) snprintf(settings.calendar_ics_url, sizeof settings.calendar_ics_url, "%s", v);
+        else if (strcmp(k, "custom_layout_enabled") == 0) settings.custom_layout_enabled = iv;
         else if (strcmp(k, "auto_update_enabled") == 0) settings.auto_update_enabled = iv;
         else if (strcmp(k, "auto_update_hour")    == 0) settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;
         else if (strcmp(k, "ha_host")          == 0) snprintf(settings.ha_host, sizeof settings.ha_host, "%s", v);
@@ -438,6 +440,7 @@ void settings_save(void) {
     fprintf(f, "calendar_enabled=%d\n", settings.calendar_enabled);
     fprintf(f, "calendar_ha_entity=%s\n", settings.calendar_ha_entity);
     fprintf(f, "calendar_ics_url=%s\n", settings.calendar_ics_url);
+    fprintf(f, "custom_layout_enabled=%d\n", settings.custom_layout_enabled);
     fprintf(f, "news_scroll_speed=%d\n", settings.news_scroll_speed);
     fprintf(f, "auto_update_enabled=%d\n", settings.auto_update_enabled);
     fprintf(f, "auto_update_hour=%d\n", settings.auto_update_hour);

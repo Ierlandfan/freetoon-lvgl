@@ -26,13 +26,17 @@ layout_t g_layout = {0};
  * Page 0: thermostat (left), the four right-column tiles, news ticker +
  * forecast across the bottom. Page 1: assignable slots. */
 static const layout_tile_t DEFAULTS[] = {
-    /* type,           page, col, row, w, h, vis, slot */
-    { LT_THERMOSTAT,    0,   0,  1,  6, 5, 1, -1 },
-    { LT_ENERGY,        0,   8,  1,  4, 2, 1, -1 },
-    { LT_WATER,         0,   8,  3,  4, 2, 1, -1 },
-    { LT_VENT,          0,   8,  5,  2, 2, 1, -1 },
-    { LT_FAMILY,        0,   6,  0,  3, 1, 1, -1 },
-    { LT_WASTE,         0,   0,  0,  3, 1, 1, -1 },
+    /* type,           page, col, row, w, h, vis, slot
+     * Phase 1a only consults the five built-in tiles below; they live in the
+     * right region (col>=7) so they clear the still-hardcoded thermostat (left)
+     * and ticker/forecast (bottom). The thermostat/ticker/forecast/slot rows
+     * are kept for the later full migration but aren't placed from here yet. */
+    { LT_WASTE,         0,   7,  0,  2, 3, 1, -1 },
+    { LT_VENT,          0,   7,  3,  2, 3, 1, -1 },
+    { LT_ENERGY,        0,   9,  0,  3, 2, 1, -1 },
+    { LT_FAMILY,        0,   9,  2,  3, 2, 1, -1 },
+    { LT_WATER,         0,   9,  4,  3, 2, 1, -1 },
+    { LT_THERMOSTAT,    0,   0,  0,  7, 6, 1, -1 },
     { LT_NEWS_TICKER,   0,   0,  6, 12, 1, 1, -1 },
     { LT_FORECAST,      0,   0,  7, 12, 1, 1, -1 },
     { LT_SLOT,          1,   0,  0,  6, 4, 1,  4 },   /* TILE_SLOT_P1_0 */
@@ -87,6 +91,12 @@ void layout_cell_px(int col, int row, int w, int h,
     if (y)  *y  = y0;
     if (pw) *pw = x1 - x0;
     if (ph) *ph = y1 - y0;
+}
+
+const layout_tile_t * layout_find(int type) {
+    for (int i = 0; i < g_layout.count; i++)
+        if (g_layout.tiles[i].type == type) return &g_layout.tiles[i];
+    return NULL;
 }
 
 const char * layout_type_name(int type) {

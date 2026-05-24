@@ -78,6 +78,7 @@ int main(int argc, char** argv) {
     lv_indev_drv_register(&indev_drv);
 
     settings_load();
+    { extern void layout_load(void); layout_load(); }   /* home-tile layout model */
 
     /* Marketplace registry — load before boxtalk so the handshake's
      * tile_slots_subscribe_all() has something to subscribe to. */

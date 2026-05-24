@@ -203,6 +203,12 @@ typedef struct {
     char calendar_ha_entity[64];
     char calendar_ics_url[256];
 
+    /* Custom home-tile layout — when 1, the home screen places/sizes/hides the
+     * built-in tiles from the grid layout (layout.c / toonui_layout.cfg) edited
+     * in the "Indeling" editor. When 0 (default) the original hardcoded layout
+     * is used unchanged. */
+    int  custom_layout_enabled;
+
     /* Client mode — this Toon is a "slave" that mirrors a master Toon over
      * its PWA HTTP API instead of talking to local HCB daemons. When 1, all
      * local integrations (BoxTalk, P1, meteradapter, weather, waste, vent,
