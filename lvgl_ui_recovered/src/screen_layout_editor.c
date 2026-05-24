@@ -41,6 +41,7 @@ static const uint32_t TYPE_COL[LT_COUNT] = {
 };
 
 static void place_rect(int i);
+static void create_rect(int i);
 static void update_sel_label(void);
 
 /* True if grid rect (c,r,w,h) would overlap any OTHER visible page-0 tile —
@@ -101,12 +102,57 @@ static void place_rect(int i) {
     lv_obj_set_style_bg_opa(r, t->visible ? LV_OPA_COVER : 60, 0);
 }
 
+/* Build the draggable rect for tile i (page-0 only). */
+static void create_rect(int i) {
+    layout_tile_t * t = &edit.tiles[i];
+    if (t->page != 0) { rects[i] = NULL; return; }
+    lv_obj_t * r = lv_obj_create(modal);
+    rects[i] = r;
+    lv_obj_set_user_data(r, (void *)(intptr_t)i);
+    lv_obj_set_style_bg_color(r, lv_color_hex(TYPE_COL[t->type % LT_COUNT]), 0);
+    lv_obj_set_style_radius(r, 10, 0);
+    lv_obj_set_style_pad_all(r, 4, 0);
+    lv_obj_clear_flag(r, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(r, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(r, rect_event, LV_EVENT_ALL, NULL);
+    lv_obj_t * l = lv_label_create(r);
+    lv_label_set_text(l, layout_type_name(t->type));
+    lv_obj_set_style_text_color(l, lv_color_hex(0x0a121e), 0);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 2, 2);
+    place_rect(i);
+}
+
 static void update_sel_label(void) {
     if (!sel_lbl) return;
     if (sel < 0) { lv_label_set_text(sel_lbl, "Tik een tegel om te selecteren"); return; }
     layout_tile_t * t = &edit.tiles[sel];
     lv_label_set_text_fmt(sel_lbl, "%s  %dx%d  %s",
         layout_type_name(t->type), t->w, t->h, t->visible ? "" : "(verborgen)");
+}
+
+/* Add a not-yet-placed tile type into the first free 2x2 cell. */
+static void on_add(lv_event_t * e) {
+    (void)e;
+    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, "Maximum bereikt"); return; }
+    static const int cand[] = { LT_NEWS_SUMMARY, LT_CALENDAR, LT_LIGHTS };
+    int type = 0;
+    for (size_t k = 0; k < sizeof cand / sizeof cand[0]; k++) {
+        int present = 0;
+        for (int i = 0; i < edit.count; i++) if (edit.tiles[i].type == cand[k]) { present = 1; break; }
+        if (!present) { type = cand[k]; break; }
+    }
+    if (!type) { lv_label_set_text(sel_lbl, "Alle types al toegevoegd"); return; }
+    int fc = -1, fr = -1;
+    for (int r = 0; r <= LAYOUT_ROWS - 2 && fc < 0; r++)
+        for (int c = 0; c <= LAYOUT_COLS - 2; c++)
+            if (!would_overlap(-1, c, r, 2, 2)) { fc = c; fr = r; break; }
+    if (fc < 0) { lv_label_set_text(sel_lbl, "Geen ruimte - verberg eerst een tegel"); return; }
+    int i = edit.count++;
+    edit.tiles[i] = (layout_tile_t){ .type = type, .page = 0, .col = fc, .row = fr,
+                                     .w = 2, .h = 2, .visible = 1, .slot = -1 };
+    create_rect(i);
+    select_tile(i);
 }
 
 /* toolbar actions ------------------------------------------------------- */
@@ -187,27 +233,29 @@ void screen_layout_editor_show(void) {
     lv_obj_set_style_pad_all(modal, 0, 0);
     lv_obj_clear_flag(modal, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* One draggable rect per page-0 tile. */
-    for (int i = 0; i < edit.count; i++) {
-        rects[i] = NULL;
-        if (edit.tiles[i].page != 0) continue;
-        layout_tile_t * t = &edit.tiles[i];
-        lv_obj_t * r = lv_obj_create(modal);
-        rects[i] = r;
-        lv_obj_set_user_data(r, (void *)(intptr_t)i);
-        lv_obj_set_style_bg_color(r, lv_color_hex(TYPE_COL[t->type % LT_COUNT]), 0);
-        lv_obj_set_style_radius(r, 10, 0);
-        lv_obj_set_style_pad_all(r, 4, 0);
-        lv_obj_clear_flag(r, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(r, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(r, rect_event, LV_EVENT_ALL, NULL);
-        lv_obj_t * l = lv_label_create(r);
-        lv_label_set_text(l, layout_type_name(t->type));
-        lv_obj_set_style_text_color(l, lv_color_hex(0x0a121e), 0);
-        lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
-        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 2, 2);
-        place_rect(i);
+    /* Faint grid backdrop so the snap cells are visible while dragging. Created
+     * before the tiles (lower z) and non-interactive so it never eats drags. */
+    for (int c = 1; c < LAYOUT_COLS; c++) {
+        lv_obj_t * ln = lv_obj_create(modal);
+        lv_obj_remove_style_all(ln);
+        lv_obj_set_size(ln, 1, SCR_H - BAR_H);
+        lv_obj_set_pos(ln, c * CELL_W, 0);
+        lv_obj_set_style_bg_color(ln, lv_color_hex(0x2a3a4c), 0);
+        lv_obj_set_style_bg_opa(ln, LV_OPA_50, 0);
+        lv_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
     }
+    for (int r = 1; r < LAYOUT_ROWS; r++) {
+        lv_obj_t * ln = lv_obj_create(modal);
+        lv_obj_remove_style_all(ln);
+        lv_obj_set_size(ln, SCR_W, 1);
+        lv_obj_set_pos(ln, 0, r * CELL_H);
+        lv_obj_set_style_bg_color(ln, lv_color_hex(0x2a3a4c), 0);
+        lv_obj_set_style_bg_opa(ln, LV_OPA_50, 0);
+        lv_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    /* One draggable rect per page-0 tile. */
+    for (int i = 0; i < edit.count; i++) { rects[i] = NULL; create_rect(i); }
 
     /* Bottom toolbar. */
     lv_obj_t * bar = lv_obj_create(modal);
@@ -226,7 +274,8 @@ void screen_layout_editor_show(void) {
     tb_btn(bar, x, 46, "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += 50;
     tb_btn(bar, x, 46, "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += 50;
     tb_btn(bar, x, 46, "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += 54;
-    tb_btn(bar, x, 110, "Verberg/Toon", on_toggle_vis, NULL, 0x553355); x += 118;
+    tb_btn(bar, x, 100, "Verberg/Toon", on_toggle_vis, NULL, 0x553355); x += 106;
+    tb_btn(bar, x, 78, "+ Tegel", on_add, NULL, 0x2e5e6e); x += 84;
 
     sel_lbl = lv_label_create(bar);
     lv_obj_set_style_text_color(sel_lbl, lv_color_hex(0xccddee), 0);

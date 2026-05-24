@@ -39,11 +39,9 @@ static const layout_tile_t DEFAULTS[] = {
     { LT_THERMOSTAT,    0,   0,  0,  7, 6, 1, -1 },
     { LT_NEWS_TICKER,   0,   0,  6, 12, 1, 1, -1 },
     { LT_FORECAST,      0,   0,  7, 12, 1, 1, -1 },
-    /* New optional tiles, hidden by default — show + place them in the editor.
-     * news-summary = a static multi-headline panel (alternative to the ticker);
-     * calendar = next agenda events. */
-    { LT_NEWS_SUMMARY,  0,   7,  0,  5, 3, 0, -1 },
-    { LT_CALENDAR,      0,   7,  3,  5, 3, 0, -1 },
+    /* news-summary + calendar are NOT preplaced (the grid is full) — add them
+     * on demand via the editor's "+ Tegel" button, which drops them in a free
+     * cell. */
     { LT_SLOT,          1,   0,  0,  6, 4, 1,  4 },   /* TILE_SLOT_P1_0 */
     { LT_SLOT,          1,   6,  0,  6, 4, 1,  5 },
     { LT_SLOT,          1,   0,  4,  6, 4, 1,  6 },
