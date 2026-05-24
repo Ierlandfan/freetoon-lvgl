@@ -43,6 +43,19 @@ static const uint32_t TYPE_COL[LT_COUNT] = {
 static void place_rect(int i);
 static void update_sel_label(void);
 
+/* True if grid rect (c,r,w,h) would overlap any OTHER visible page-0 tile —
+ * used to reject a move/resize that would stack tiles on top of each other. */
+static int would_overlap(int idx, int c, int r, int w, int h) {
+    for (int j = 0; j < edit.count; j++) {
+        if (j == idx) continue;
+        layout_tile_t * t = &edit.tiles[j];
+        if (t->page != 0 || !t->visible) continue;
+        if (c < t->col + t->w && t->col < c + w &&
+            r < t->row + t->h && t->row < r + h) return 1;
+    }
+    return 0;
+}
+
 static void select_tile(int i) {
     sel = i;
     for (int k = 0; k < edit.count; k++) {
@@ -70,8 +83,12 @@ static void rect_event(lv_event_t * e) {
         if (row < 0) row = 0;
         if (col + edit.tiles[i].w > LAYOUT_COLS) col = LAYOUT_COLS - edit.tiles[i].w;
         if (row + edit.tiles[i].h > LAYOUT_ROWS) row = LAYOUT_ROWS - edit.tiles[i].h;
-        edit.tiles[i].col = col; edit.tiles[i].row = row;
-        place_rect(i);
+        /* Reject a drop that would stack on another tile — snap back. */
+        if (!would_overlap(i, col, row, edit.tiles[i].w, edit.tiles[i].h)) {
+            edit.tiles[i].col = col; edit.tiles[i].row = row;
+        }
+        place_rect(i);   /* to the accepted cell, or back to the old one */
+        update_sel_label();
     }
 }
 
@@ -97,10 +114,13 @@ static void on_resize(lv_event_t * e) {
     if (sel < 0) return;
     int d = (int)(intptr_t)lv_event_get_user_data(e);   /* 0:w- 1:w+ 2:h- 3:h+ */
     layout_tile_t * t = &edit.tiles[sel];
-    if (d == 0 && t->w > 1) t->w--;
-    if (d == 1 && t->col + t->w < LAYOUT_COLS) t->w++;
-    if (d == 2 && t->h > 1) t->h--;
-    if (d == 3 && t->row + t->h < LAYOUT_ROWS) t->h++;
+    int w = t->w, h = t->h;
+    if (d == 0 && w > 1) w--;
+    if (d == 1 && t->col + w < LAYOUT_COLS) w++;
+    if (d == 2 && h > 1) h--;
+    if (d == 3 && t->row + h < LAYOUT_ROWS) h++;
+    /* Only grow/shrink if it doesn't collide with another tile. */
+    if (!would_overlap(sel, t->col, t->row, w, h)) { t->w = w; t->h = h; }
     place_rect(sel); update_sel_label();
 }
 static void on_toggle_vis(lv_event_t * e) {
