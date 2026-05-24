@@ -28,6 +28,9 @@ lv_obj_t * screen_forecast_create(void);
 void screen_inbox_show(void);
 /* Agenda modal — upcoming calendar events (HA + iCal). */
 void screen_calendar_show(void);
+/* Home-tile layout editor ("Indeling"). */
+void screen_layout_editor_show(void);
+lv_obj_t * screen_layout_editor_create(void);
 lv_obj_t * screen_forecast_create(void);
 lv_obj_t * screen_stats_create(void);
 lv_obj_t * screen_schedule_create(void);

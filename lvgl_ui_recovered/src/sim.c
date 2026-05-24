@@ -135,6 +135,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "wifi",        screen_wifi_create },
     { "adapters",    screen_adapters_create },
     { "domoticz",    screen_domoticz_create },
+    { "layout",      screen_layout_editor_create },
 };
 #define N_SCREENS ((int)(sizeof SCREENS / sizeof SCREENS[0]))
 

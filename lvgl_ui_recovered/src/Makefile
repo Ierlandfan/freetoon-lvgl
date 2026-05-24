@@ -96,7 +96,7 @@ APP_SRC       := $(ENTRY) boxtalk.c ui_stack.c screen_home.c screen_thermostat.c
                  screen_heater_advanced.c \
                  screen_vent_remote.c screen_vent_advanced.c \
                  screen_lights.c screen_marketplace.c screen_zwave.c screen_wifi.c \
-                 screen_adapters.c screen_domoticz.c screen_calendar.c \
+                 screen_adapters.c screen_domoticz.c screen_calendar.c screen_layout_editor.c \
                  stats.c airhist.c homewizard.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c \
                  wastecollection.c ventilation.c homeassistant.c \
                  notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \

@@ -1469,6 +1469,7 @@ static void on_cal_enabled_change(lv_event_t * e) {
     settings.calendar_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
 static void on_cal_open_click(lv_event_t * e) { (void)e; screen_calendar_show(); }
+static void open_layout_editor(lv_event_t * e) { (void)e; screen_layout_editor_show(); }
 static void on_cal_save_click(lv_event_t * e) {
     (void)e;
     if (ta_cal_ha) { const char * v = lv_textarea_get_text(ta_cal_ha);
@@ -2994,6 +2995,8 @@ lv_obj_t * screen_settings_create(void) {
               "RSS headlines ticker", open_news_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Agenda",
               "HA + iCal events", open_calendar_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, "Indeling",
+              "tile layout editor", open_layout_editor); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, "Restart UI",
               "reload settings", open_restart_confirm); n++;
     #undef GX
