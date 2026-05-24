@@ -2041,11 +2041,28 @@ static void home_set_dot(int active) {
 static void home_show_page(int n) {
     home_tile_page = n;
     lv_obj_t * p0[5] = { tile_waste, tile_energy, tile_vent, tile_family, tile_water };
+    static const int p0_type[5] = { LT_WASTE, LT_ENERGY, LT_VENT, LT_FAMILY, LT_WATER };
     if (n == 0) {
-        for (int i = 0; i < 5; i++) if (p0[i]) lv_obj_clear_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < 5; i++) {
+            if (!p0[i]) continue;
+            /* In custom layout, the layout decides visibility — don't un-hide a
+             * tile the user removed/hid (the offline pass only covers 4 of 5). */
+            if (settings.custom_layout_enabled) {
+                const layout_tile_t * L = layout_find(p0_type[i]);
+                if (!L || !L->visible) { lv_obj_add_flag(p0[i], LV_OBJ_FLAG_HIDDEN); continue; }
+            }
+            lv_obj_clear_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
+        }
         if (home_page1) lv_obj_add_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
-        /* ticker belongs to page 0 — show it again (if news is on) */
-        if (news_ticker && settings.news_enabled) lv_obj_clear_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+        /* ticker belongs to page 0 — show it again (if news is on, and the
+         * custom layout hasn't hidden it). */
+        if (news_ticker && settings.news_enabled) {
+            const layout_tile_t * L = settings.custom_layout_enabled ? layout_find(LT_NEWS_TICKER) : NULL;
+            if (!settings.custom_layout_enabled || (L && L->visible))
+                lv_obj_clear_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+        }
         apply_offline_tile_visibility();   /* re-hide offline tiles after un-hiding */
     } else {
         for (int i = 0; i < 5; i++) if (p0[i]) lv_obj_add_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
