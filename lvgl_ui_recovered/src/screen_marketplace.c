@@ -110,8 +110,11 @@ static void * fetch_thread(void * arg) {
     (void)arg;
     if (status_lbl)
         lv_label_set_text(status_lbl, "Fetching catalog...");
-    catalog_len = http_fetch(CATALOG_URL, catalog_buf, sizeof catalog_buf);
-    if (catalog_len <= 0) {
+    /* http_fetch returns 0 on success / -1 on failure (NOT a byte count) and
+     * fills catalog_buf. Treat a non-zero rc OR an empty body as failure. */
+    int rc = http_fetch(CATALOG_URL, catalog_buf, sizeof catalog_buf);
+    catalog_len = (int)strlen(catalog_buf);
+    if (rc != 0 || catalog_len <= 0) {
         if (status_lbl)
             lv_label_set_text(status_lbl,
                 "Catalog fetch failed - check your internet.");
