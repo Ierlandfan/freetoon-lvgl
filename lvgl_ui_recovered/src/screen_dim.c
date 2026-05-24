@@ -19,8 +19,7 @@
 #include <time.h>
 
 LV_FONT_DECLARE(lv_font_montserrat_96_custom);
-
-LV_FONT_DECLARE(lv_font_montserrat_96_custom);
+LV_FONT_DECLARE(lv_font_montserrat_64_custom);   /* big indoor-temp readout */
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_clock;
@@ -491,7 +490,7 @@ lv_obj_t * screen_dim_create(void) {
 
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_64_custom, 0);
     lv_label_set_text(lbl_temp, "-- C");
     lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(45));
 
