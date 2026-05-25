@@ -148,7 +148,9 @@ static void select_tile(int i) {
 static int drag_last_col = -1, drag_last_row = -1;
 static layout_t drag_preview;
 static int       drag_preview_ok;
-static int       suppress_release;        /* set by long-press so RELEASE doesn't commit a drag */
+static int       long_pressed;            /* held long enough on this press */
+static int       drag_moved;              /* finger moved → it's a drag, never a delete */
+static int       press_x0, press_y0;      /* rect pixel pos when the press started */
 static void show_delete_confirm(int i);   /* fwd */
 
 static void rect_event(lv_event_t * e) {
@@ -158,16 +160,20 @@ static void rect_event(lv_event_t * e) {
     if (code == LV_EVENT_PRESSED) {
         select_tile(i);
         drag_last_col = drag_last_row = -1;
-        suppress_release = 0;
+        long_pressed = drag_moved = 0;
+        press_x0 = lv_obj_get_x(r); press_y0 = lv_obj_get_y(r);
     } else if (code == LV_EVENT_LONG_PRESSED) {
-        /* Held in place (not dragged) → offer to delete this tile. */
-        suppress_release = 1;
-        place_rect(i);                     /* undo any tiny drag jitter */
-        show_delete_confirm(i);
+        /* Just mark it. The delete is offered on RELEASE and only if the tile was
+         * NOT dragged, so a long-press-then-drag stays a drag, never a delete. */
+        long_pressed = 1;
     } else if (code == LV_EVENT_PRESSING) {
         lv_indev_t * in = lv_indev_get_act();
         lv_point_t v; lv_indev_get_vect(in, &v);
         lv_obj_set_pos(r, lv_obj_get_x(r) + v.x, lv_obj_get_y(r) + v.y);
+        int dx = lv_obj_get_x(r) - press_x0, dy = lv_obj_get_y(r) - press_y0;
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+        if (dx > 10 || dy > 10) drag_moved = 1;   /* moved enough → it's a drag */
         /* Re-evaluate only when the snap target cell changes — cheap + smooth. */
         int col, row; snap_cell(i, &col, &row);
         if (col != drag_last_col || row != drag_last_row) {
@@ -180,9 +186,10 @@ static void rect_event(lv_event_t * e) {
             preview_others(drag_preview_ok ? &drag_preview : &edit, i);
         }
     } else if (code == LV_EVENT_RELEASED) {
-        if (suppress_release) {            /* a long-press opened the delete dialog */
-            suppress_release = 0;
+        if (long_pressed && !drag_moved) {   /* held in place, no drag → confirm delete */
             for (int k = 0; k < edit.count; k++) if (rects[k]) place_rect(k);
+            select_tile(i);
+            show_delete_confirm(i);
             drag_last_col = drag_last_row = -1;
             return;
         }
@@ -833,7 +840,7 @@ void screen_layout_editor_show(void) {
     if (modal) lv_obj_del(modal);
     modal = NULL; chooser = NULL; type_grid = NULL; sel = -1;
     preset_mgr = NULL; preset_list = NULL; name_modal = NULL; name_ta = NULL;
-    confirm_modal = NULL; confirm_idx = -1; suppress_release = 0;
+    confirm_modal = NULL; confirm_idx = -1; long_pressed = drag_moved = 0;
     edit_page = 0; page_btn = NULL;
     drag_last_col = drag_last_row = -1;
     /* Working copy; ensure we have something to edit. */

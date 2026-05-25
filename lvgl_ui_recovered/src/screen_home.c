@@ -2606,7 +2606,9 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_src(moon_phase_img, moon_phase_icon(40));
     lv_obj_set_style_img_recolor(moon_phase_img, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(moon_phase_img, 255, 0);
-    lv_img_set_zoom(moon_phase_img, 154);   /* ~24 px, sized to the header line */
+    /* NOTE: do NOT lv_img_set_zoom() these weather-icon assets — they're a color
+     * format the SW renderer can't transform, so any non-256 zoom draws nothing
+     * (the same bug that hid the forecast icons). Render at native size. */
     /* Sits at the start of the "<city> - X.X°C now" location/forecast header
      * (just before the outside temperature). White at night, hidden during
      * the day — gated in refresh_cb via is_daytime_now(), mirroring dim. */
