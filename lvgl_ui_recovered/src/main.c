@@ -10,6 +10,7 @@
 #include "display.h"
 #include "screens.h"
 #include "settings.h"
+#include "layout.h"
 #include "tile_slots.h"
 #include "update_check.h"
 #include "backlight.h"
@@ -78,7 +79,7 @@ int main(int argc, char** argv) {
     lv_indev_drv_register(&indev_drv);
 
     settings_load();
-    { extern void layout_load(void); layout_load(); }   /* home-tile layout model */
+    layout_load_named(settings.active_layout);   /* home-tile layout: active preset */
 
     /* Marketplace registry — load before boxtalk so the handshake's
      * tile_slots_subscribe_all() has something to subscribe to. */

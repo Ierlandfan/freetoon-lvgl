@@ -177,6 +177,17 @@ static void set_forecast_icon(lv_obj_t * cloud, lv_obj_t * sun,
     }
 }
 
+/* Nearest enabled Montserrat font for a target pixel height (enabled sizes:
+ * 12,14,18,20,22,…). Scales the forecast text when the tile is resized smaller
+ * than the native full-width strip. Clamped to [12,22]. */
+static const lv_font_t * font_for(int px) {
+    if (px >= 22) return &lv_font_montserrat_22;
+    if (px >= 20) return &lv_font_montserrat_20;
+    if (px >= 18) return &lv_font_montserrat_18;
+    if (px >= 14) return &lv_font_montserrat_14;
+    return &lv_font_montserrat_12;
+}
+
 static lv_obj_t * water_spinner;
 static lv_obj_t * forecast_box;
 static lv_obj_t * lbl_forecast_city = NULL;
@@ -3241,8 +3252,6 @@ lv_obj_t * screen_home_create(void) {
            header above; height shrunk to match so the bottom edge stays
            flush with the screen. --- */
     forecast_box = lv_obj_create(scr_root);
-    lv_obj_set_size(forecast_box, 1004, 116);
-    lv_obj_set_pos(forecast_box, 10, 480);
     lv_obj_set_style_bg_color(forecast_box, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_radius(forecast_box, 12, 0);
     lv_obj_set_style_border_width(forecast_box, 0, 0);
@@ -3251,23 +3260,52 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_add_flag(forecast_box, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(forecast_box, open_forecast, LV_EVENT_CLICKED, NULL);
 
-    /* Custom layout can hide the ticker and/or the forecast strip (the ticker's
-     * per-page show is also guarded in home_show_page; this covers the initial
-     * state + the forecast, which isn't page-toggled). Position stays native. */
+    /* Geometry: the native full-width bottom strip, unless a custom layout
+     * places the forecast tile elsewhere — then take its grid rect and SCALE
+     * the day-columns/icons/text to fit (so a half-screen forecast doesn't clip
+     * its icons off the edge). The city header is anchored to the native strip,
+     * so it's hidden whenever the forecast is grid-placed. */
+    int fbx = 10, fby = 480, fbw = 1004, fbh = 116;
+    int fc_show = 1;
     if (settings.custom_layout_enabled) {
         const layout_tile_t * Lt = layout_find(LT_NEWS_TICKER);
         if (news_ticker && (!Lt || !Lt->visible)) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
         const layout_tile_t * Lf = layout_find(LT_FORECAST);
-        if (!Lf || !Lf->visible) {
-            lv_obj_add_flag(forecast_box, LV_OBJ_FLAG_HIDDEN);
+        if (!Lf || !Lf->visible) fc_show = 0;
+        else {
+            layout_cell_px(Lf->col, Lf->row, Lf->w, Lf->h, &fbx, &fby, &fbw, &fbh);
+            fbx += 4; fby += 4; fbw -= 8; fbh -= 8;     /* small inter-tile gap */
             if (lbl_forecast_city) lv_obj_add_flag(lbl_forecast_city, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    lv_obj_set_size(forecast_box, fbw, fbh);
+    lv_obj_set_pos(forecast_box, fbx, fby);
+    if (!fc_show) {
+        lv_obj_add_flag(forecast_box, LV_OBJ_FLAG_HIDDEN);
+        if (lbl_forecast_city) lv_obj_add_flag(lbl_forecast_city, LV_OBJ_FLAG_HIDDEN);
+    }
     {
-        int col_w = 1004 / WEATHER_FORECAST_DAYS;
+        /* Scale relative to the native column (200x104 inside the strip); never
+         * upscale, and floor at 0.30 so it stays legible at tiny sizes. */
+        int pad = 6;
+        int inner_w = fbw - 2 * pad; if (inner_w < WEATHER_FORECAST_DAYS * 16) inner_w = WEATHER_FORECAST_DAYS * 16;
+        int inner_h = fbh - 2 * pad; if (inner_h < 36) inner_h = 36;
+        int col_w = inner_w / WEATHER_FORECAST_DAYS;
+        float sw = col_w / 200.0f, sh = inner_h / 104.0f;
+        float scale = sw < sh ? sw : sh;
+        if (scale > 1.0f) scale = 1.0f;
+        if (scale < 0.30f) scale = 0.30f;
+        const lv_font_t * f_big = font_for((int)(22 * scale));
+        const lv_font_t * f_wind = font_for((int)(18 * scale));
+        int dx = (int)(8 * scale), dy = (int)(4 * scale);
+        /* NOTE: we scale columns + text but NOT the weather-icon images — these
+         * assets are in a color format the SW renderer can't transform, so
+         * lv_img_set_zoom() at any non-256 value draws nothing. They're already
+         * small (~40px) and fit the columns (LT_FORECAST min width keeps columns
+         * wide enough), so they render at native size. */
         for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
             lv_obj_t * col = lv_obj_create(forecast_box);
-            lv_obj_set_size(col, col_w - 4, 104);   /* fit the shorter box (was 132 → wind clipped) */
+            lv_obj_set_size(col, col_w - 4, inner_h);
             lv_obj_set_pos(col, i * col_w + 2, 0);
             lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(col, 0, 0);
@@ -3277,23 +3315,22 @@ lv_obj_t * screen_home_create(void) {
 
             fc_day_lbl[i] = lv_label_create(col);
             lv_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(COL_TEXT_HI), 0);
-            lv_obj_set_style_text_font(fc_day_lbl[i], &lv_font_montserrat_22, 0);
+            lv_obj_set_style_text_font(fc_day_lbl[i], f_big, 0);
             lv_label_set_text(fc_day_lbl[i], "--");
-            lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_LEFT, 8, 4);
+            lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_LEFT, dx, dy);
 
             fc_temp_lbl[i] = lv_label_create(col);
             lv_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(COL_TEMP_YELLOW), 0);
-            lv_obj_set_style_text_font(fc_temp_lbl[i], &lv_font_montserrat_22, 0);
+            lv_obj_set_style_text_font(fc_temp_lbl[i], f_big, 0);
             lv_label_set_text(fc_temp_lbl[i], "");
-            lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_RIGHT, -8, 4);
+            lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_RIGHT, -dx, dy);
 
-            /* Big weather icon centered in the column, fills the room
-               freed by the dropped description text. */
+            /* Big weather icon centered in the column, zoomed to the scale. */
             fc_icon[i] = lv_img_create(col);
             lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(0xc8d4e0), 0);
             lv_obj_set_style_img_recolor_opa(fc_icon[i], 255, 0);
             lv_img_set_src(fc_icon[i], weather_icon_for_lg("d"));   /* default cloud */
-            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 8);
+            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, dy * 2);
             lv_obj_add_flag(fc_icon[i], LV_OBJ_FLAG_EVENT_BUBBLE);
 
             /* Sun overlay for 'b'/'j' partly-cloudy codes — small,
@@ -3302,20 +3339,20 @@ lv_obj_t * screen_home_create(void) {
              * toggles visibility per refresh. */
             fc_icon_sun[i] = lv_img_create(col);
             lv_img_set_src(fc_icon_sun[i], weather_icon_for("a"));
-            lv_img_set_zoom(fc_icon_sun[i], 180);   /* 70 % of cloud size */
+            lv_img_set_zoom(fc_icon_sun[i], 180);   /* 70 % of cloud size (native behavior) */
             lv_obj_set_style_img_recolor(fc_icon_sun[i],
                                          lv_color_hex(0xffd24a), 0);
             lv_obj_set_style_img_recolor_opa(fc_icon_sun[i], 255, 0);
             lv_obj_align_to(fc_icon_sun[i], fc_icon[i], LV_ALIGN_TOP_LEFT,
-                            -8, -8);
+                            -dx, -dx);
             lv_obj_add_flag(fc_icon_sun[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(fc_icon_sun[i], LV_OBJ_FLAG_EVENT_BUBBLE);
 
             fc_wind_lbl[i] = lv_label_create(col);
             lv_obj_set_style_text_color(fc_wind_lbl[i], lv_color_hex(COL_TEXT_DIM), 0);
-            lv_obj_set_style_text_font(fc_wind_lbl[i], &lv_font_montserrat_18, 0);
+            lv_obj_set_style_text_font(fc_wind_lbl[i], f_wind, 0);
             lv_label_set_text(fc_wind_lbl[i], "");
-            lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_MID, 12, -4);
+            lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_MID, dx + 4, -dy);
 
             /* Wind-direction arrow next to the wind label. Rotated per
                forecast via lv_img_set_angle. Hidden until a valid
@@ -3323,7 +3360,7 @@ lv_obj_t * screen_home_create(void) {
             fc_wind_arrow[i] = lv_img_create(col);
             lv_img_set_src(fc_wind_arrow[i], &icon_wind_arrow);
             lv_img_set_pivot(fc_wind_arrow[i], 16, 16);
-            lv_obj_align(fc_wind_arrow[i], LV_ALIGN_BOTTOM_LEFT, 8, -4);
+            lv_obj_align(fc_wind_arrow[i], LV_ALIGN_BOTTOM_LEFT, dx, -dy);
             lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_EVENT_BUBBLE);
             lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
 

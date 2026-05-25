@@ -209,6 +209,11 @@ typedef struct {
      * is used unchanged. */
     int  custom_layout_enabled;
 
+    /* Active layout preset name (empty = the default toonui_layout.cfg). Named
+     * presets live at <data>/toonui_layout_<name>.cfg; switching writes the name
+     * here so it's restored on the next boot. */
+    char active_layout[24];
+
     /* Client mode — this Toon is a "slave" that mirrors a master Toon over
      * its PWA HTTP API instead of talking to local HCB daemons. When 1, all
      * local integrations (BoxTalk, P1, meteradapter, weather, waste, vent,

@@ -15,6 +15,7 @@
 #include "display.h"
 #include "screens.h"
 #include "settings.h"
+#include "layout.h"
 #include "boxtalk.h"
 #include "weather.h"
 #include "wastecollection.h"
@@ -167,6 +168,12 @@ int main(int argc, char ** argv) {
 
     settings_load();   /* defaults when /mnt/data/toonui.cfg is absent */
     mock_state();
+    /* Sim-only: exercise a custom layout. $TOONUI_SIM_CUSTOM_LAYOUT turns it on
+     * and loads $TOONUI_DATA_DIR/toonui_layout.cfg so screens render from it. */
+    if (getenv("TOONUI_SIM_CUSTOM_LAYOUT")) {
+        settings.custom_layout_enabled = 1;
+        layout_load_named("");
+    }
 
     const char * mode = (argc > 1) ? argv[1] : "home";
 
@@ -195,12 +202,21 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
-    /* single named screen */
+    /* single named screen, optionally followed by "x,y" taps to drive it */
     const char * out = (argc > 2) ? argv[2] : "/tmp/sim.ppm";
     create_fn fn = screen_home_create;
     for (int i = 0; i < N_SCREENS; i++)
         if (!strcmp(mode, SCREENS[i].name)) { fn = SCREENS[i].fn; break; }
-    render_one(fn, out);
-    fprintf(stderr, "[sim] %s -> %s  (%dx%d)\n", mode, out, DISP_HOR, DISP_VER);
+    lv_obj_t * scr = fn();
+    lv_scr_load(scr);
+    pump(150);
+    int taps = 0;
+    for (int a = 3; a < argc; a++) {
+        int x, y;
+        if (sscanf(argv[a], "%d,%d", &x, &y) == 2) { sim_tap(x, y); taps++; }
+    }
+    pump(60);
+    dump_ppm(out);
+    fprintf(stderr, "[sim] %s (%d taps) -> %s  (%dx%d)\n", mode, taps, out, DISP_HOR, DISP_VER);
     return 0;
 }

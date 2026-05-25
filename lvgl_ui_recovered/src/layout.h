@@ -15,6 +15,8 @@
 #define LAYOUT_MAX_TILES 24
 #define LAYOUT_COLS      12      /* grid columns across the screen */
 #define LAYOUT_ROWS       8      /* grid rows down the screen      */
+#define LAYOUT_NAME_MAX  24      /* max preset-name length (incl. NUL) */
+#define LAYOUT_MAX_PRESETS 12
 
 /* Tile kinds the home screen can render. Keep LT_* stable — they're persisted
  * as integers in the layout file. Append new kinds at the end. */
@@ -51,14 +53,37 @@ typedef struct {
 
 extern layout_t g_layout;
 
-void layout_load(void);            /* load from cfg, or seed defaults */
-void layout_save(void);
+void layout_load(void);            /* load the default preset, or seed defaults */
+void layout_save(void);            /* save g_layout to the default preset file */
 void layout_reset_default(void);   /* overwrite g_layout with the built-in default */
+
+/* Named presets — files at <data>/toonui_layout_<name>.cfg. An empty name maps
+ * to the default toonui_layout.cfg (same file layout_load/layout_save use). */
+void layout_load_named(const char * name);
+void layout_save_named(const char * name);
+int  layout_list_presets(char out[][LAYOUT_NAME_MAX], int max);  /* -> count */
+void layout_delete_preset(const char * name);
 
 /* Map a grid rect → pixel rect for the active screen. */
 void layout_cell_px(int col, int row, int w, int h,
                     int * x, int * y, int * pw, int * ph);
 
 const char * layout_type_name(int type);   /* human label for the editor palette */
+
+/* Smallest grid span (in cells) a tile type's content renders sensibly at.
+ * Multi-row data tiles (energy, agenda, …) report a min height > 2 so the editor
+ * refuses to put them in a short "Half"/"Breed" tile; strip tiles (ticker,
+ * forecast) report min height 1. Writes 0 to both for an unknown type. */
+void layout_type_min(int type, int * min_w, int * min_h);
+
+/* First placed tile of `type`, or NULL if none. */
+const layout_tile_t * layout_find(int type);
+
+/* "Push & re-pack" reflow. `moved` is already at its desired col/row/w/h; shove
+ * the other visible page-0 tiles straight down to clear any collision with it,
+ * then pull them back up to close the gaps (moved stays pinned where the user
+ * dropped it). Mutates L in place. Returns 1 on success, 0 if a tile can no
+ * longer fit on the grid — in which case the caller should discard L and revert. */
+int layout_reflow_push(layout_t * L, int moved);
 
 #endif

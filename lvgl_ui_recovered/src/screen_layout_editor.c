@@ -1,11 +1,15 @@
 /*
  * screen_layout_editor.c — "Indeling" (home-tile layout) editor. Phase 2.
  *
- * Full-screen modal that edits a working copy of the page-0 tiles in the grid
- * layout (layout.c): drag a tile to move (snaps to the grid on release), the
- * +/- buttons resize the selected tile, and the eye button hides/shows it.
- * Save writes the layout, enables custom_layout_enabled, and rebuilds home;
- * Cancel discards. Edits 1:1 on the real screen so what you see is what renders.
+ * Full-screen modal that edits a working copy of the page-0 grid tiles
+ * (layout.c). Drag a tile to move it: instead of blocking an overlapping drop,
+ * the other tiles are pushed out of the way and the grid re-packs upward
+ * (layout_reflow_push) — the moved tile stays where you drop it, and the reflow
+ * is previewed live while you drag (green = fits, red = no room). The +/- buttons
+ * resize the selected tile (also reflowing), the eye button hides/shows it, and
+ * "+ Tegel" opens a palette to insert a tile at a chosen size (Klein/Half/Groot/
+ * Breed). Save writes the layout, enables custom_layout_enabled, and restarts the
+ * UI to apply; Cancel discards. 1:1 on the real screen — WYSIWYG.
  */
 #include "lvgl/lvgl.h"
 #include "screens.h"
@@ -28,10 +32,34 @@
 #define BAR_H  64
 
 static lv_obj_t * modal;
+static lv_obj_t * chooser;      /* the "+ Tegel" size/type palette, when open */
 static lv_obj_t * rects[LAYOUT_MAX_TILES];
 static layout_t   edit;
 static int        sel = -1;
 static lv_obj_t * sel_lbl;
+
+/* insert-palette size presets (grid units) */
+static const struct { const char * name; int w, h; } SIZES[] = {
+    { "Klein\n3x2",  3, 2 },
+    { "Half\n6x2",   6, 2 },
+    { "Groot\n6x4",  6, 4 },
+    { "Breed\n12x2", 12, 2 },
+};
+#define N_SIZES ((int)(sizeof SIZES / sizeof SIZES[0]))
+static int        pick_w = 6, pick_h = 2;   /* currently-selected insert size */
+static lv_obj_t * size_btns[N_SIZES];
+static lv_obj_t * type_grid;                 /* palette's type-button container */
+static lv_obj_t * preset_mgr;                /* "Indelingen" preset-manager modal */
+static lv_obj_t * preset_list;               /* scrollable list inside preset_mgr */
+static lv_obj_t * name_modal;                /* keyboard modal for "Opslaan als…" */
+static lv_obj_t * name_ta;                   /* its text area */
+
+/* tile types offerable in the insert palette (LT_SLOT is page-1 only). */
+static const int PALETTE[] = {
+    LT_THERMOSTAT, LT_FORECAST, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
+    LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS,
+};
+#define N_PALETTE ((int)(sizeof PALETTE / sizeof PALETTE[0]))
 
 static const uint32_t TYPE_COL[LT_COUNT] = {
     [LT_THERMOSTAT]=0x335577, [LT_FORECAST]=0x4488aa, [LT_NEWS_TICKER]=0x666688,
@@ -44,8 +72,8 @@ static void place_rect(int i);
 static void create_rect(int i);
 static void update_sel_label(void);
 
-/* True if grid rect (c,r,w,h) would overlap any OTHER visible page-0 tile —
- * used to reject a move/resize that would stack tiles on top of each other. */
+/* True if grid rect (c,r,w,h) overlaps any OTHER visible page-0 tile.
+ * Still used by the "find a free hole" / un-hide paths. */
 static int would_overlap(int idx, int c, int r, int w, int h) {
     for (int j = 0; j < edit.count; j++) {
         if (j == idx) continue;
@@ -55,6 +83,46 @@ static int would_overlap(int idx, int c, int r, int w, int h) {
             r < t->row + t->h && t->row < r + h) return 1;
     }
     return 0;
+}
+
+/* First free top-left cell that fits a w*h tile (excluding tile idx, -1=none). */
+static int find_free_cell(int idx, int w, int h, int * oc, int * orow) {
+    for (int r = 0; r <= LAYOUT_ROWS - h; r++)
+        for (int c = 0; c <= LAYOUT_COLS - w; c++)
+            if (!would_overlap(idx, c, r, w, h)) { *oc = c; *orow = r; return 1; }
+    return 0;
+}
+
+/* Grid cell the rect's current pixel position rounds to, clamped on-screen. */
+static void snap_cell(int i, int * out_col, int * out_row) {
+    lv_obj_t * r = rects[i];
+    int w = edit.tiles[i].w, h = edit.tiles[i].h;
+    int col = (lv_obj_get_x(r) + CELL_W / 2) / CELL_W;
+    int row = (lv_obj_get_y(r) + CELL_H / 2) / CELL_H;
+    if (col < 0) col = 0;
+    if (row < 0) row = 0;
+    if (col + w > LAYOUT_COLS) col = LAYOUT_COLS - w;
+    if (row + h > LAYOUT_ROWS) row = LAYOUT_ROWS - h;
+    *out_col = col; *out_row = row;
+}
+
+/* Try moving tile i to (col,row) and re-pack the rest into `out`.
+ * Returns 1 if the whole arrangement fits the grid. */
+static int trial_move(int i, int col, int row, layout_t * out) {
+    *out = edit;
+    out->tiles[i].col = col;
+    out->tiles[i].row = row;
+    return layout_reflow_push(out, i);
+}
+
+/* Position every rect EXCEPT `except` from layout `src` (used for live preview
+ * of where the other tiles re-pack to while dragging). */
+static void preview_others(const layout_t * src, int except) {
+    for (int k = 0; k < edit.count; k++) {
+        if (k == except || !rects[k]) continue;
+        const layout_tile_t * t = &src->tiles[k];
+        lv_obj_set_pos(rects[k], t->col * CELL_W, t->row * CELL_H);
+    }
 }
 
 static void select_tile(int i) {
@@ -67,29 +135,40 @@ static void select_tile(int i) {
     update_sel_label();
 }
 
+static int drag_last_col = -1, drag_last_row = -1;
+static layout_t drag_preview;
+static int       drag_preview_ok;
+
 static void rect_event(lv_event_t * e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t * r = lv_event_get_target(e);
     int i = (int)(intptr_t)lv_obj_get_user_data(r);
     if (code == LV_EVENT_PRESSED) {
         select_tile(i);
+        drag_last_col = drag_last_row = -1;
     } else if (code == LV_EVENT_PRESSING) {
         lv_indev_t * in = lv_indev_get_act();
         lv_point_t v; lv_indev_get_vect(in, &v);
         lv_obj_set_pos(r, lv_obj_get_x(r) + v.x, lv_obj_get_y(r) + v.y);
-    } else if (code == LV_EVENT_RELEASED) {
-        int col = (lv_obj_get_x(r) + CELL_W / 2) / CELL_W;
-        int row = (lv_obj_get_y(r) + CELL_H / 2) / CELL_H;
-        if (col < 0) col = 0;
-        if (row < 0) row = 0;
-        if (col + edit.tiles[i].w > LAYOUT_COLS) col = LAYOUT_COLS - edit.tiles[i].w;
-        if (row + edit.tiles[i].h > LAYOUT_ROWS) row = LAYOUT_ROWS - edit.tiles[i].h;
-        /* Reject a drop that would stack on another tile — snap back. */
-        if (!would_overlap(i, col, row, edit.tiles[i].w, edit.tiles[i].h)) {
-            edit.tiles[i].col = col; edit.tiles[i].row = row;
+        /* Re-evaluate only when the snap target cell changes — cheap + smooth. */
+        int col, row; snap_cell(i, &col, &row);
+        if (col != drag_last_col || row != drag_last_row) {
+            drag_last_col = col; drag_last_row = row;
+            drag_preview_ok = trial_move(i, col, row, &drag_preview);
+            lv_obj_set_style_border_width(r, 4, 0);
+            lv_obj_set_style_border_color(r,
+                lv_color_hex(drag_preview_ok ? 0x33dd66 : 0xdd4444), 0);
+            /* Live re-pack the other tiles (or snap them back if it won't fit). */
+            preview_others(drag_preview_ok ? &drag_preview : &edit, i);
         }
-        place_rect(i);   /* to the accepted cell, or back to the old one */
-        update_sel_label();
+    } else if (code == LV_EVENT_RELEASED) {
+        int col, row; snap_cell(i, &col, &row);
+        layout_t res;
+        if (trial_move(i, col, row, &res)) edit = res;   /* commit re-packed layout */
+        /* else: edit untouched → everything snaps back to where it was */
+        for (int k = 0; k < edit.count; k++) if (rects[k]) place_rect(k);
+        select_tile(i);
+        drag_last_col = drag_last_row = -1;
     }
 }
 
@@ -131,66 +210,407 @@ static void update_sel_label(void) {
         layout_type_name(t->type), t->w, t->h, t->visible ? "" : "(verborgen)");
 }
 
-/* Add a not-yet-placed tile type into the first free 2x2 cell. */
-static void on_add(lv_event_t * e) {
-    (void)e;
+/* ---- insert palette ("+ Tegel") --------------------------------------- */
+
+/* Insert a tile of `type` at the picked size: drop it in the first free hole;
+ * if the grid is full, place it top-left and push the rest down (re-pack). */
+static void do_insert(int type, int w, int h) {
     if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, "Maximum bereikt"); return; }
-    static const int cand[] = { LT_NEWS_SUMMARY, LT_CALENDAR, LT_LIGHTS };
-    int type = 0;
-    for (size_t k = 0; k < sizeof cand / sizeof cand[0]; k++) {
-        int present = 0;
-        for (int i = 0; i < edit.count; i++) if (edit.tiles[i].type == cand[k]) { present = 1; break; }
-        if (!present) { type = cand[k]; break; }
+    if (w > LAYOUT_COLS) w = LAYOUT_COLS;
+    if (h > LAYOUT_ROWS) h = LAYOUT_ROWS;
+    int i = edit.count;
+    int c, r;
+    if (find_free_cell(-1, w, h, &c, &r)) {
+        edit.tiles[i] = (layout_tile_t){ .type = type, .page = 0, .col = c, .row = r,
+                                         .w = w, .h = h, .visible = 1, .slot = -1 };
+        edit.count++;
+    } else {
+        layout_t s = edit;
+        s.tiles[i] = (layout_tile_t){ .type = type, .page = 0, .col = 0, .row = 0,
+                                      .w = w, .h = h, .visible = 1, .slot = -1 };
+        s.count++;
+        if (!layout_reflow_push(&s, i)) {
+            lv_label_set_text(sel_lbl, "Geen ruimte - kies een kleinere tegel of verberg er een");
+            return;
+        }
+        edit = s;
     }
-    if (!type) { lv_label_set_text(sel_lbl, "Alle types al toegevoegd"); return; }
-    int fc = -1, fr = -1;
-    for (int r = 0; r <= LAYOUT_ROWS - 2 && fc < 0; r++)
-        for (int c = 0; c <= LAYOUT_COLS - 2; c++)
-            if (!would_overlap(-1, c, r, 2, 2)) { fc = c; fr = r; break; }
-    if (fc < 0) { lv_label_set_text(sel_lbl, "Geen ruimte - verberg eerst een tegel"); return; }
-    int i = edit.count++;
-    edit.tiles[i] = (layout_tile_t){ .type = type, .page = 0, .col = fc, .row = fr,
-                                     .w = 2, .h = 2, .visible = 1, .slot = -1 };
     create_rect(i);
+    for (int k = 0; k < edit.count; k++) if (rects[k]) place_rect(k);  /* others may have moved */
     select_tile(i);
 }
 
-/* toolbar actions ------------------------------------------------------- */
+static void close_chooser(void) { if (chooser) { lv_obj_del(chooser); chooser = NULL; type_grid = NULL; } }
+
+static void on_type_pick(lv_event_t * e);   /* fwd */
+
+/* (Re)fill the palette's type list with the types that aren't already placed
+ * AND whose content fits the currently-picked size (pick_w x pick_h). */
+static void populate_types(void) {
+    if (!type_grid) return;
+    lv_obj_clean(type_grid);
+    int added = 0;
+    for (int p = 0; p < N_PALETTE; p++) {
+        int type = PALETTE[p];
+        int present = 0;
+        for (int k = 0; k < edit.count; k++)
+            if (edit.tiles[k].type == type) { present = 1; break; }
+        if (present) continue;
+        int mw, mh; layout_type_min(type, &mw, &mh);
+        if (pick_w < mw || pick_h < mh) continue;   /* too small for this content */
+        lv_obj_t * b = lv_btn_create(type_grid);
+        lv_obj_set_size(b, SCR_W * 72 / 100 / 3 - 18, 52);
+        lv_obj_set_style_bg_color(b, lv_color_hex(TYPE_COL[type % LT_COUNT]), 0);
+        lv_obj_add_event_cb(b, on_type_pick, LV_EVENT_CLICKED, (void *)(intptr_t)type);
+        lv_obj_t * l = lv_label_create(b);
+        lv_label_set_text(l, layout_type_name(type));
+        lv_obj_set_style_text_color(l, lv_color_hex(0x0a121e), 0);
+        lv_obj_center(l);
+        added++;
+    }
+    if (!added) {
+        lv_obj_t * l = lv_label_create(type_grid);
+        lv_label_set_text(l, "Geen types passen in deze grootte - kies een grotere tegel");
+        lv_obj_set_style_text_color(l, lv_color_hex(0xccddee), 0);
+    }
+}
+
+static void on_size_pick(lv_event_t * e) {
+    int s = (int)(intptr_t)lv_event_get_user_data(e);
+    pick_w = SIZES[s].w; pick_h = SIZES[s].h;
+    for (int k = 0; k < N_SIZES; k++)
+        lv_obj_set_style_border_width(size_btns[k], k == s ? 3 : 0, 0);
+    populate_types();   /* the eligible type list depends on the picked size */
+}
+static void on_type_pick(lv_event_t * e) {
+    int type = (int)(intptr_t)lv_event_get_user_data(e);
+    close_chooser();
+    do_insert(type, pick_w, pick_h);
+}
+static void on_chooser_close(lv_event_t * e) { (void)e; close_chooser(); }
+
+static void on_add(lv_event_t * e) {
+    (void)e;
+    if (chooser) return;
+    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, "Maximum bereikt"); return; }
+
+    chooser = lv_obj_create(modal);
+    lv_obj_set_size(chooser, SCR_W * 72 / 100, SCR_H * 84 / 100);
+    lv_obj_center(chooser);
+    lv_obj_set_style_bg_color(chooser, lv_color_hex(0x16263a), 0);
+    lv_obj_set_style_border_color(chooser, lv_color_hex(0x33506e), 0);
+    lv_obj_set_style_border_width(chooser, 2, 0);
+    lv_obj_set_style_radius(chooser, 12, 0);
+    lv_obj_set_style_pad_all(chooser, 12, 0);
+    lv_obj_set_flex_flow(chooser, LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_t * title = lv_label_create(chooser);
+    lv_label_set_text(title, "Tegel toevoegen  -  kies grootte, dan type");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+
+    /* size row */
+    lv_obj_t * srow = lv_obj_create(chooser);
+    lv_obj_set_width(srow, LV_PCT(100));
+    lv_obj_set_height(srow, 70);
+    lv_obj_set_style_bg_opa(srow, 0, 0);
+    lv_obj_set_style_border_width(srow, 0, 0);
+    lv_obj_set_style_pad_all(srow, 2, 0);
+    lv_obj_clear_flag(srow, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(srow, LV_FLEX_FLOW_ROW);
+    for (int s = 0; s < N_SIZES; s++) {
+        lv_obj_t * b = lv_btn_create(srow);
+        size_btns[s] = b;
+        lv_obj_set_flex_grow(b, 1);
+        lv_obj_set_height(b, 58);
+        lv_obj_set_style_bg_color(b, lv_color_hex(0x2a4060), 0);
+        lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_width(b, (SIZES[s].w == pick_w && SIZES[s].h == pick_h) ? 3 : 0, 0);
+        lv_obj_add_event_cb(b, on_size_pick, LV_EVENT_CLICKED, (void *)(intptr_t)s);
+        lv_obj_t * l = lv_label_create(b);
+        lv_label_set_text(l, SIZES[s].name);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_center(l);
+    }
+
+    /* type grid (wraps; scrolls if it overflows) — filled by populate_types(),
+     * which re-runs whenever the picked size changes. */
+    type_grid = lv_obj_create(chooser);
+    lv_obj_set_width(type_grid, LV_PCT(100));
+    lv_obj_set_flex_grow(type_grid, 1);
+    lv_obj_set_style_bg_opa(type_grid, 0, 0);
+    lv_obj_set_style_border_width(type_grid, 0, 0);
+    lv_obj_set_style_pad_all(type_grid, 2, 0);
+    lv_obj_set_flex_flow(type_grid, LV_FLEX_FLOW_ROW_WRAP);
+    populate_types();
+
+    lv_obj_t * close = lv_btn_create(chooser);
+    lv_obj_set_width(close, LV_PCT(100));
+    lv_obj_set_height(close, 46);
+    lv_obj_set_style_bg_color(close, lv_color_hex(0x444444), 0);
+    lv_obj_add_event_cb(close, on_chooser_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cl = lv_label_create(close);
+    lv_label_set_text(cl, "Annuleer");
+    lv_obj_center(cl);
+}
+
+/* ---- toolbar actions -------------------------------------------------- */
 static void on_resize(lv_event_t * e) {
     if (sel < 0) return;
     int d = (int)(intptr_t)lv_event_get_user_data(e);   /* 0:w- 1:w+ 2:h- 3:h+ */
     layout_tile_t * t = &edit.tiles[sel];
     int w = t->w, h = t->h;
-    if (d == 0 && w > 1) w--;
+    int mw, mh; layout_type_min(t->type, &mw, &mh);
+    if (mw < 1) mw = 1;
+    if (mh < 1) mh = 1;
+    if (d == 0 && w > mw) w--;            /* don't shrink below the type minimum */
     if (d == 1 && t->col + w < LAYOUT_COLS) w++;
-    if (d == 2 && h > 1) h--;
+    if (d == 2 && h > mh) h--;
     if (d == 3 && t->row + h < LAYOUT_ROWS) h++;
-    /* Only grow/shrink if it doesn't collide with another tile. */
-    if (!would_overlap(sel, t->col, t->row, w, h)) { t->w = w; t->h = h; }
-    place_rect(sel); update_sel_label();
+    if (w == t->w && h == t->h) {
+        lv_label_set_text(sel_lbl, "Kan niet verder - min. grootte of schermrand bereikt");
+        return;
+    }
+    /* Re-pack the rest around the new size; revert if it can't be made to fit. */
+    layout_t s = edit;
+    s.tiles[sel].w = w; s.tiles[sel].h = h;
+    if (layout_reflow_push(&s, sel)) {
+        edit = s;
+        for (int k = 0; k < edit.count; k++) if (rects[k]) place_rect(k);
+    }
+    update_sel_label();
 }
 static void on_toggle_vis(lv_event_t * e) {
     (void)e;
     if (sel < 0) return;
-    edit.tiles[sel].visible = !edit.tiles[sel].visible;
+    layout_tile_t * t = &edit.tiles[sel];
+    if (!t->visible) {
+        /* Turning a tile back ON must not stack it onto whatever took its cell
+         * while it was hidden. If the old spot is occupied, relocate to a free
+         * cell; if there's none, keep it hidden. */
+        if (would_overlap(sel, t->col, t->row, t->w, t->h)) {
+            int c, r;
+            if (find_free_cell(sel, t->w, t->h, &c, &r)) { t->col = c; t->row = r; }
+            else { lv_label_set_text(sel_lbl, "Geen ruimte om te tonen - verberg eerst iets"); return; }
+        }
+    }
+    t->visible = !t->visible;
     place_rect(sel); update_sel_label();
 }
 static void on_reset(lv_event_t * e) {
     (void)e;
     layout_reset_default();
-    /* rebuild the working copy + rects */
-    screen_layout_editor_show();   /* simplest: re-open from defaults */
+    screen_layout_editor_show();   /* re-open from defaults */
 }
-static void on_cancel(lv_event_t * e) { (void)e; if (modal) { lv_obj_del(modal); modal = NULL; } sel = -1; }
+
+/* ---- preset manager ("Indelingen") ------------------------------------ */
+static char g_preset_names[LAYOUT_MAX_PRESETS][LAYOUT_NAME_MAX];  /* row idx → name */
+static int  g_preset_count;
+static void preset_mgr_refresh(void);
+
+/* Mirror layout.c's filename sanitiser so active_layout matches on-disk names
+ * (alnum/-/_ kept, spaces→'_'); used when storing the active preset name. */
+static void name_sanitize(const char * in, char * out, int outsz) {
+    int o = 0;
+    if (in)
+        for (const char * p = in; *p && o < outsz - 1; p++) {
+            char c = *p; if (c == ' ') c = '_';
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '-' || c == '_') out[o++] = c;
+        }
+    out[o] = 0;
+}
+
+static void name_close(void) { if (name_modal) { lv_obj_del(name_modal); name_modal = NULL; name_ta = NULL; } }
+static void on_name_cancel(lv_event_t * e) { (void)e; name_close(); }
+static void on_name_ok(lv_event_t * e) {
+    (void)e;
+    char nm[LAYOUT_NAME_MAX] = "";
+    if (name_ta) name_sanitize(lv_textarea_get_text(name_ta), nm, sizeof nm);
+    if (!nm[0]) return;                 /* need a usable name */
+    g_layout = edit;
+    layout_save_named(nm);
+    snprintf(settings.active_layout, sizeof settings.active_layout, "%s", nm);
+    settings.custom_layout_enabled = 1;
+    settings_save();
+    name_close();
+    preset_mgr_refresh();
+}
+static void open_name_modal(lv_event_t * e) {
+    (void)e;
+    if (name_modal) return;
+    name_modal = lv_obj_create(modal);
+    lv_obj_set_size(name_modal, SCR_W, SCR_H);
+    lv_obj_set_pos(name_modal, 0, 0);
+    lv_obj_set_style_bg_color(name_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(name_modal, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(name_modal, 0, 0);
+    lv_obj_clear_flag(name_modal, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * card = lv_obj_create(name_modal);
+    lv_obj_set_size(card, SCR_W * 70 / 100, SCR_H - 60);
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x16263a), 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * t = lv_label_create(card);
+    lv_obj_set_style_text_color(t, lv_color_hex(0xeaf2ff), 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_18, 0);
+    lv_label_set_text(t, "Naam van de indeling");
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 6, 6);
+
+    name_ta = lv_textarea_create(card);
+    lv_textarea_set_one_line(name_ta, true);
+    lv_textarea_set_placeholder_text(name_ta, "bv. Dag, Nacht, Gasten");
+    lv_obj_set_width(name_ta, SCR_W * 70 / 100 - 40);
+    lv_obj_align(name_ta, LV_ALIGN_TOP_MID, 0, 40);
+
+    lv_obj_t * ok = lv_btn_create(card);
+    lv_obj_set_size(ok, 130, 42);
+    lv_obj_align(ok, LV_ALIGN_TOP_RIGHT, -6, 90);
+    lv_obj_set_style_bg_color(ok, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(ok, on_name_ok, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * okl = lv_label_create(ok); lv_label_set_text(okl, "Opslaan"); lv_obj_center(okl);
+
+    lv_obj_t * ca = lv_btn_create(card);
+    lv_obj_set_size(ca, 130, 42);
+    lv_obj_align(ca, LV_ALIGN_TOP_LEFT, 6, 90);
+    lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
+    lv_obj_add_event_cb(ca, on_name_cancel, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, "Annuleer"); lv_obj_center(cal);
+
+    lv_obj_t * kb = lv_keyboard_create(card);
+    lv_obj_set_size(kb, SCR_W * 70 / 100 - 20, SCR_H / 2 - 30);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_keyboard_set_textarea(kb, name_ta);
+}
+
+static void preset_mgr_close(void) {
+    if (preset_mgr) { lv_obj_del(preset_mgr); preset_mgr = NULL; preset_list = NULL; }
+}
+static void on_preset_close(lv_event_t * e) { (void)e; preset_mgr_close(); }
+static void on_save_as(lv_event_t * e) { open_name_modal(e); }
+
+static void on_preset_load(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);     /* -1 = Standaard */
+    const char * name = (idx < 0) ? "" : g_preset_names[idx];
+    snprintf(settings.active_layout, sizeof settings.active_layout, "%s", name);
+    layout_load_named(name);          /* → g_layout */
+    preset_mgr_close();
+    screen_layout_editor_show();      /* re-open the editor on the loaded layout */
+}
+static void on_preset_delete(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (idx < 0 || idx >= g_preset_count) return;
+    layout_delete_preset(g_preset_names[idx]);
+    if (strcmp(settings.active_layout, g_preset_names[idx]) == 0)
+        settings.active_layout[0] = 0;   /* deleted the active one → back to default */
+    preset_mgr_refresh();
+}
+
+/* Append one preset row (name + Laden + optional Verwijder) to preset_list. */
+static void preset_row(const char * name, int idx, int deletable) {
+    lv_obj_t * row = lv_obj_create(preset_list);
+    lv_obj_set_size(row, LV_PCT(100), 52);
+    lv_obj_set_style_bg_opa(row, 0, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_all(row, 4, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    int active = (strcmp(settings.active_layout, idx < 0 ? "" : name) == 0);
+    lv_obj_t * l = lv_label_create(row);
+    lv_obj_set_style_text_color(l, lv_color_hex(active ? 0x66dd88 : 0xccddee), 0);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_18, 0);
+    lv_label_set_text_fmt(l, "%s%s", active ? LV_SYMBOL_OK " " : "",
+                          (idx < 0) ? "Standaard" : name);
+    lv_obj_align(l, LV_ALIGN_LEFT_MID, 4, 0);
+
+    lv_obj_t * load = lv_btn_create(row);
+    lv_obj_set_size(load, 90, 40);
+    lv_obj_align(load, LV_ALIGN_RIGHT_MID, deletable ? -100 : -4, 0);
+    lv_obj_set_style_bg_color(load, lv_color_hex(0x2a4060), 0);
+    lv_obj_add_event_cb(load, on_preset_load, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
+    lv_obj_t * ll = lv_label_create(load); lv_label_set_text(ll, "Laden"); lv_obj_center(ll);
+
+    if (deletable) {
+        lv_obj_t * del = lv_btn_create(row);
+        lv_obj_set_size(del, 90, 40);
+        lv_obj_align(del, LV_ALIGN_RIGHT_MID, -4, 0);
+        lv_obj_set_style_bg_color(del, lv_color_hex(0x6e2e2e), 0);
+        lv_obj_add_event_cb(del, on_preset_delete, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
+        lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, "Verwijder"); lv_obj_center(dl);
+    }
+}
+
+static void preset_mgr_refresh(void) {
+    if (!preset_list) return;
+    lv_obj_clean(preset_list);
+    preset_row("", -1, 0);            /* the built-in default file */
+    g_preset_count = layout_list_presets(g_preset_names, LAYOUT_MAX_PRESETS);
+    for (int i = 0; i < g_preset_count; i++) preset_row(g_preset_names[i], i, 1);
+}
+
+static void open_preset_mgr(lv_event_t * e) {
+    (void)e;
+    if (preset_mgr) return;
+    preset_mgr = lv_obj_create(modal);
+    lv_obj_set_size(preset_mgr, SCR_W * 76 / 100, SCR_H * 84 / 100);
+    lv_obj_center(preset_mgr);
+    lv_obj_set_style_bg_color(preset_mgr, lv_color_hex(0x16263a), 0);
+    lv_obj_set_style_border_color(preset_mgr, lv_color_hex(0x33506e), 0);
+    lv_obj_set_style_border_width(preset_mgr, 2, 0);
+    lv_obj_set_style_radius(preset_mgr, 12, 0);
+    lv_obj_set_style_pad_all(preset_mgr, 12, 0);
+    lv_obj_set_flex_flow(preset_mgr, LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_t * title = lv_label_create(preset_mgr);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
+    lv_label_set_text(title, "Indelingen  -  laden, verwijderen of opslaan als");
+
+    preset_list = lv_obj_create(preset_mgr);
+    lv_obj_set_width(preset_list, LV_PCT(100));
+    lv_obj_set_flex_grow(preset_list, 1);
+    lv_obj_set_style_bg_opa(preset_list, 0, 0);
+    lv_obj_set_style_border_width(preset_list, 0, 0);
+    lv_obj_set_style_pad_all(preset_list, 2, 0);
+    lv_obj_set_flex_flow(preset_list, LV_FLEX_FLOW_COLUMN);
+    preset_mgr_refresh();
+
+    lv_obj_t * footer = lv_obj_create(preset_mgr);
+    lv_obj_set_width(footer, LV_PCT(100));
+    lv_obj_set_height(footer, 50);
+    lv_obj_set_style_bg_opa(footer, 0, 0);
+    lv_obj_set_style_border_width(footer, 0, 0);
+    lv_obj_set_style_pad_all(footer, 2, 0);
+    lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(footer, LV_FLEX_FLOW_ROW);
+
+    lv_obj_t * saveas = lv_btn_create(footer);
+    lv_obj_set_flex_grow(saveas, 1); lv_obj_set_height(saveas, 44);
+    lv_obj_set_style_bg_color(saveas, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(saveas, on_save_as, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * sl = lv_label_create(saveas); lv_label_set_text(sl, "Opslaan als nieuwe..."); lv_obj_center(sl);
+
+    lv_obj_t * cl = lv_btn_create(footer);
+    lv_obj_set_width(cl, 120); lv_obj_set_height(cl, 44);
+    lv_obj_set_style_bg_color(cl, lv_color_hex(0x444444), 0);
+    lv_obj_add_event_cb(cl, on_preset_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cll = lv_label_create(cl); lv_label_set_text(cll, "Sluit"); lv_obj_center(cll);
+}
+static void on_cancel(lv_event_t * e) { (void)e; close_chooser(); if (modal) { lv_obj_del(modal); modal = NULL; } sel = -1; }
 static void on_save(lv_event_t * e) {
     (void)e;
     g_layout = edit;
-    layout_save();
+    layout_save_named(settings.active_layout);   /* save to the ACTIVE preset */
     settings.custom_layout_enabled = 1;
     settings_save();
-    /* Apply by restarting the UI (ui_launcher.sh respawns us) — same clean
-     * path the "Restart UI" tile uses; the new layout is read on boot. */
-    fprintf(stderr, "[layout] saved — restarting UI to apply\n");
+    /* Apply by restarting the UI (ui_launcher.sh respawns us) — same clean path
+     * the "Restart UI" tile uses; the new layout is read on boot. */
+    fprintf(stderr, "[layout] saved preset '%s' — restarting UI to apply\n",
+            settings.active_layout[0] ? settings.active_layout : "(standaard)");
     _exit(0);
 }
 
@@ -218,7 +638,9 @@ lv_obj_t * screen_layout_editor_create(void) {
 
 void screen_layout_editor_show(void) {
     if (modal) lv_obj_del(modal);
-    sel = -1;
+    modal = NULL; chooser = NULL; type_grid = NULL; sel = -1;
+    preset_mgr = NULL; preset_list = NULL; name_modal = NULL; name_ta = NULL;
+    drag_last_col = drag_last_row = -1;
     /* Working copy; ensure we have something to edit. */
     if (g_layout.count == 0) layout_reset_default();
     edit = g_layout;
@@ -276,6 +698,7 @@ void screen_layout_editor_show(void) {
     tb_btn(bar, x, 46, "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += 54;
     tb_btn(bar, x, 100, "Verberg/Toon", on_toggle_vis, NULL, 0x553355); x += 106;
     tb_btn(bar, x, 78, "+ Tegel", on_add, NULL, 0x2e5e6e); x += 84;
+    tb_btn(bar, x, 96, "Indelingen", open_preset_mgr, NULL, 0x2e4e6e); x += 102;
 
     sel_lbl = lv_label_create(bar);
     lv_obj_set_style_text_color(sel_lbl, lv_color_hex(0xccddee), 0);
