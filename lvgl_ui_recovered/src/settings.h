@@ -141,7 +141,7 @@ typedef struct {
     /* Page-2 (swipe) tile slots — 4 independent assignable positions that
      * render whatever marketplace integration you bind to them. Empty = the
      * "tap to assign" placeholder. */
-    char tile_slot_page1[4][48];
+    char tile_slot_page1[12][48];   /* page-2 slot bindings; must match TILE_SLOT_P1_N */
 
     /* Auto-rotate: one tile position cycles its content through a chosen set
      * of installed integrations every N seconds. rotate_members is a
