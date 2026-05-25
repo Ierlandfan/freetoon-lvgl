@@ -493,6 +493,8 @@ static void preset_mgr_close(void) {
 static void on_preset_close(lv_event_t * e) { (void)e; preset_mgr_close(); }
 static void on_save_as(lv_event_t * e) { open_name_modal(e); }
 
+/* "Bewerk" — load the preset into the editor's working copy to change it.
+ * Sets it as the active (Opslaan target) but does NOT apply to home yet. */
 static void on_preset_load(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);     /* -1 = Standaard */
     const char * name = (idx < 0) ? "" : g_preset_names[idx];
@@ -500,6 +502,19 @@ static void on_preset_load(lv_event_t * e) {
     layout_load_named(name);          /* → g_layout */
     preset_mgr_close();
     screen_layout_editor_show();      /* re-open the editor on the loaded layout */
+}
+/* "Startscherm" — make this preset the one shown on home, right now: persist it
+ * as the active layout, enable custom layout, and restart so home boots from it.
+ * No edit/save round-trip. */
+static void on_preset_apply(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);     /* -1 = Standaard */
+    const char * name = (idx < 0) ? "" : g_preset_names[idx];
+    snprintf(settings.active_layout, sizeof settings.active_layout, "%s", name);
+    settings.custom_layout_enabled = 1;
+    settings_save();
+    fprintf(stderr, "[layout] preset '%s' set as home — restarting UI\n",
+            name[0] ? name : "(standaard)");
+    _exit(0);                          /* ui_launcher.sh respawns; home loads this preset */
 }
 static void on_preset_delete(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
@@ -510,7 +525,17 @@ static void on_preset_delete(lv_event_t * e) {
     preset_mgr_refresh();
 }
 
-/* Append one preset row (name + Laden + optional Verwijder) to preset_list. */
+static void row_btn(lv_obj_t * parent, const char * txt, uint32_t col,
+                    lv_event_cb_t cb, int idx, int w) {
+    lv_obj_t * b = lv_btn_create(parent);
+    lv_obj_set_size(b, w, 40);
+    lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
+    lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, txt); lv_obj_center(l);
+}
+
+/* One preset row: name (+ ✓ if it's the active/home one) and the three actions —
+ * Startscherm (show on home now), Bewerk (edit), Verwijder (delete, named only). */
 static void preset_row(const char * name, int idx, int deletable) {
     lv_obj_t * row = lv_obj_create(preset_list);
     lv_obj_set_size(row, LV_PCT(100), 52);
@@ -527,21 +552,21 @@ static void preset_row(const char * name, int idx, int deletable) {
                           (idx < 0) ? "Standaard" : name);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 4, 0);
 
-    lv_obj_t * load = lv_btn_create(row);
-    lv_obj_set_size(load, 90, 40);
-    lv_obj_align(load, LV_ALIGN_RIGHT_MID, deletable ? -100 : -4, 0);
-    lv_obj_set_style_bg_color(load, lv_color_hex(0x2a4060), 0);
-    lv_obj_add_event_cb(load, on_preset_load, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
-    lv_obj_t * ll = lv_label_create(load); lv_label_set_text(ll, "Laden"); lv_obj_center(ll);
+    /* right-aligned button cluster (flex so widths/gaps just work) */
+    lv_obj_t * btns = lv_obj_create(row);
+    lv_obj_set_size(btns, LV_SIZE_CONTENT, 44);
+    lv_obj_align(btns, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_opa(btns, 0, 0);
+    lv_obj_set_style_border_width(btns, 0, 0);
+    lv_obj_set_style_pad_all(btns, 0, 0);
+    lv_obj_set_style_pad_column(btns, 6, 0);
+    lv_obj_clear_flag(btns, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(btns, LV_FLEX_FLOW_ROW);
 
-    if (deletable) {
-        lv_obj_t * del = lv_btn_create(row);
-        lv_obj_set_size(del, 90, 40);
-        lv_obj_align(del, LV_ALIGN_RIGHT_MID, -4, 0);
-        lv_obj_set_style_bg_color(del, lv_color_hex(0x6e2e2e), 0);
-        lv_obj_add_event_cb(del, on_preset_delete, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
-        lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, "Verwijder"); lv_obj_center(dl);
-    }
+    row_btn(btns, "Startscherm", 0x2e6e3a, on_preset_apply, idx, 130);  /* show on home now */
+    row_btn(btns, "Bewerk",      0x2a4060, on_preset_load,  idx, 88);   /* edit in editor   */
+    if (deletable)
+        row_btn(btns, "Verwijder", 0x6e2e2e, on_preset_delete, idx, 96);
 }
 
 static void preset_mgr_refresh(void) {
@@ -568,7 +593,7 @@ static void open_preset_mgr(lv_event_t * e) {
     lv_obj_t * title = lv_label_create(preset_mgr);
     lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
-    lv_label_set_text(title, "Indelingen  -  laden, verwijderen of opslaan als");
+    lv_label_set_text(title, "Indelingen  -  Startscherm = tonen op home, Bewerk = aanpassen");
 
     preset_list = lv_obj_create(preset_mgr);
     lv_obj_set_width(preset_list, LV_PCT(100));
