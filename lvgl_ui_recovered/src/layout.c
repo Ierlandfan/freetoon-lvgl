@@ -178,7 +178,11 @@ static int rect_hits(int c, int r, int w, int h, const layout_tile_t * t) {
            r < t->row + t->h && t->row < r + h;
 }
 
-int layout_reflow_push(layout_t * L, int moved) {
+/* Strategy 1 — straight push-down: shove colliding tiles down their own column,
+ * then gravity-compact up. Tidy + minimal disruption, but can't move tiles
+ * sideways, so it FAILS when the moved tile needs space that's only free in
+ * another column (e.g. dragging a big block across a packed grid). */
+static int reflow_pushdown(layout_t * L, int moved) {
     /* Order the OTHER visible page-0 tiles top-to-bottom (then left-to-right):
      * we settle them in that order so higher tiles keep priority and lower ones
      * are the ones that get shoved down. */
@@ -233,6 +237,73 @@ int layout_reflow_push(layout_t * L, int moved) {
         }
     }
     return 1;
+}
+
+/* Strategy 2 — fill-any-hole re-pack: pin `moved`, keep every other tile that
+ * doesn't clash with it where it is, and drop the displaced ones into the first
+ * free cell anywhere (reading order). This relocates tiles sideways into the
+ * space the moved tile vacated, so dragging a big block across a packed grid
+ * rearranges instead of being rejected. Used only when push-down can't cope. */
+static int reflow_firstfit(layout_t * L, int moved) {
+    char occ[LAYOUT_ROWS][LAYOUT_COLS];
+    memset(occ, 0, sizeof occ);
+    layout_tile_t * m = &L->tiles[moved];
+    if (m->col < 0 || m->row < 0 ||
+        m->col + m->w > LAYOUT_COLS || m->row + m->h > LAYOUT_ROWS) return 0;
+    for (int r = m->row; r < m->row + m->h; r++)
+        for (int c = m->col; c < m->col + m->w; c++) occ[r][c] = 1;
+
+    /* keep non-clashing tiles in place; collect the rest as displaced */
+    int disp[LAYOUT_MAX_TILES], dn = 0;
+    for (int i = 0; i < L->count; i++) {
+        if (i == moved) continue;
+        layout_tile_t * t = &L->tiles[i];
+        if (t->page != 0 || !t->visible) continue;
+        int hit = 0;
+        for (int r = t->row; r < t->row + t->h && !hit; r++)
+            for (int c = t->col; c < t->col + t->w; c++) if (occ[r][c]) { hit = 1; break; }
+        if (hit) disp[dn++] = i;
+        else for (int r = t->row; r < t->row + t->h; r++)
+                 for (int c = t->col; c < t->col + t->w; c++) occ[r][c] = 1;
+    }
+    /* settle displaced in reading order for a stable result */
+    for (int a = 0; a < dn; a++)
+        for (int b = a + 1; b < dn; b++) {
+            const layout_tile_t * ta = &L->tiles[disp[a]];
+            const layout_tile_t * tb = &L->tiles[disp[b]];
+            if (tb->row < ta->row || (tb->row == ta->row && tb->col < ta->col)) {
+                int tmp = disp[a]; disp[a] = disp[b]; disp[b] = tmp;
+            }
+        }
+    for (int k = 0; k < dn; k++) {
+        layout_tile_t * t = &L->tiles[disp[k]];
+        int placed = 0;
+        for (int r = 0; r <= LAYOUT_ROWS - t->h && !placed; r++)
+            for (int c = 0; c <= LAYOUT_COLS - t->w && !placed; c++) {
+                int free = 1;
+                for (int rr = r; rr < r + t->h && free; rr++)
+                    for (int cc = c; cc < c + t->w; cc++) if (occ[rr][cc]) { free = 0; break; }
+                if (free) {
+                    t->col = c; t->row = r;
+                    for (int rr = r; rr < r + t->h; rr++)
+                        for (int cc = c; cc < c + t->w; cc++) occ[rr][cc] = 1;
+                    placed = 1;
+                }
+            }
+        if (!placed) return 0;          /* genuinely no room left */
+    }
+    return 1;
+}
+
+int layout_reflow_push(layout_t * L, int moved) {
+    /* Prefer the tidy push-down; fall back to fill-any-hole when it can't fit
+     * (big block / packed grid). Each works on a copy so a failed attempt never
+     * leaves L half-rearranged. */
+    layout_t a = *L;
+    if (reflow_pushdown(&a, moved)) { *L = a; return 1; }
+    layout_t b = *L;
+    if (reflow_firstfit(&b, moved)) { *L = b; return 1; }
+    return 0;
 }
 
 void layout_type_min(int type, int * min_w, int * min_h) {
