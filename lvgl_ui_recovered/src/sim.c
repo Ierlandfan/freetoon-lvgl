@@ -192,6 +192,7 @@ int main(int argc, char ** argv) {
         const char * out = (argc > 2) ? argv[2] : "/tmp/sim_nav.ppm";
         ui_init();                 /* home + ui stack so ui_push navigation works */
         pump(100);
+        if (getenv("TOONUI_SIM_PAGE2")) { screen_home_force_page(1); pump(40); }  /* page 2 is gesture-only */
         for (int a = 3; a < argc; a++) {
             int x, y;
             if (sscanf(argv[a], "%d,%d", &x, &y) == 2) sim_tap(x, y);

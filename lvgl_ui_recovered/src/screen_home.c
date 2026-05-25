@@ -231,9 +231,10 @@ static lv_obj_t * home_dot[2]     = {0};    /* pagination dots */
 static int        home_tile_page  = 0;
 /* Page-1 tiles render whatever marketplace integration is bound to slots
  * TILE_SLOT_P1_0..3 (or a "tap to assign" placeholder when empty). */
-static lv_obj_t * p1_title[4] = {0};
-static lv_obj_t * p1_main[4]  = {0};
-static lv_obj_t * p1_sub[4]   = {0};
+static lv_obj_t * p1_title[TILE_SLOT_P1_N] = {0};
+static lv_obj_t * p1_main[TILE_SLOT_P1_N]  = {0};
+static lv_obj_t * p1_sub[TILE_SLOT_P1_N]   = {0};
+static int        g_p1_count = 4;   /* active page-2 slots (4 fixed, or N from a custom layout) */
 
 /* RSS news ticker (above the forecast). Tap → headline list; tapping a headline
  * shows its article summary (from the RSS body) in the reading pane. */
@@ -1165,7 +1166,7 @@ static void refresh_cb(lv_timer_t * t) {
                                                     lbl_inbox_main, lbl_inbox_sub);
 
     /* Page-1 (swipe) slots — render the bound integration, or a placeholder. */
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < g_p1_count; i++) {
         const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_P1_0 + i);
         if (m) {
             if (p1_title[i]) lv_label_set_text(p1_title[i],
@@ -2084,7 +2085,12 @@ static void home_show_page(int n) {
         apply_offline_tile_visibility();   /* re-hide offline tiles after un-hiding */
     } else {
         for (int i = 0; i < 5; i++) if (p0[i]) lv_obj_add_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
-        if (home_page1) lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
+        if (home_page1) {
+            lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
+            /* bring to front so a full-screen custom page 2 covers the thermostat
+             * + weather strip (which are created later, hence higher z). */
+            lv_obj_move_foreground(home_page1);
+        }
         /* hide the page-0 ticker so it doesn't draw over the page-2 slots */
         if (news_ticker) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
     }
@@ -2097,6 +2103,8 @@ static void on_page1_slot(lv_event_t * e) {
 void screen_home_reset_to_main(void) {
     if (home_tile_page != 0) home_show_page(0);
 }
+/* Headless-sim helper: page 2 is gesture-only, so the sim can't swipe to it. */
+void screen_home_force_page(int n) { home_show_page(n); }
 static void on_home_gesture_to_lights(lv_event_t * e) {
     (void)e;
     open_lights_backend();
@@ -3111,21 +3119,48 @@ lv_obj_t * screen_home_create(void) {
      * user can map any integration onto it. Sits on top of the tile zone and
      * is hidden until paged in. */
     home_page1 = lv_obj_create(scr_root);
-    lv_obj_set_pos(home_page1, 556, 16);
-    lv_obj_set_size(home_page1, 456, 418);
-    lv_obj_set_style_bg_opa(home_page1, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(home_page1, 0, 0);
     lv_obj_set_style_pad_all(home_page1, 0, 0);
     lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_SCROLLABLE);
     {
-        static const struct { int x, y; uint32_t c; } slots[4] = {
-            {   4,   4, 0x88dd66 }, { 234,   4, 0xaa77ff },
-            {   4, 214, 0x66bbdd }, { 234, 214, 0xff8866 },
-        };
-        for (int i = 0; i < 4; i++) {
+        /* Custom layout: render page 2 as the user's grid of assignable slots,
+         * full-screen + opaque so it cleanly covers the thermostat/weather when
+         * paged in. Otherwise: the original right-zone 2x2 of fixed slots. */
+        const layout_tile_t * p1t[TILE_SLOT_P1_N];
+        int np1 = 0;
+        if (settings.custom_layout_enabled)
+            for (int i = 0; i < g_layout.count && np1 < TILE_SLOT_P1_N; i++)
+                if (g_layout.tiles[i].page == 1 && g_layout.tiles[i].visible)
+                    p1t[np1++] = &g_layout.tiles[i];
+
+        /* per-slot geometry + colour */
+        int sx[TILE_SLOT_P1_N], sy[TILE_SLOT_P1_N], sw[TILE_SLOT_P1_N], sh[TILE_SLOT_P1_N];
+        static const uint32_t CYC[6] = { 0x88dd66, 0xaa77ff, 0x66bbdd, 0xff8866, 0x44aaff, 0xddaa44 };
+
+        if (np1 > 0) {                       /* custom page 2 */
+            lv_obj_set_pos(home_page1, 0, 0);
+            lv_obj_set_size(home_page1, 1024, 600);
+            lv_obj_set_style_bg_color(home_page1, lv_color_hex(COL_BG), 0);
+            lv_obj_set_style_bg_opa(home_page1, LV_OPA_COVER, 0);
+            g_p1_count = np1;
+            for (int i = 0; i < np1; i++) {
+                int x, y, w, h;
+                layout_cell_px(p1t[i]->col, p1t[i]->row, p1t[i]->w, p1t[i]->h, &x, &y, &w, &h);
+                sx[i] = x + 4; sy[i] = y + 4; sw[i] = w - 8; sh[i] = h - 8;
+            }
+        } else {                             /* default right-zone 2x2 */
+            lv_obj_set_pos(home_page1, 556, 16);
+            lv_obj_set_size(home_page1, 456, 418);
+            lv_obj_set_style_bg_opa(home_page1, LV_OPA_TRANSP, 0);
+            g_p1_count = 4;
+            static const int dx[4] = { 4, 234, 4, 234 }, dy[4] = { 4, 4, 214, 214 };
+            for (int i = 0; i < 4; i++) { sx[i] = dx[i]; sy[i] = dy[i]; sw[i] = 214; sh[i] = 196; }
+        }
+
+        for (int i = 0; i < g_p1_count; i++) {
             tile_t s;
-            make_tile(home_page1, slots[i].x, slots[i].y, 214, 196, LT_NONE,
-                      "", slots[i].c, on_page1_slot, &s);
+            make_tile(home_page1, sx[i], sy[i], sw[i], sh[i], LT_NONE,
+                      "", CYC[i % 6], on_page1_slot, &s);
             p1_title[i] = s.title;   /* make_tile's title label, reused */
             p1_main[i] = lv_label_create(s.tile);
             lv_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_HI), 0);

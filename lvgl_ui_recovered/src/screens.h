@@ -15,6 +15,7 @@ lv_obj_t * screen_home_create(void);
 /* Auto-home: drop the home screen's swipe page back to page 1 (the main page)
  * when idle. No-op if already there. */
 void screen_home_reset_to_main(void);
+void screen_home_force_page(int n);   /* sim/testing: jump to a home page (page 2 is gesture-only) */
 void screen_home_set_ticker_speed(int spd);
 void screen_home_open_news(void);
 lv_obj_t * screen_thermostat_create(void);
