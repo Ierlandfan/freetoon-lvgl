@@ -31,12 +31,15 @@
 #define TILE_SLOT_FAMILY  1
 #define TILE_SLOT_VENT    2
 #define TILE_SLOT_WATER   3
-/* Page-2 (swipe) slots — independent assignable positions. */
+/* Page-2 (swipe) slots — independent assignable positions. Page-2 slots are
+ * TILE_SLOT_P1_0 .. TILE_SLOT_P1_0 + TILE_SLOT_P1_N - 1. Expanded from 4 so a
+ * fully customized page 2 (copied from page 0) can bind an integration per tile. */
 #define TILE_SLOT_P1_0    4
 #define TILE_SLOT_P1_1    5
 #define TILE_SLOT_P1_2    6
 #define TILE_SLOT_P1_3    7
-#define TILE_SLOT_COUNT   8
+#define TILE_SLOT_P1_N    12                          /* assignable page-2 slots */
+#define TILE_SLOT_COUNT   (TILE_SLOT_P1_0 + TILE_SLOT_P1_N)   /* = 16 */
 
 #define INTEG_NAME_MAX        48
 #define INTEG_ID_MAX          48
