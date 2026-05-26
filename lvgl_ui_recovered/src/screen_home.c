@@ -3176,21 +3176,30 @@ lv_obj_t * screen_home_create(void) {
             make_tile(home_page1, sx[i], sy[i], sw[i], sh[i], LT_NONE,
                       "", CYC[i % 6], on_page1_slot, &s);
             p1_title[i] = s.title;   /* make_tile's title label, reused */
-            /* Scale the value font to the block: a widened/taller slot shows a
-             * bigger value (and the subtitle gets room below it). */
-            const lv_font_t * vf = sh[i] >= 230 ? &lv_font_montserrat_48
+            /* Short, wide block → lay title + value horizontally on one row (like
+             * the curtains strip); taller block → stacked with a value font that
+             * scales to the height (and room for the subtitle below). */
+            int horiz = sh[i] < 110;
+            const lv_font_t * vf = horiz       ? &lv_font_montserrat_22
+                                 : sh[i] >= 230 ? &lv_font_montserrat_48
                                  : sh[i] >= 130 ? &lv_font_montserrat_28
                                                 : &lv_font_montserrat_22;
             p1_main[i] = lv_label_create(s.tile);
             lv_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_HI), 0);
             lv_obj_set_style_text_font(p1_main[i], vf, 0);
             lv_label_set_text(p1_main[i], LV_SYMBOL_PLUS "  Tap to assign");
-            lv_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, sh[i] >= 130 ? -8 : 0);
+            if (horiz) {
+                lv_obj_align(p1_title[i], LV_ALIGN_LEFT_MID, 0, 0);   /* title left-of-centre */
+                lv_obj_align(p1_main[i],  LV_ALIGN_RIGHT_MID, -4, 0); /* value right, same line */
+            } else {
+                lv_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, sh[i] >= 130 ? -8 : 0);
+            }
             p1_sub[i] = lv_label_create(s.tile);
             lv_obj_set_style_text_color(p1_sub[i], lv_color_hex(COL_TEXT_DIM), 0);
             lv_obj_set_style_text_font(p1_sub[i], &lv_font_montserrat_18, 0);
             lv_label_set_text(p1_sub[i], "");
-            lv_obj_align(p1_sub[i], LV_ALIGN_BOTTOM_MID, 0, -4);
+            if (horiz) lv_obj_add_flag(p1_sub[i], LV_OBJ_FLAG_HIDDEN);   /* no room on one row */
+            else lv_obj_align(p1_sub[i], LV_ALIGN_BOTTOM_MID, 0, -4);
         }
     }
 
