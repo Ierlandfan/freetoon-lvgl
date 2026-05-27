@@ -19,6 +19,8 @@
 #include "boxtalk.h"
 #include "weather.h"
 #include "wastecollection.h"
+#include "homewizard.h"
+#include "meteradapter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,6 +105,14 @@ static void mock_state(void) {
         weather_state.days[i].wind_bft = 3;
         snprintf(weather_state.days[i].wind_dir, 6, "ZW");
     }
+
+    /* Energy/gas so the dim-screen usage bars render. Both auto-scale, so a
+     * single frame pins them full (first reading == running max). */
+    meter_state.connected = 1;
+    meter_state.power_w   = 384.0f;
+    hw_state.connected_p1 = 1;
+    hw_state.power_w      = 384.0f;
+    hw_state.gas_hour_m3  = 0.0f;   /* boiler idle → empty gas channel (visible track) */
 
     /* Waste: plastic today, paper + rest later (windowed logic picks). */
     waste_state.connected = 1;

@@ -54,6 +54,7 @@ static lv_obj_t * sl_dim,      * lbl_dim_val;
 static lv_obj_t * sw_dim_wx;
 static lv_obj_t * sl_forecast_mode, * lbl_forecast_mode;
 static lv_obj_t * sw_dim_waste;
+static lv_obj_t * sw_dim_bars, * sw_dim_bars_swap;
 static lv_obj_t * sl_waste_lead, * lbl_waste_lead;
 static lv_obj_t * sl_offset,   * lbl_offset_val;
 static lv_obj_t * sw_boiler;
@@ -69,6 +70,12 @@ static void on_enable_change(lv_event_t * e) {
 }
 static void on_dim_wx_change(lv_event_t * e) {
     settings.show_dim_weather = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_dim_bars_change(lv_event_t * e) {
+    settings.show_dim_bars = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_dim_bars_swap_change(lv_event_t * e) {
+    settings.dim_bars_swap = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
 static const char * forecast_mode_label(int m) {
     if (m == FORECAST_HOURLY) return "always hourly";
@@ -542,6 +549,16 @@ static void open_display_modal(lv_event_t * e) {
        active backlight tracks the room between the dim and active values above. */
     r = panel_row(p, y, "Auto-brightness (light sensor)", NULL);
     row_switch(r, settings.auto_brightness, on_auto_brightness_change);
+    y += 82;
+
+    /* Usage bars flanking the dim clock: energy now (W) + gas hourly (m³),
+       auto-scaled. The swap toggle flips which metric is on which side. */
+    r = panel_row(p, y, "Usage bars on dim screen", NULL);
+    sw_dim_bars = row_switch(r, settings.show_dim_bars, on_dim_bars_change);
+    y += 82;
+
+    r = panel_row(p, y, "Bars: swap (energy left / gas right)", NULL);
+    sw_dim_bars_swap = row_switch(r, settings.dim_bars_swap, on_dim_bars_swap_change);
 }
 
 static void open_weather_modal(lv_event_t * e) {

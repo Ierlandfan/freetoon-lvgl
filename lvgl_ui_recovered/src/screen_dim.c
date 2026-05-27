@@ -9,6 +9,7 @@
 #include "settings.h"
 #include "homewizard.h"
 #include "homeassistant.h"
+#include "meteradapter.h"
 #include "packages.h"
 #include "weather.h"
 #include "wastecollection.h"
@@ -52,6 +53,28 @@ static lv_obj_t * dim_lbl_water = NULL;   /* "1.4 L/m" / "+1.4 L" */
 static int        dim_vent_period_ms = 0; /* current spin animation period */
 static lv_timer_t * refresh_timer = NULL;
 
+/* ---- usage bars flanking the clock: energy now (W) + gas hourly (m³) ----
+ * Vertical bars, fill grows up from the clock baseline, envelope height =
+ * 2x clock height. Both auto-scale to the running max seen, so no fixed
+ * full-scale to calibrate. Side + visibility come from settings in refresh_cb. */
+#define DIM_BAR_W     22      /* bar width, design px (SX-scaled) */
+#define DIM_BAR_INSET 20      /* gap from the screen bezel (outer edges) */
+#define DIM_BAR_Y     45      /* vertical centre = the indoor-temp row */
+#define DIM_CLOCK_H   96      /* clock font px; envelope = 2x this */
+static lv_obj_t * bar_l_env, * bar_l_fill, * bar_l_cap;
+static lv_obj_t * bar_r_env, * bar_r_fill, * bar_r_cap;
+static int   dim_bar_h = 0;        /* envelope height (px, computed at create) */
+#define DIM_E_FULL_W    5000.0f     /* power at full bar height (fixed scale) */
+#define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at full bar height (fixed scale) */
+/* Energy bar is only drawn while usage is actively changing; once it's been
+ * flat for DIM_E_ACTIVE_S we collapse the energy side to just a text readout.
+ * A "change" is a delta of at least DIM_E_CHANGE_W so meter jitter doesn't
+ * keep the bar alive. (Gas is always a bar.) */
+#define DIM_E_CHANGE_W  40         /* W delta counted as a real change */
+#define DIM_E_ACTIVE_S  600        /* keep the bar this long after a change */
+static float dim_e_last_sig = 0;   /* last 'significant' power, W */
+static long  dim_e_change_t = 0;   /* time() of last significant change */
+
 static void dim_vent_fan_anim_cb(void * obj, int32_t v) {
     lv_img_set_angle((lv_obj_t *)obj, v);
 }
@@ -84,6 +107,95 @@ static void dim_vent_apply_anim(int rpm) {
     lv_anim_set_time(&a, period);
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
     lv_anim_start(&a);
+}
+
+/* Build one bar slot (side: -1 left edge, +1 right edge). Envelope is a dark
+ * track at the screen edge, vertically centred on the indoor-temp row; the fill
+ * is a child anchored to the bottom that grows upward. Caption is align_to'd to
+ * the envelope so it stays centred under the bar regardless of width. Neither
+ * is CLICKABLE, so a tap on the bar still falls through to the screen wake. */
+static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
+                         lv_obj_t ** cap) {
+    int bw = SX(DIM_BAR_W);
+    lv_align_t al = (side < 0) ? LV_ALIGN_LEFT_MID : LV_ALIGN_RIGHT_MID;
+    int xinset = (side < 0) ? SX(DIM_BAR_INSET) : -SX(DIM_BAR_INSET);
+
+    *env = lv_obj_create(scr_root);
+    lv_obj_remove_style_all(*env);
+    lv_obj_set_size(*env, bw, dim_bar_h);
+    lv_obj_set_style_bg_color(*env, lv_color_hex(0x202020), 0);
+    lv_obj_set_style_bg_opa(*env, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(*env, 4, 0);
+    lv_obj_clear_flag(*env, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(*env, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(*env, al, xinset, SY(DIM_BAR_Y));
+
+    *fill = lv_obj_create(*env);
+    lv_obj_remove_style_all(*fill);
+    lv_obj_set_width(*fill, bw);
+    lv_obj_set_height(*fill, 0);
+    lv_obj_set_style_bg_color(*fill, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_bg_opa(*fill, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(*fill, 4, 0);
+    lv_obj_clear_flag(*fill, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(*fill, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    *cap = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(*cap, lv_color_hex(0xbbbbbb), 0);
+    lv_obj_set_style_text_font(*cap, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_align(*cap, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(*cap, "");
+    /* Anchor to the bar's edge so the value reads inward and never clips the
+     * bezel (a centred caption under an edge bar runs off-screen). */
+    lv_obj_align_to(*cap, *env,
+                    (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
+                    0, SY(14));
+}
+
+/* Apply a value to a bar slot. ratio 0..1 of the envelope. Hidden when !show.
+ * When text_only, the bar is dropped and just the value is shown, centred on
+ * the bar's location (at the screen edge, temp-row height). */
+static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
+                        int side, int show, int text_only,
+                        float ratio, uint32_t color, const char * txt) {
+    if (!env) return;
+    if (!show) {
+        lv_obj_add_flag(env, LV_OBJ_FLAG_HIDDEN);
+        if (cap) lv_obj_add_flag(cap, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    if (text_only) {
+        /* Bar gone: show just the value at the edge, on the temp row, reading
+         * inward (to the right of a left bar / left of a right bar). */
+        lv_obj_add_flag(env, LV_OBJ_FLAG_HIDDEN);
+        if (cap) {
+            lv_label_set_text(cap, txt);
+            lv_obj_set_style_text_color(cap, lv_color_hex(color), 0);
+            lv_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
+            lv_obj_align_to(cap, env,
+                (side < 0) ? LV_ALIGN_OUT_RIGHT_MID : LV_ALIGN_OUT_LEFT_MID,
+                (side < 0) ? SX(6) : -SX(6), 0);
+            lv_obj_clear_flag(cap, LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
+    if (ratio < 0) ratio = 0;
+    if (ratio > 1) ratio = 1;
+    int h = (int)(ratio * dim_bar_h + 0.5f);
+    if (ratio > 0 && h < 3) h = 3;            /* show a sliver when nonzero */
+    lv_obj_set_height(fill, h);
+    lv_obj_align(fill, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(fill, lv_color_hex(color), 0);
+    lv_obj_clear_flag(env, LV_OBJ_FLAG_HIDDEN);
+    if (cap) {
+        lv_label_set_text(cap, txt);
+        lv_obj_set_style_text_color(cap, lv_color_hex(color), 0);
+        lv_obj_set_style_text_font(cap, &lv_font_montserrat_18, 0);
+        lv_obj_align_to(cap, env,
+            (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
+            0, SY(14));
+        lv_obj_clear_flag(cap, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void on_wake_tap(lv_event_t * e) {
@@ -419,6 +531,45 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
+    /* Usage bars: energy now (W, white) + gas trailing-hour (m³, amber), each
+     * auto-scaled to the running max. Side assignment honours dim_bars_swap;
+     * default (swap off) = energy LEFT, gas RIGHT. Gas needs the P1; energy
+     * follows settings.energy_source (Toon meter vs HomeWizard). */
+    if (bar_l_env) {
+        int   e_conn = (settings.energy_source == 0)
+                         ? meter_state.connected
+                         : (settings.enable_p1_elec && hw_state.connected_p1);
+        float e = (settings.energy_source == 0) ? meter_state.power_w
+                                                : hw_state.power_w;
+        if (e < 0) e = 0;                          /* export → empty */
+        float er = e / DIM_E_FULL_W;               /* fixed 5 kW full-scale */
+        char etxt[24];
+        if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
+        else           snprintf(etxt, sizeof etxt, "%.0f W", e);
+
+        /* Bar while usage is changing; collapse to text after 10 min flat. */
+        long nowt = time(NULL);
+        if (dim_e_change_t == 0) { dim_e_last_sig = e; dim_e_change_t = nowt; }
+        float ed = e - dim_e_last_sig; if (ed < 0) ed = -ed;
+        if (ed >= DIM_E_CHANGE_W) { dim_e_last_sig = e; dim_e_change_t = nowt; }
+        int e_text_only = (nowt - dim_e_change_t) >= DIM_E_ACTIVE_S;
+
+        int   g_conn = hw_state.connected_p1;
+        float g = hw_state.gas_hour_m3; if (g < 0) g = 0;
+        float gr = g / DIM_G_FULL_M3H;             /* fixed 2 m³/h full-scale */
+        char gtxt[24];
+        snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
+
+        int show = settings.show_dim_bars;
+        if (!settings.dim_bars_swap) {             /* default: gas LEFT, energy RIGHT */
+            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show && g_conn, 0,           gr, 0xffaa33, gtxt);
+            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show && e_conn, e_text_only, er, 0xffffff, etxt);
+        } else {                                   /* swapped: energy LEFT, gas RIGHT */
+            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show && e_conn, e_text_only, er, 0xffffff, etxt);
+            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show && g_conn, 0,           gr, 0xffaa33, gtxt);
+        }
+    }
+
     lv_obj_invalidate(scr_root);
 }
 
@@ -467,6 +618,12 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_font(lbl_clock, &lv_font_montserrat_96_custom, 0);
     lv_label_set_text(lbl_clock, "--:--");
     lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, SY(-130));
+
+    /* Usage bars at the outer edges, centred on the indoor-temp row (gas left,
+     * energy right by default). Values + side handled in refresh_cb. */
+    dim_bar_h = SY(2 * DIM_CLOCK_H);
+    dim_make_bar(-1, &bar_l_env, &bar_l_fill, &bar_l_cap);
+    dim_make_bar(+1, &bar_r_env, &bar_r_fill, &bar_r_cap);
 
     /* All labels positioned against screen center with explicit Y offsets so
        different content widths can't drift them out of alignment. */
