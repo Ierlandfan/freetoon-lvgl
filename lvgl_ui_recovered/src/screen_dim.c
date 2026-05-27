@@ -66,14 +66,6 @@ static lv_obj_t * bar_r_env, * bar_r_fill, * bar_r_cap;
 static int   dim_bar_h = 0;        /* envelope height (px, computed at create) */
 #define DIM_E_FULL_W    5000.0f     /* power at full bar height (fixed scale) */
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at full bar height (fixed scale) */
-/* Energy bar is only drawn while usage is actively changing; once it's been
- * flat for DIM_E_ACTIVE_S we collapse the energy side to just a text readout.
- * A "change" is a delta of at least DIM_E_CHANGE_W so meter jitter doesn't
- * keep the bar alive. (Gas is always a bar.) */
-#define DIM_E_CHANGE_W  40         /* W delta counted as a real change */
-#define DIM_E_ACTIVE_S  600        /* keep the bar this long after a change */
-static float dim_e_last_sig = 0;   /* last 'significant' power, W */
-static long  dim_e_change_t = 0;   /* time() of last significant change */
 
 static void dim_vent_fan_anim_cb(void * obj, int32_t v) {
     lv_img_set_angle((lv_obj_t *)obj, v);
@@ -546,13 +538,6 @@ static void refresh_cb(lv_timer_t * t) {
         if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
         else           snprintf(etxt, sizeof etxt, "%.0f W", e);
 
-        /* Bar while usage is changing; collapse to text after 10 min flat. */
-        long nowt = time(NULL);
-        if (dim_e_change_t == 0) { dim_e_last_sig = e; dim_e_change_t = nowt; }
-        float ed = e - dim_e_last_sig; if (ed < 0) ed = -ed;
-        if (ed >= DIM_E_CHANGE_W) { dim_e_last_sig = e; dim_e_change_t = nowt; }
-        int e_text_only = (nowt - dim_e_change_t) >= DIM_E_ACTIVE_S;
-
         int   g_conn = hw_state.connected_p1;
         float g = hw_state.gas_hour_m3; if (g < 0) g = 0;
         float gr = g / DIM_G_FULL_M3H;             /* fixed 2 m³/h full-scale */
@@ -561,11 +546,11 @@ static void refresh_cb(lv_timer_t * t) {
 
         int show = settings.show_dim_bars;
         if (!settings.dim_bars_swap) {             /* default: gas LEFT, energy RIGHT */
-            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show && g_conn, 0,           gr, 0xffaa33, gtxt);
-            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show && e_conn, e_text_only, er, 0xffffff, etxt);
+            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show && g_conn, 0, gr, 0xffaa33, gtxt);
+            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show && e_conn, 0, er, 0xffffff, etxt);
         } else {                                   /* swapped: energy LEFT, gas RIGHT */
-            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show && e_conn, e_text_only, er, 0xffffff, etxt);
-            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show && g_conn, 0,           gr, 0xffaa33, gtxt);
+            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show && e_conn, 0, er, 0xffffff, etxt);
+            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show && g_conn, 0, gr, 0xffaa33, gtxt);
         }
     }
 
