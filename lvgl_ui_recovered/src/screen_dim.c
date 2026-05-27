@@ -57,7 +57,7 @@ static lv_timer_t * refresh_timer = NULL;
  * Vertical bars, fill grows up from the clock baseline, envelope height =
  * 2x clock height. Both auto-scale to the running max seen, so no fixed
  * full-scale to calibrate. Side + visibility come from settings in refresh_cb. */
-#define DIM_BAR_W     22      /* bar width, design px (SX-scaled) */
+#define DIM_BAR_W     44      /* bar width, design px (SX-scaled) */
 #define DIM_BAR_INSET 20      /* gap from the screen bezel (outer edges) */
 #define DIM_BAR_Y     45      /* vertical centre = the indoor-temp row */
 #define DIM_CLOCK_H   96      /* clock font px; envelope = 2x this */
@@ -123,9 +123,8 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
     *env = lv_obj_create(scr_root);
     lv_obj_remove_style_all(*env);
     lv_obj_set_size(*env, bw, dim_bar_h);
-    lv_obj_set_style_bg_color(*env, lv_color_hex(0x202020), 0);
-    lv_obj_set_style_bg_opa(*env, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(*env, 4, 0);
+    /* Invisible container — only the coloured fill is drawn (no track box). */
+    lv_obj_set_style_bg_opa(*env, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(*env, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(*env, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(*env, al, xinset, SY(DIM_BAR_Y));
