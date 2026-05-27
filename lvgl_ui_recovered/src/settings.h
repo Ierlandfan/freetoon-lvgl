@@ -13,6 +13,8 @@ typedef struct {
                                  in centi-degrees (e.g. -120 = subtract 1.2°C) */
     int show_dim_weather;     /* 0/1 — show today's weather icon on the dim screen */
     int show_dim_waste;       /* 0/1 — show next-pickup on the dim screen */
+    int show_dim_bars;        /* 0/1 — usage bars (energy now / gas hourly) flanking the dim clock */
+    int dim_bars_swap;        /* 0 = energy LEFT + gas RIGHT (default); 1 = swapped */
     int dim_waste_lead_days;  /* 0..7 — only show if pickup is within this many days
                                  (0 disables; 1 = only on pickup day; 2 = day before + day of) */
     char waste_postcode[12];  /* e.g. "1671AD" — overrides the TSC waste config when set */

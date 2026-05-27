@@ -59,6 +59,41 @@ static double parse_num(const char * json, const char * key, double dflt) {
     return strtod(p, NULL);
 }
 
+/* --- trailing-60-min gas usage, derived from the cumulative total_gas_m3 ---
+ * The P1 only exposes a cumulative counter, so keep ~1-minute snapshots in a
+ * ring and report the consumption over the trailing hour. While the ring hasn't
+ * yet spanned a full hour we report the delta over whatever window we have (an
+ * under-estimate that self-corrects as the ring fills) — deliberately NOT
+ * extrapolated, so an early short window can't spike a consumer's auto-scale. */
+#define GAS_RING_N 64
+static struct { long t; float m3; } gas_ring[GAS_RING_N];
+static int  gas_ring_head = 0, gas_ring_count = 0;
+static long gas_ring_last_t = 0;
+
+static void gas_hour_update(float gas_now) {
+    if (gas_now <= 0) { hw_state.gas_hour_m3 = 0; return; }  /* no gas meter read */
+    long now = time(NULL);
+    if (gas_ring_last_t == 0 || now - gas_ring_last_t >= 55) {  /* ~1/min */
+        gas_ring[gas_ring_head].t  = now;
+        gas_ring[gas_ring_head].m3 = gas_now;
+        gas_ring_head = (gas_ring_head + 1) % GAS_RING_N;
+        if (gas_ring_count < GAS_RING_N) gas_ring_count++;
+        gas_ring_last_t = now;
+    }
+    if (gas_ring_count < 2) { hw_state.gas_hour_m3 = 0; return; }
+    long cutoff = now - 3600;
+    int oldest = (gas_ring_head - gas_ring_count + GAS_RING_N) % GAS_RING_N;
+    /* newest sample that is still at/older than 1h ago; else the oldest we have */
+    int ref = oldest;
+    for (int k = 0; k < gas_ring_count; k++) {
+        int i = (oldest + k) % GAS_RING_N;
+        if (gas_ring[i].t <= cutoff) ref = i; else break;
+    }
+    float delta = gas_now - gas_ring[ref].m3;
+    if (delta < 0) delta = 0;          /* counter reset / rollover guard */
+    hw_state.gas_hour_m3 = delta;
+}
+
 static void poll_p1(void) {
     if (!settings.enable_p1_elec || !settings.p1_elec_host[0]) { hw_state.connected_p1 = 0; return; }
     hw_state.polled_p1 = 1;             /* a poll is being attempted */
@@ -80,6 +115,7 @@ static void poll_p1(void) {
     hw_state.kwh_export_total = (float)parse_num(j, "total_power_export_kwh", 0);
     hw_state.tariff           = (int)  parse_num(j, "active_tariff",          1);
     hw_state.gas_m3           = (float)parse_num(j, "total_gas_m3",           0);
+    gas_hour_update(hw_state.gas_m3);
     hw_state.voltage_l1_v     = (float)parse_num(j, "active_voltage_l1_v",    0);
     hw_state.current_l1_a     = (float)parse_num(j, "active_current_a",       0);
     hw_state.connected_p1     = 1;

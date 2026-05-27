@@ -19,6 +19,8 @@ settings_t settings = {
     .temp_offset_centi = 0,
     .show_dim_weather  = 1,
     .show_dim_waste    = 1,
+    .show_dim_bars     = 1,
+    .dim_bars_swap     = 0,
     .dim_waste_lead_days = 3,
     .vnc_enabled       = 0,
     .vnc_pass          = "",
@@ -145,6 +147,8 @@ void settings_load(void) {
         else if (strcmp(k, "temp_offset_centi") == 0) settings.temp_offset_centi = iv;
         else if (strcmp(k, "show_dim_weather")  == 0) settings.show_dim_weather  = iv;
         else if (strcmp(k, "show_dim_waste")    == 0) settings.show_dim_waste    = iv;
+        else if (strcmp(k, "show_dim_bars")     == 0) settings.show_dim_bars     = iv;
+        else if (strcmp(k, "dim_bars_swap")     == 0) settings.dim_bars_swap     = iv;
         else if (strcmp(k, "dim_waste_lead_days") == 0) settings.dim_waste_lead_days = iv;
         else if (strcmp(k, "waste_postcode")    == 0)
             snprintf(settings.waste_postcode, sizeof settings.waste_postcode, "%s", v);
@@ -389,6 +393,8 @@ void settings_save(void) {
     fprintf(f, "temp_offset_centi=%d\n", settings.temp_offset_centi);
     fprintf(f, "show_dim_weather=%d\n",  settings.show_dim_weather);
     fprintf(f, "show_dim_waste=%d\n",    settings.show_dim_waste);
+    fprintf(f, "show_dim_bars=%d\n",     settings.show_dim_bars);
+    fprintf(f, "dim_bars_swap=%d\n",     settings.dim_bars_swap);
     fprintf(f, "dim_waste_lead_days=%d\n", settings.dim_waste_lead_days);
     fprintf(f, "waste_postcode=%s\n",      settings.waste_postcode);
     fprintf(f, "waste_housenr=%s\n",       settings.waste_housenr);
