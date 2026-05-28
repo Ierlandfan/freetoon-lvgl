@@ -439,6 +439,56 @@ static int handle_state(int fd) {
 /* SSE stream — emits a `data: {…}` event whenever the JSON snapshot changes,
  * plus a `: keepalive\n\n` comment every ~10s so proxies don't drop the conn.
  * Loops until the client disconnects (sock_send_all returns -1). */
+/* Proxy /api/tile?z=Z&x=X&y=Y to OpenStreetMap. The WASM client's Life360
+ * map needs PNG tiles, but a browser fetch direct to tile.openstreetmap.org
+ * gets blocked by cross-origin / referrer-policy / OSM tile-usage rules. The
+ * master fetches them itself (server-to-server, OSM is happy with a sane
+ * User-Agent) and serves them at /api/tile, same-origin to the WASM client. */
+static int handle_tile_proxy(int fd, const char * query) {
+    int z = -1, x = -1, y = -1;
+    if (query) {
+        const char * p;
+        if ((p = strstr(query, "z=")))  z = atoi(p + 2);
+        if ((p = strstr(query, "x=")))  x = atoi(p + 2);
+        if ((p = strstr(query, "y=")))  y = atoi(p + 2);
+    }
+    if (z < 0 || z > 19 || x < 0 || y < 0)
+        return send_status(fd, 400, "Bad Request", "{\"err\":\"need z/x/y\"}");
+
+    /* Use curl: ships with the Toon firmware and has TLS already set up.
+     * --tlsv1.2 because some Toon-firmware curls negotiate weaker defaults.
+     * -A identifies us per OSM's tile-usage policy. */
+    char cmd[400];
+    char out[64];
+    snprintf(out, sizeof out, "/tmp/_tile_%d_%d_%d.png", z, x, y);
+    snprintf(cmd, sizeof cmd,
+        "curl -fsSL -m 12 -A 'freetoon-master/1.0 (+https://github.com/Ierlandfan/freetoon-lvgl)' "
+        "-o '%s' 'https://tile.openstreetmap.org/%d/%d/%d.png'",
+        out, z, x, y);
+    int rc = system(cmd);
+    if (rc != 0)
+        return send_status(fd, 502, "Bad Gateway", "{\"err\":\"osm fetch\"}");
+
+    struct stat st;
+    if (stat(out, &st) != 0)
+        return send_status(fd, 502, "Bad Gateway", "{\"err\":\"no file\"}");
+    FILE * f = fopen(out, "rb");
+    if (!f) return send_status(fd, 502, "Bad Gateway", "{\"err\":\"fopen\"}");
+    char hdr[256];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: %lld\r\n"
+        "Cache-Control: public, max-age=86400\r\nConnection: close\r\n"
+        "Access-Control-Allow-Origin: *\r\n\r\n",
+        (long long)st.st_size);
+    if (sock_send_all(fd, hdr, hn) < 0) { fclose(f); return -1; }
+    char buf[4096]; size_t r;
+    while ((r = fread(buf, 1, sizeof buf, f)) > 0)
+        if (sock_send_all(fd, buf, r) < 0) { fclose(f); return -1; }
+    fclose(f);
+    unlink(out);  /* tmp tile — pwa_server doesn't keep a cache itself */
+    return 0;
+}
+
 /* Proxy /api/rrd?<qs> to local hcb_rrd's /hcb_rrd?<qs>. Lets the WASM client's
  * stats screen pull historical RRD archives — energy/water/gas/temps — without
  * needing localhost/raw sockets. The reply body (date-keyed JSON) is forwarded
@@ -1527,6 +1577,10 @@ static int dispatch(int fd, char * req) {
         if (!strncmp(path, "/api/rrd", 8)) {
             const char * q = strchr(path, '?');
             return handle_rrd_proxy(fd, q ? q + 1 : "");
+        }
+        if (!strncmp(path, "/api/tile", 9)) {
+            const char * q = strchr(path, '?');
+            return handle_tile_proxy(fd, q ? q + 1 : "");
         }
         if (!strcmp(path, "/api/packages"))      return handle_packages_get(fd);
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);

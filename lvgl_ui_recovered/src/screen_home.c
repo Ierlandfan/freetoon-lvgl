@@ -2446,15 +2446,17 @@ EMSCRIPTEN_KEEPALIVE
 void wasm_map_done(int rc) { g_map_ready = rc; }
 
 /* JS-defined fetcher (EM_JS handles arbitrary commas in the body — EM_ASM
- * doesn't because the C preprocessor splits its args at top-level commas). */
+ * doesn't because the C preprocessor splits its args at top-level commas).
+ * Goes through pwa_server's /api/tile proxy so the tile fetch is same-origin
+ * (browsers block direct cross-origin fetches to tile.openstreetmap.org). */
 EM_JS(void, wasm_map_kick, (int z,
                             int tx0, int ty0, int tx1, int ty1,
                             int tx2, int ty2, int tx3, int ty3), {
     var coords = [[tx0,ty0],[tx1,ty1],[tx2,ty2],[tx3,ty3]];
     Promise.all(coords.map(function(c, i) {
-        var url  = 'https://tile.openstreetmap.org/' + z + '/' + c[0] + '/' + c[1] + '.png';
+        var url  = '/api/tile?z=' + z + '&x=' + c[0] + '&y=' + c[1];
         var path = '/tmp/map_' + i + '.png';
-        return fetch(url, {referrerPolicy:'no-referrer'})
+        return fetch(url)
             .then(function(r) { return r.ok ? r.arrayBuffer() : Promise.reject(r.status); })
             .then(function(buf) {
                 try { FS.unlink(path); } catch(e) {}
