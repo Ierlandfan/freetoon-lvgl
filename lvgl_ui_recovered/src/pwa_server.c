@@ -439,6 +439,48 @@ static int handle_state(int fd) {
 /* SSE stream — emits a `data: {…}` event whenever the JSON snapshot changes,
  * plus a `: keepalive\n\n` comment every ~10s so proxies don't drop the conn.
  * Loops until the client disconnects (sock_send_all returns -1). */
+/* Proxy /api/rrd?<qs> to local hcb_rrd's /hcb_rrd?<qs>. Lets the WASM client's
+ * stats screen pull historical RRD archives — energy/water/gas/temps — without
+ * needing localhost/raw sockets. The reply body (date-keyed JSON) is forwarded
+ * unchanged so stats.c's existing parser works on both sides. */
+static int handle_rrd_proxy(int fd, const char * query) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return send_status(fd, 502, "Bad Gateway", "{\"err\":\"socket\"}");
+    struct sockaddr_in a = {0};
+    a.sin_family = AF_INET; a.sin_port = htons(10080);
+    a.sin_addr.s_addr = htonl(0x7f000001);
+    if (connect(sock, (struct sockaddr *)&a, sizeof a) != 0) {
+        close(sock);
+        return send_status(fd, 502, "Bad Gateway", "{\"err\":\"hcb_rrd connect\"}");
+    }
+    char req[1024];
+    int n = snprintf(req, sizeof req,
+        "GET /hcb_rrd?%s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        query ? query : "");
+    if (send(sock, req, n, 0) != n) { close(sock); return -1; }
+    static char buf[256 * 1024];
+    size_t total = 0;
+    while (total < sizeof buf - 1) {
+        ssize_t k = recv(sock, buf + total, sizeof buf - 1 - total, 0);
+        if (k <= 0) break;
+        total += (size_t)k;
+    }
+    close(sock);
+    buf[total] = 0;
+    const char * body = strstr(buf, "\r\n\r\n");
+    body = body ? body + 4 : buf;
+    size_t body_len = total - (size_t)(body - buf);
+    char hdr[256];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n"
+        "Cache-Control: no-cache\r\nConnection: close\r\n"
+        "Access-Control-Allow-Origin: *\r\n\r\n",
+        body_len);
+    if (sock_send_all(fd, hdr, hn) < 0) return -1;
+    if (body_len) sock_send_all(fd, body, body_len);
+    return 0;
+}
+
 /* Serve the cached Buienradar radar GIF the weather thread writes to
  * /tmp/toonui_radar.gif. The WASM client's JS shim fetches this on boot
  * and on a refresh interval, dropping the bytes into Emscripten's MEMFS so
@@ -547,6 +589,20 @@ static int handle_setpoint(int fd, const char * body) {
             "{\"err\":\"need {\\\"value\\\":18.50}\"}");
     }
     boxtalk_set_setpoint(v);
+    return send_status(fd, 200, "OK", "{\"ok\":1}");
+}
+
+/* -------- ventilation vremote command bridge ---------------------------
+ * Slave/WASM clients POST {"cmd":"low|medium|high|auto|timer1|timer2|timer3"}
+ * to /api/vent and the master forwards it to the local Itho via the existing
+ * vent_send_vremote() (which can reach the Itho on the master's LAN). */
+static int handle_vent_post(int fd, const char * body) {
+    char cmd[24] = {0};
+    extract_str(body, "cmd", cmd, sizeof cmd);
+    if (!cmd[0])
+        return send_status(fd, 400, "Bad Request",
+            "{\"err\":\"need {\\\"cmd\\\":\\\"low|high|auto|timerN\\\"}\"}");
+    vent_send_vremote_async(cmd);
     return send_status(fd, 200, "OK", "{\"ok\":1}");
 }
 
@@ -1468,6 +1524,10 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/state"))         return handle_state(fd);
         if (!strcmp(path, "/api/state/stream"))  return handle_state_stream(fd);
         if (!strcmp(path, "/api/radar.gif"))     return handle_radar_gif(fd);
+        if (!strncmp(path, "/api/rrd", 8)) {
+            const char * q = strchr(path, '?');
+            return handle_rrd_proxy(fd, q ? q + 1 : "");
+        }
         if (!strcmp(path, "/api/packages"))      return handle_packages_get(fd);
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);
         if (!strcmp(path, "/api/settings"))      return handle_settings_get(fd);
@@ -1489,6 +1549,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/email"))    return handle_email_post(fd, body);
         if (!strcmp(path, "/api/install"))  return handle_install_post(fd, body, 0);
         if (!strcmp(path, "/api/uninstall")) return handle_install_post(fd, body, 1);
+        if (!strcmp(path, "/api/vent"))     return handle_vent_post(fd, body);
         /* POST /api/packages/<id>/receive */
         if (!strncmp(path, "/api/packages/", 14)) {
             const char * tail = path + 14;

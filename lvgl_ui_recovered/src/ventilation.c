@@ -246,6 +246,16 @@ void vent_send_vremote_async(const char * cmd) {
         vent_state.speed_pct   = p;
         vent_state.exh_fan_pct = p;     /* approximate — actual %≈setpoint */
     }
+#ifdef WASM_BUILD
+    /* WASM client: bridge via the master Toon's POST /api/vent — the master
+     * then runs the real http_fetch against the Itho on its own LAN. No
+     * pthread or raw sockets needed (and neither would work here anyway). */
+    extern void wasm_push_event(const char *, const char *);
+    char body[64];
+    snprintf(body, sizeof body, "{\"cmd\":\"%s\"}", cmd ? cmd : "");
+    wasm_push_event("/api/vent", body);
+    return;
+#endif
     pthread_t t;
     char * dup = strdup(cmd ? cmd : "");
     if (!dup) return;

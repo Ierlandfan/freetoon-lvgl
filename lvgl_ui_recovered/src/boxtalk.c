@@ -1012,6 +1012,18 @@ int boxtalk_set_setpoint(float temp) {
     int centi = (int)(temp * 100.0f + 0.5f);
     if (centi < 500)  centi = 500;   /* 5°C floor */
     if (centi > 3000) centi = 3000;  /* 30°C cap  */
+#ifdef WASM_BUILD
+    /* WASM client: same /api/setpoint endpoint the slave bridge already
+     * has, just routed through the JS fetch shim (wasm_push_event) instead
+     * of popen("curl"). Optimistically update local toon_state so the UI
+     * reacts instantly; the next SSE frame will overwrite with the truth. */
+    extern void wasm_push_event(const char *, const char *);
+    char body[48];
+    snprintf(body, sizeof body, "{\"value\":\"%.2f\"}", (double)(centi/100.0f));
+    wasm_push_event("/api/setpoint", body);
+    toon_state.setpoint = centi / 100.0f;
+    return 0;
+#endif
     if (settings.client_mode) {      /* slave: hand the write to the master */
         int rc = client_link_setpoint(centi / 100.0f);
         if (rc == 0) toon_state.setpoint = centi / 100.0f;
@@ -1060,6 +1072,15 @@ int boxtalk_set_state_value(int state, int centi) {
 
 int boxtalk_set_program(int state) {
     if (state < 0 || state > 3) return -1;
+#ifdef WASM_BUILD
+    /* WASM client: POST /api/program via the JS fetch bridge. */
+    extern void wasm_push_event(const char *, const char *);
+    char body[24];
+    snprintf(body, sizeof body, "{\"state\":%d}", state);
+    wasm_push_event("/api/program", body);
+    toon_state.program_state = state; toon_state.active_state = state;
+    return 0;
+#endif
     if (settings.client_mode) {      /* slave: hand the program change to the master */
         int rc = client_link_program(state);
         if (rc == 0) { toon_state.program_state = state; toon_state.active_state = state; }

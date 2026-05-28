@@ -87,7 +87,7 @@ target_compile_definitions(index PRIVATE
     SDL_HOR_RES=1024
     SDL_VER_RES=600
     WASM_BUILD
-    BUILD_VERSION="v0.9.21")
+    BUILD_VERSION="v0.9.23")
 
 target_compile_options(index PRIVATE
     -O2
@@ -111,8 +111,10 @@ set_target_properties(index PROPERTIES
         -s USE_SDL=2 \
         -s INITIAL_MEMORY=67108864 \
         -s ALLOW_MEMORY_GROWTH=1 \
-        -s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','addRunDependency','removeRunDependency','FS'] \
-        -s EXPORTED_FUNCTIONS=['_main','_malloc','_free','_wasm_push_state','_wasm_push_event'] \
+        -s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','addRunDependency','removeRunDependency','FS'] \
+        -s EXPORTED_FUNCTIONS=['_main','_malloc','_free','_wasm_push_state','_wasm_push_event','_wasm_map_done'] \
         -s FORCE_FILESYSTEM=1 \
+        -s ASYNCIFY=1 \
+        -s FETCH=1 \
         -s ASSERTIONS=1 \
         --shell-file ${CMAKE_CURRENT_LIST_DIR}/shell.html")

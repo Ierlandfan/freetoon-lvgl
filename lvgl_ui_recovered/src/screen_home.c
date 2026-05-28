@@ -8,6 +8,9 @@
 #include "screens.h"
 #include "inbox.h"
 #include "boxtalk.h"
+#ifdef WASM_BUILD
+#  include <emscripten.h>   /* EM_ASM (Life360 map JS-fetch path) */
+#endif
 #include "icons.h"
 #include "homewizard.h"
 #include "meteradapter.h"
@@ -2398,6 +2401,36 @@ static void start_map_fetch(int person) {
     }
     if (map_status) lv_label_set_text(map_status, "Kaart laden...");
     g_map_ready = 0;
+#ifdef WASM_BUILD
+    /* WASM: no pthread + no system("curl"). Compute the 4 tile coords here
+     * and hand them to wasm_map_kick (defined via EM_JS below), which fetches
+     * the four OSM tiles in parallel and writes them into MEMFS at the same
+     * /tmp/map_*.png paths the native thread uses. wasm_map_done() flips
+     * g_map_ready so map_tick paints them. */
+    {
+        int z = g_map_zoom, n = 1 << z;
+        double latrad = lat * M_PI / 180.0;
+        double fx = (lon + 180.0) / 360.0 * n;
+        double fy = (1.0 - asinh(tan(latrad)) / M_PI) / 2.0 * n;
+        int left = (int)floor(fx - 0.5), topp = (int)floor(fy - 0.5);
+        g_map_mx = (int)((fx - left) * 256.0);
+        g_map_my = (int)((fy - topp) * 256.0);
+        int tx[4], ty[4];
+        for (int i = 0; i < 4; i++) {
+            int rr = i / 2, cc = i % 2;
+            int t  = ((left + cc) % n + n) % n;
+            int v  = topp + rr;
+            if (v < 0) v = 0; if (v >= n) v = n - 1;
+            tx[i] = t; ty[i] = v;
+        }
+        extern void wasm_map_kick(int z,
+            int tx0, int ty0, int tx1, int ty1,
+            int tx2, int ty2, int tx3, int ty3);
+        wasm_map_kick(z, tx[0],ty[0], tx[1],ty[1], tx[2],ty[2], tx[3],ty[3]);
+    }
+    if (!map_timer) map_timer = lv_timer_create(map_tick, 300, NULL);
+    return;
+#endif
     map_req_t * r = malloc(sizeof *r);
     if (!r) return;
     r->lat = lat; r->lon = lon; r->zoom = g_map_zoom;
@@ -2406,6 +2439,31 @@ static void start_map_fetch(int person) {
     else { free(r); if (map_status) lv_label_set_text(map_status, "Kaart laden mislukt"); return; }
     if (!map_timer) map_timer = lv_timer_create(map_tick, 300, NULL);
 }
+
+#ifdef WASM_BUILD
+/* JS callback when the 4 OSM tile fetches finish (+1) or any fail (-1). */
+EMSCRIPTEN_KEEPALIVE
+void wasm_map_done(int rc) { g_map_ready = rc; }
+
+/* JS-defined fetcher (EM_JS handles arbitrary commas in the body — EM_ASM
+ * doesn't because the C preprocessor splits its args at top-level commas). */
+EM_JS(void, wasm_map_kick, (int z,
+                            int tx0, int ty0, int tx1, int ty1,
+                            int tx2, int ty2, int tx3, int ty3), {
+    var coords = [[tx0,ty0],[tx1,ty1],[tx2,ty2],[tx3,ty3]];
+    Promise.all(coords.map(function(c, i) {
+        var url  = 'https://tile.openstreetmap.org/' + z + '/' + c[0] + '/' + c[1] + '.png';
+        var path = '/tmp/map_' + i + '.png';
+        return fetch(url, {referrerPolicy:'no-referrer'})
+            .then(function(r) { return r.ok ? r.arrayBuffer() : Promise.reject(r.status); })
+            .then(function(buf) {
+                try { FS.unlink(path); } catch(e) {}
+                FS.writeFile(path, new Uint8Array(buf));
+            });
+    })).then(function()  { Module._wasm_map_done(1); })
+       .catch(function(e) { console.warn('[map] fetch fail:', e); Module._wasm_map_done(-1); });
+});
+#endif
 
 static void map_close(lv_event_t * e) {
     (void)e;

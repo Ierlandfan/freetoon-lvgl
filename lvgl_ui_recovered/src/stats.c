@@ -13,6 +13,51 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#ifdef WASM_BUILD
+#include <emscripten.h>
+/* Synchronous XHR (yes, deprecated but still works on main thread in Firefox
+ * + Chromium) is the simplest way to keep stats_fetch synchronous in WASM.
+ * emscripten_fetch's SYNCHRONOUS mode doesn't work on the main thread even
+ * with ASYNCIFY unless we spin up a fetch worker, and that's a bigger config
+ * change. For our few-hundred-KB RRD JSON fetched once per stats-open the
+ * UI stall is <500 ms on LAN — acceptable. */
+EM_JS(int, wasm_sync_xhr, (const char * url_p, char * out_p, int outsz), {
+    var url = UTF8ToString(url_p);
+    var xhr = new XMLHttpRequest();
+    try {
+        xhr.open('GET', url, false);            // false = synchronous
+        xhr.send();
+    } catch(e) {
+        console.warn('[stats] xhr open/send failed:', e);
+        return -1;
+    }
+    if (xhr.status !== 200) {
+        console.warn('[stats] xhr status', xhr.status, 'for', url);
+        return -1;
+    }
+    var body = xhr.responseText;
+    var n = lengthBytesUTF8(body);
+    if (n + 1 > outsz) n = outsz - 1;
+    stringToUTF8(body, out_p, outsz);
+    return n;
+});
+
+static int http_get_body(const char * path_qs, char * out, size_t outsz) {
+    const char * qs = strchr(path_qs, '?');
+    if (!qs) return -1;
+    char url[768];
+    snprintf(url, sizeof url, "/api/rrd?%s", qs + 1);
+    /* Synthesise the HTTP framing the rest of stats.c expects so its
+     * strstr("\r\n\r\n") body-split still finds the body start. */
+    const char hdr[] = "HTTP/1.0 200 OK\r\n\r\n";
+    size_t hlen = sizeof hdr - 1;
+    if (hlen + 1 >= outsz) return -1;
+    memcpy(out, hdr, hlen);
+    int n = wasm_sync_xhr(url, out + hlen, (int)(outsz - hlen));
+    if (n <= 0) { out[hlen] = 0; return -1; }
+    return 0;
+}
+#else
 static int http_get_body(const char * path_qs, char * out, size_t outsz) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) return -1;
@@ -37,6 +82,7 @@ static int http_get_body(const char * path_qs, char * out, size_t outsz) {
     close(s);
     return 0;
 }
+#endif
 
 int stats_fetch(const char * logger_name, const char * rra,
                 long window_seconds, int max_samples,
