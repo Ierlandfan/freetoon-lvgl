@@ -71,11 +71,22 @@ int main(int argc, char** argv) {
     disp_drv.ver_res  = DISP_VER;
     lv_disp_drv_register(&disp_drv);
 
-    evdev_init();
     static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type    = LV_INDEV_TYPE_POINTER;
+#ifdef TOON1
+    /* Toon 1's TSC2007 resistive panel needs a different device path AND
+     * linear scaling of raw ADC values to pixel coords — see toon1_touch.c.
+     * LVGL's stock evdev driver does neither, so freetoon rendered but the
+     * screen was completely unresponsive on a real Toon 1. */
+    extern int  toon1_touch_init(void);
+    extern void toon1_touch_read(lv_indev_drv_t *, lv_indev_data_t *);
+    toon1_touch_init();
+    indev_drv.read_cb = toon1_touch_read;
+#else
+    evdev_init();
     indev_drv.read_cb = evdev_read_with_activity;
+#endif
     lv_indev_drv_register(&indev_drv);
 
     settings_load();

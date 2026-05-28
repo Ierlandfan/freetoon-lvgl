@@ -102,6 +102,7 @@ APP_SRC       := $(ENTRY) boxtalk.c ui_stack.c screen_home.c screen_thermostat.c
                  notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
+                 toon1_touch.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c
 ALL_SRC       := $(APP_SRC) $(LVGL_SRC) $(LVDRV_SRC)
 OBJ           := $(patsubst %.c,$(BUILDDIR)/%.o,$(ALL_SRC))
