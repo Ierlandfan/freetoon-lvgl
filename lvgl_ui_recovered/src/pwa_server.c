@@ -90,11 +90,31 @@ static int send_status(int fd, int code, const char * status, const char * body)
 static int serve_static(int fd, const char * path) {
     if (strstr(path, "..")) return send_status(fd, 400, "Bad Request", "..");
     char full[512];
-    snprintf(full, sizeof(full), "%s%s",
-             PWA_ROOT, strcmp(path, "/") == 0 ? "/index.html" : path);
+    size_t plen = strlen(path);
+    /* "/" and any directory request ("/ui/", "/foo/") resolve to index.html
+     * inside that dir. Without this, fopen() opens the directory entry on
+     * glibc and fread() returns raw dirent bytes — the browser then sees an
+     * application/octet-stream blob and offers a download. */
+    if (plen == 0 || path[plen-1] == '/') {
+        snprintf(full, sizeof(full), "%s%sindex.html", PWA_ROOT, path);
+    } else {
+        snprintf(full, sizeof(full), "%s%s", PWA_ROOT, path);
+    }
+    struct stat st;
+    /* If the resolved path is a directory (request came without the trailing
+     * slash, e.g. "/ui"), redirect to add the slash so relative URLs in the
+     * served HTML resolve correctly. */
+    if (stat(full, &st) == 0 && S_ISDIR(st.st_mode)) {
+        char loc[256], hdr[384];
+        snprintf(loc, sizeof loc, "%s/", path);
+        int n = snprintf(hdr, sizeof hdr,
+            "HTTP/1.1 301 Moved Permanently\r\nLocation: %s\r\n"
+            "Content-Length: 0\r\nConnection: close\r\n\r\n", loc);
+        sock_send_all(fd, hdr, n);
+        return 0;
+    }
     FILE * f = fopen(full, "rb");
     if (!f) return send_status(fd, 404, "Not Found", "no");
-    struct stat st;
     if (stat(full, &st) != 0) { fclose(f); return -1; }
     char hdr[256];
     int n = snprintf(hdr, sizeof(hdr),
