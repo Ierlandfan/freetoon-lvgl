@@ -301,6 +301,25 @@ int news_count(void) {
     return c;
 }
 
+/* Slave bridge: replace the in-memory list with the master's. The local
+ * fetch thread isn't running in client_mode/WASM, so there's no race. */
+void news_set_count(int n) {
+    if (n < 0) n = 0;
+    if (n > NEWS_MAX_ITEMS) n = NEWS_MAX_ITEMS;
+    pthread_mutex_lock(&g_mtx);
+    g_count = n;
+    pthread_mutex_unlock(&g_mtx);
+}
+void news_set_item_data(int i, const char * title, const char * link, int feed) {
+    if (i < 0 || i >= NEWS_MAX_ITEMS) return;
+    pthread_mutex_lock(&g_mtx);
+    snprintf(g_items[i].title, sizeof g_items[i].title, "%s", title ? title : "");
+    snprintf(g_items[i].link,  sizeof g_items[i].link,  "%s", link  ? link  : "");
+    g_items[i].body[0] = 0;          /* body not bridged — not used by ticker */
+    g_items[i].feed = feed;
+    pthread_mutex_unlock(&g_mtx);
+}
+
 int news_item(int i, char * title, size_t tsz, char * link, size_t lsz) {
     int rc = -1;
     pthread_mutex_lock(&g_mtx);

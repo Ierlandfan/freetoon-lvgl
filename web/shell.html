@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+  Custom Emscripten shell for freetoon-WASM.
+
+  Emscripten replaces {{{ SCRIPT }}} with the generated <script> tag that loads
+  index.js / index.wasm and wires the canvas. We provide:
+    - a full-viewport canvas (LVGL's SDL backend renders into #canvas)
+    - a slim JS bridge that, when configured, opens an EventSource against the
+      master Toon's /api/state/stream and pushes each frame into the WASM
+      module via Module.ccall('wasm_push_state', ...)
+    - control writes via fetch() POST to /api/setpoint, /api/program,
+      /api/curtain (same endpoints the existing PWA uses)
+-->
+<html lang="nl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>freetoon</title>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; background: #000;
+                      overflow: hidden; touch-action: none; }
+        #canvas { display: block; width: 100vw; height: 100vh;
+                  image-rendering: pixelated; outline: none; }
+        #status { position: fixed; left: 8px; top: 8px; color: #888;
+                  font: 12px/1.2 system-ui, sans-serif; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+    <div id="status">starting…</div>
+
+    <script>
+    // ─── slave-mode bridge config ────────────────────────────────────────────
+    // If served from the master Toon's pwa_server (http://<toon>:10081/ui/),
+    // the API endpoints are same-origin — leave MASTER empty. If served
+    // elsewhere, set MASTER to e.g. "http://192.168.3.212:10081" (the master
+    // Toon must then allow CORS for this origin).
+    const MASTER = "";
+    const statusEl = document.getElementById('status');
+    const setStatus = (s) => { statusEl.textContent = s; };
+
+    // ─── Emscripten Module ───────────────────────────────────────────────────
+    var Module = {
+        canvas: (function () { return document.getElementById('canvas'); })(),
+        print:    (text) => console.log(text),
+        printErr: (text) => console.warn(text),
+        onRuntimeInitialized: () => {
+            setStatus('ui ready');
+            startSlaveBridge();
+        }
+    };
+
+    // ─── slave-mode bridge ───────────────────────────────────────────────────
+    let sse = null;
+    function startSlaveBridge() {
+        const url = MASTER + '/api/state/stream';
+        try {
+            sse = new EventSource(url);
+        } catch (e) {
+            setStatus('no master @ ' + url);
+            return;
+        }
+        sse.onopen = () => setStatus('master: connected');
+        sse.onerror = () => setStatus('master: reconnecting…');
+        sse.onmessage = (ev) => {
+            // Each SSE frame is a JSON snapshot of toon_state/ha_state. Hand it
+            // to the WASM side where Phase 2 parsing will update the structs.
+            try {
+                Module.ccall('wasm_push_state', null, ['string'], [ev.data]);
+            } catch (e) {
+                console.warn('wasm_push_state failed:', e);
+            }
+        };
+    }
+
+    // ─── control writes (called from the LVGL UI via wasm_push_event) ───────
+    window.ftPost = function (path, body) {
+        return fetch(MASTER + path, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(body)
+        });
+    };
+    </script>
+
+    {{{ SCRIPT }}}
+</body>
+</html>

@@ -1,0 +1,5 @@
+build/
+*.wasm
+*.js
+*.html
+!shell.html

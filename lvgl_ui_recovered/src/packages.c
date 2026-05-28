@@ -20,14 +20,10 @@
 #include <unistd.h>
 #include <time.h>
 
-#define BANNER_MAX    8
-
-typedef struct {
-    char key[96];     /* merchant|order_id */
-    char title[64];   /* "Bol.com: shipped" */
-    char msg[160];    /* "<label> — eta YYYY-MM-DD" */
-    char url[256];    /* optional, used only if user wires the banner click */
-} banner_t;
+/* Banner type + cap live in packages.h so the master↔slave bridge can move
+ * the whole queue as a fixed-layout struct array. */
+#define BANNER_MAX    PACKAGES_BANNER_MAX
+typedef packages_banner_t banner_t;
 
 static banner_t        g_banners[BANNER_MAX];
 static int             g_banner_count = 0;
@@ -146,6 +142,34 @@ static void banner_dismiss(void) {
         memmove(&g_banners[0], &g_banners[1], sizeof(banner_t) * (g_banner_count - 1));
         g_banner_count--;
     }
+    pthread_mutex_unlock(&g_banner_mtx);
+}
+
+/* ---- master↔slave bridge: queue read + atomic replace --------------------
+ * Read accessors used by pwa_server's render_state_json to walk the queue.
+ * packages_set_banners_from_remote is the slave-side setter — it replaces
+ * the WASM client's queue with what the master is currently showing, so
+ * package banners appear on every browser within a frame. */
+int packages_banner_count(void) {
+    pthread_mutex_lock(&g_banner_mtx);
+    int n = g_banner_count;
+    pthread_mutex_unlock(&g_banner_mtx);
+    return n;
+}
+int packages_banner_at(int i, packages_banner_t * out) {
+    if (!out) return 0;
+    pthread_mutex_lock(&g_banner_mtx);
+    int ok = (i >= 0 && i < g_banner_count);
+    if (ok) *out = g_banners[i];
+    pthread_mutex_unlock(&g_banner_mtx);
+    return ok;
+}
+void packages_set_banners_from_remote(int n, const packages_banner_t * src) {
+    if (n < 0) n = 0;
+    if (n > BANNER_MAX) n = BANNER_MAX;
+    pthread_mutex_lock(&g_banner_mtx);
+    for (int i = 0; i < n; i++) g_banners[i] = src[i];
+    g_banner_count = n;
     pthread_mutex_unlock(&g_banner_mtx);
 }
 

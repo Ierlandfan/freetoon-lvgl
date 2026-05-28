@@ -227,6 +227,17 @@ static void extract_field_value(const char * xml, const char * field,
     out[n] = 0;
 }
 
+/* Slave bridge — replace the entire registry with a remote snapshot.
+ * The slave doesn't run BoxTalk subscriptions; the master does, and
+ * delivers per-integration manifest + latest_value/subtitle in every SSE
+ * frame. We just copy them in. Idempotent; safe to call on each frame. */
+void tile_slots_set_from_remote(int n, const integration_meta_t * src) {
+    if (n < 0) n = 0;
+    if (n > MAX_INSTALLED_INTEGRATIONS) n = MAX_INSTALLED_INTEGRATIONS;
+    for (int i = 0; i < n; i++) g_integ[i] = src[i];
+    g_integ_count = n;
+}
+
 void tile_slots_on_notify(const char * service_id, const char * xml) {
     integration_meta_t * m = tile_slots_integration_by_service(service_id);
     if (!m) return;

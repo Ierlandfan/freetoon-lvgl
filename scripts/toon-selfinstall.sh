@@ -146,6 +146,21 @@ if dl pwa.tgz "$TMP/pwa.tgz" \
     fi
 fi
 
+# 2d2) freetoon-WASM bundle — the full LVGL UI compiled to WebAssembly. When
+# present in the release, pwa_server serves it at http://<toon>:10081/ui/ as
+# a same-origin slave of the master Toon's /api/state/stream. Any browser on
+# the LAN (phone / tablet / laptop) opens the URL → full UI, no install.
+# Optional asset: a release without these three files leaves /ui/ a 404,
+# which is fine — the rest of the UI is unaffected.
+mkdir -p "$DEST/pwa/ui"
+for f in index.html index.wasm index.js; do
+    if dl "$f" "$TMP/wasm_$f" 2>/dev/null \
+       && [ -s "$TMP/wasm_$f" ]; then
+        cp "$TMP/wasm_$f" "$DEST/pwa/ui/$f"
+        say "installed WASM bundle file -> $DEST/pwa/ui/$f ($(wc -c < $DEST/pwa/ui/$f) B)"
+    fi
+done
+
 # 2e) Open the PWA (10081) + VNC (5900) ports in the stock Toon firewall. The
 # HCB-INPUT chain in /etc/default/iptables.conf accepts only 22/80 and drops
 # the rest, so pwa_server's phone UI and x11vnc are unreachable on the LAN. Add

@@ -140,12 +140,31 @@ static int install_helper_ok(void) {
     return stat(INSTALL_HELPER, &st) == 0 && (st.st_mode & S_IXUSR);
 }
 
+#ifdef WASM_BUILD
+/* WASM client has no shell — route the install through the master Toon's
+ * /api/install endpoint via the JS bridge (window.ftPost in shell.html).
+ * Confirmation arrives back on the SSE stream as a new entry in the
+ * "integrations":[…] registry, so the tile lights up without any rebuild. */
+extern void wasm_push_event(const char * topic, const char * payload);
+#endif
+
 static void * install_thread(void * arg) {
     integration_t * e = (integration_t *)arg;
     if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, "Installing...");
     if (e->btn_install)
         lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_BUSY), 0);
 
+#ifdef WASM_BUILD
+    /* Fire-and-forget: bridge posts JSON to the master. Result shows up in
+     * the next SSE state frame (tile_slots gets refreshed centrally). */
+    char payload[96];
+    snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", e->id);
+    wasm_push_event("/api/install", payload);
+    if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, "Sent to master");
+    if (e->btn_install)
+        lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_OK), 0);
+    return NULL;
+#else
     char cmd[256];
     snprintf(cmd, sizeof cmd, "%s %s", INSTALL_HELPER, e->id);
     int rc = system(cmd);
@@ -160,10 +179,21 @@ static void * install_thread(void * arg) {
             lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_WARN), 0);
     }
     return NULL;
+#endif
 }
 
 static void on_install_clicked(lv_event_t * e) {
     integration_t * ent = (integration_t *)lv_event_get_user_data(e);
+#ifdef WASM_BUILD
+    /* No pthread on WASM and the JS fetch is already async — just push the
+     * event inline and let the next SSE frame reflect the master's state. */
+    char payload[96];
+    snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", ent->id);
+    wasm_push_event("/api/install", payload);
+    if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, "Sent to master");
+    if (ent->btn_install)
+        lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_OK), 0);
+#else
     if (!install_helper_ok()) {
         if (ent->btn_install_lbl)
             lv_label_set_text(ent->btn_install_lbl, "Need helper");
@@ -172,6 +202,7 @@ static void on_install_clicked(lv_event_t * e) {
     pthread_t t;
     if (pthread_create(&t, NULL, install_thread, ent) == 0)
         pthread_detach(t);
+#endif
 }
 
 /* ===================================================================== */

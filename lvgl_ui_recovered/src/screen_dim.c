@@ -16,6 +16,7 @@
 #include "ventilation.h"
 #include "icons.h"
 #include <stdio.h>
+#include <stdlib.h>     /* abs() — emscripten/musl doesn't transitively expose it */
 #include <string.h>
 #include <time.h>
 

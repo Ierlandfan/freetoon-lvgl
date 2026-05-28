@@ -1,0 +1,106 @@
+/*
+ * state_fields.def — wire schema for the master↔slave bridge.
+ *
+ * Single source of truth for every scalar state field the master Toon's
+ * pwa_server emits on /api/state[/stream] and the WASM/slave client_link
+ * consumes. Included twice: once by pwa_server.c (macros redefined to emit
+ * JSON), once by client_link.c (macros redefined to parse-and-apply JSON).
+ *
+ * To expose a new scalar from any state struct, add one line here — both
+ * sides of the bridge pick it up automatically (no other code changes).
+ *
+ * Macros (all must be defined before #include "state_fields.def"):
+ *   STATE_NUM(group, field, jname, fmt)   float  — fmt is the printf spec
+ *   STATE_INT(group, field, jname)        int    — emitted as %d
+ *   STATE_STR(group, field, jname)        char[] — emitted JSON-escaped
+ *
+ * Array fields (forecast / waste / lights / schedule / packages / …) are
+ * NOT here; they're marshalled by hand in pwa_server.c / client_link.c
+ * because their per-element schema is richer than scalar X-macros encode.
+ */
+
+/* ---- thermostat / boiler (toon_state — boxtalk.c) ------------------------ */
+STATE_NUM(toon_state, indoor_temp,       indoor_temp,       "%.2f")
+STATE_NUM(toon_state, setpoint,          setpoint,          "%.2f")
+STATE_NUM(toon_state, ch_setpoint,       ch_setpoint,       "%.2f")
+STATE_NUM(toon_state, boiler_in_temp,    boiler_in_temp,    "%.2f")
+STATE_NUM(toon_state, boiler_out_temp,   boiler_out_temp,   "%.2f")
+STATE_NUM(toon_state, boiler_temp,       boiler_temp,       "%.2f")
+STATE_NUM(toon_state, water_pressure,    water_pressure,    "%.2f")
+STATE_NUM(toon_state, modulation_level,  modulation_level,  "%.1f")
+STATE_NUM(toon_state, humidity,          humidity,          "%.1f")
+STATE_INT(toon_state, eco2,              eco2)
+STATE_INT(toon_state, tvoc,              tvoc)
+STATE_INT(toon_state, burner_on,         burner_on)
+STATE_INT(toon_state, dhw_on,            dhw_on)
+STATE_INT(toon_state, program_state,     program_state)
+STATE_INT(toon_state, active_state,      active_state)
+STATE_INT(toon_state, ot_comm_error,     ot_comm_error)
+STATE_INT(toon_state, boiler_type,       boiler_type)
+STATE_INT(toon_state, connected,         connected)
+
+/* ---- Home Assistant + curtains + Life360 (ha_state) --------------------- */
+STATE_INT(ha_state, connected,         ha_connected)
+STATE_INT(ha_state, curtain_pos,       curtain_pos)
+STATE_INT(ha_state, curtain_is_closed, curtain_is_closed)
+STATE_INT(ha_state, curtain_battery,   curtain_battery)
+STATE_STR(ha_state, curtain_state,     curtain_state)
+STATE_STR(ha_state, loc_a,             fam_loc_a)
+STATE_STR(ha_state, loc_b,             fam_loc_b)
+STATE_NUM(ha_state, lat_a,             fam_lat_a, "%.6f")
+STATE_NUM(ha_state, lon_a,             fam_lon_a, "%.6f")
+STATE_NUM(ha_state, lat_b,             fam_lat_b, "%.6f")
+STATE_NUM(ha_state, lon_b,             fam_lon_b, "%.6f")
+STATE_INT(ha_state, doorbell_seq,      doorbell_seq)
+STATE_INT(ha_state, doorbell_live,     doorbell_live)
+
+/* ---- energy: Toon's own meter (meter_state) ----------------------------- */
+STATE_INT(meter_state, connected,      meter_connected)
+STATE_NUM(meter_state, power_w,        meter_power_w, "%.1f")
+STATE_NUM(meter_state, avg_w,          meter_avg_w,   "%.1f")
+
+/* ---- energy: HomeWizard P1 (hw_state) ----------------------------------- */
+STATE_INT(hw_state, connected_p1,      p1_connected)
+STATE_NUM(hw_state, power_w,           p1_power_w,        "%.1f")
+STATE_NUM(hw_state, kwh_import_t1,     p1_kwh_import_t1,  "%.3f")
+STATE_NUM(hw_state, kwh_import_t2,     p1_kwh_import_t2,  "%.3f")
+STATE_NUM(hw_state, kwh_import_total,  p1_kwh_import,     "%.3f")
+STATE_NUM(hw_state, kwh_export_total,  p1_kwh_export,     "%.3f")
+STATE_INT(hw_state, tariff,            p1_tariff)
+STATE_NUM(hw_state, gas_m3,            gas_m3,            "%.3f")
+STATE_NUM(hw_state, gas_hour_m3,       gas_hour_m3,       "%.3f")
+STATE_NUM(hw_state, voltage_l1_v,      p1_voltage_v,      "%.1f")
+STATE_NUM(hw_state, current_l1_a,      p1_current_a,      "%.2f")
+
+/* ---- water: HomeWizard (hw_state water fields) -------------------------- */
+STATE_INT(hw_state, connected_water,        water_connected)
+STATE_NUM(hw_state, water_total_m3,         water_total_m3,    "%.3f")
+STATE_NUM(hw_state, water_lpm,              water_lpm,         "%.2f")
+STATE_NUM(hw_state, water_session_l,        water_session_l,   "%.2f")
+STATE_INT(hw_state, water_session_active,   water_session_active)
+STATE_INT(hw_state, water_session_age_s,    water_session_age_s)
+
+/* ---- ventilation: Itho (vent_state) ------------------------------------- */
+STATE_INT(vent_state, connected,        vent_connected)
+STATE_INT(vent_state, speed_pct,        vent_speed_pct)
+STATE_INT(vent_state, exh_fan_pct,      vent_setpoint_pct)
+STATE_INT(vent_state, fan_rpm,          vent_fan_rpm)
+STATE_INT(vent_state, filter_dirty,     vent_filter_dirty)
+STATE_INT(vent_state, internal_fault,   vent_internal_fault)
+STATE_INT(vent_state, error_code,       vent_error_code)
+STATE_INT(vent_state, total_hours,      vent_total_hours)
+STATE_INT(vent_state, remaining_min,    vent_remaining_min)
+STATE_STR(vent_state, fan_info,         vent_fan_info)
+STATE_STR(vent_state, last_cmd,         vent_last_cmd)
+STATE_STR(vent_state, last_source,      vent_last_source)
+
+/* ---- weather: current conditions (weather_state) -------------------------
+ * The forecast hourly + daily arrays are NOT scalar — they're marshalled by
+ * hand in pwa_server.c (weather_*_emit) and client_link.c (weather_*_apply). */
+STATE_INT(weather_state, connected,         wx_connected)
+STATE_NUM(weather_state, current_temp,      wx_current_temp,  "%.2f")
+STATE_NUM(weather_state, feel_temp,         wx_feel_temp,     "%.2f")
+STATE_STR(weather_state, current_desc,      wx_current_desc)
+STATE_STR(weather_state, current_icon,      wx_current_icon)
+STATE_INT(weather_state, day_count,         wx_day_count)
+STATE_INT(weather_state, hour_count,        wx_hour_count)

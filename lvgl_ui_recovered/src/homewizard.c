@@ -15,6 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/time.h>   /* struct timeval — not transitively pulled in by sys/socket.h under musl/emscripten */
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>

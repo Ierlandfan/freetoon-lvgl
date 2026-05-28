@@ -118,6 +118,13 @@ void tile_slots_bind(int slot, const char * integration_id);
  * latest_value / latest_subtitle from the manifest's field names. */
 void tile_slots_on_notify(const char * service_id, const char * xml);
 
+/* Slave/WASM bridge: replace the entire integration registry with a copy
+ * of `n` entries from `src`. Used by client_link_apply_state to mirror the
+ * master Toon's installed-integrations list (manifest + latest values) so
+ * any plug-and-play install on the master shows up on every WASM client
+ * within a few seconds — no rebuild needed. */
+void tile_slots_set_from_remote(int n, const integration_meta_t * src);
+
 /* Issue a BoxTalk subscribe for every registered integration's serviceId.
  * Called by boxtalk.c right after the handshake completes — also on every
  * reconnect, since subscriptions don't survive a broker socket drop. */

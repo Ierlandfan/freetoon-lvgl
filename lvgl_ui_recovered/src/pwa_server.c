@@ -23,11 +23,23 @@
 #include "schedule.h"
 #include "settings.h"
 #include "weather.h"
+#include "wastecollection.h"
+#include "homewizard.h"
+#include "meteradapter.h"
+#include "ventilation.h"
+#include "inbox.h"
+#include "calendar.h"
+#include "domoticz.h"
+#include "news.h"
+#include "tile_slots.h"
+#include "packages.h"
+#include "screen_zwave.h"
 #include "notify.h"
 #include "update_check.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>          /* isalnum — install id sanity check */
 #include <pthread.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -60,6 +72,7 @@ static const char * mime_for(const char * path) {
     if (!strcmp(dot, ".json")) return "application/json";
     if (!strcmp(dot, ".png"))  return "image/png";
     if (!strcmp(dot, ".svg"))  return "image/svg+xml";
+    if (!strcmp(dot, ".wasm")) return "application/wasm";    /* freetoon-WASM bundle */
     return "application/octet-stream";
 }
 
@@ -100,52 +113,289 @@ static int serve_static(int fd, const char * path) {
 /* Pure-function snapshot of the live state into JSON. Reads volatile shared
  * structs once; safe to call from any thread (the writers update atomically
  * field-by-field — readers tolerate a briefly inconsistent frame). */
+/* Append-helper for the JSON builders below: copies `src` into `dst` (cap
+ * `dsz`) replacing JSON-troublesome chars (`"`, `\`, control bytes) with a
+ * space. Cheap; good enough for free-text fields like family locations and
+ * Itho's "last_source" labels. */
+static void json_strcpy(char * dst, const char * src, size_t dsz) {
+    size_t i = 0;
+    for (; src && src[i] && i + 1 < dsz; i++) {
+        unsigned char c = (unsigned char)src[i];
+        dst[i] = (c == '"' || c == '\\' || c < 0x20) ? ' ' : (char)c;
+    }
+    dst[i] = 0;
+}
+
+/* Emit one weather_hour_t / weather_day_t object. Field names mirror the
+ * struct member names (kept short — these are inside arrays of many objects). */
+static int emit_wx_hour(char * p, char * end, const weather_hour_t * h) {
+    char ic[16], dir[16];
+    json_strcpy(ic, h->icon, sizeof ic);
+    json_strcpy(dir, h->wind_dir, sizeof dir);
+    return snprintf(p, end - p,
+        "{\"label\":\"%s\",\"temp\":%.2f,\"bft\":%d,\"dir\":\"%s\",\"icon\":\"%s\"}",
+        h->label, (double)h->temperature, h->wind_bft, dir, ic);
+}
+static int emit_wx_day(char * p, char * end, const weather_day_t * d) {
+    char ic[16], dir[16];
+    json_strcpy(ic, d->icon, sizeof ic);
+    json_strcpy(dir, d->wind_dir, sizeof dir);
+    return snprintf(p, end - p,
+        "{\"day\":\"%s\",\"min\":%.1f,\"max\":%.1f,\"bft\":%d,\"dir\":\"%s\","
+        "\"icon\":\"%s\",\"rain\":%d}",
+        d->day, (double)d->min_temp, (double)d->max_temp, d->wind_bft, dir,
+        ic, d->rain_chance);
+}
+
+/* Pure-function snapshot of the live state into JSON. Reads volatile shared
+ * structs once; safe to call from any thread (the writers update atomically
+ * field-by-field — readers tolerate a briefly inconsistent frame).
+ *
+ * Scalar fields come from state_fields.def via X-macros — adding a new scalar
+ * to ANY state struct is a one-line change in that .def, no edits here.
+ * Array fields (forecast hours/days, waste pickups, …) are appended below by
+ * dedicated marshallers because their per-element schemas don't fit the
+ * scalar X-macro shape. */
 static int render_state_json(char * body, size_t sz) {
-    return snprintf(body, sz,
-        "{"
-        "\"indoor_temp\":%.2f,"
-        "\"setpoint\":%.2f,"
-        "\"program_state\":%d,"
-        "\"active_state\":%d,"
-        "\"burner_on\":%d,"
-        "\"dhw_on\":%d,"
-        "\"modulation_level\":%.1f,"
-        "\"boiler_in_temp\":%.2f,"
-        "\"boiler_out_temp\":%.2f,"
-        "\"ch_setpoint\":%.2f,"
-        "\"water_pressure\":%.2f,"
-        "\"humidity\":%.1f,"
-        "\"eco2\":%d,"
-        "\"tvoc\":%d,"
-        "\"ot_comm_error\":%d,"
-        "\"connected\":%d,"
-        "\"ha_connected\":%d,"
-        "\"curtain_state\":\"%s\","
-        "\"curtain_pos\":%d,"
-        "\"curtain_battery\":%d"
-        "}",
-        (double)toon_state.indoor_temp,
-        (double)toon_state.setpoint,
-        toon_state.program_state, toon_state.active_state,
-        toon_state.burner_on, toon_state.dhw_on,
-        (double)toon_state.modulation_level,
-        (double)toon_state.boiler_in_temp,
-        (double)toon_state.boiler_out_temp,
-        (double)toon_state.ch_setpoint,
-        (double)toon_state.water_pressure,
-        (double)toon_state.humidity,
-        toon_state.eco2, toon_state.tvoc,
-        toon_state.ot_comm_error,
-        toon_state.connected,
-        ha_state.connected,
-        ha_state.curtain_state,
-        ha_state.curtain_pos,
-        ha_state.curtain_battery
-    );
+    char * p = body;
+    char * end = body + sz;
+    char esc[256];                          /* scratch for JSON-escaped strings */
+    (void)esc;                              /* may go unused if no STATE_STR fires */
+
+    if (p < end) *p++ = '{';
+
+    /* ---- scalars: expand state_fields.def with macros that emit JSON ---- */
+    #define STATE_NUM(g, f, j, fmt)  do { if (p < end) p += snprintf(p, end-p, \
+        "\"" #j "\":" fmt ",", (double)g.f); } while (0);
+    #define STATE_INT(g, f, j)       do { if (p < end) p += snprintf(p, end-p, \
+        "\"" #j "\":%d,", (int)g.f); } while (0);
+    #define STATE_STR(g, f, j)       do { json_strcpy(esc, (const char *)g.f, sizeof esc); \
+        if (p < end) p += snprintf(p, end-p, "\"" #j "\":\"%s\",", esc); } while (0);
+    #include "state_fields.def"
+    #undef STATE_NUM
+    #undef STATE_INT
+    #undef STATE_STR
+
+    /* ---- weather forecast: hourly array ---- */
+    if (p < end) p += snprintf(p, end-p, "\"wx_hours\":[");
+    for (int i = 0; i < weather_state.hour_count && i < WEATHER_FORECAST_HOURS; i++) {
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += emit_wx_hour(p, end, &weather_state.hours[i]);
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- weather forecast: daily array ---- */
+    if (p < end) p += snprintf(p, end-p, "\"wx_days\":[");
+    for (int i = 0; i < weather_state.day_count && i < WEATHER_FORECAST_DAYS; i++) {
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += emit_wx_day(p, end, &weather_state.days[i]);
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- next-up waste pickups: the few entries the home tile + dim use ---- */
+    if (p < end) p += snprintf(p, end-p, "\"wt_next\":[");
+    {
+        waste_pickup_t wp[3];
+        int nw = waste_next_n_windowed(7, wp, 3);     /* up to 3 within 7 days */
+        for (int i = 0; i < nw; i++) {
+            char lbl[64];
+            json_strcpy(lbl, wp[i].labels, sizeof lbl);
+            if (i && p < end) *p++ = ',';
+            if (p < end) p += snprintf(p, end-p,
+                "{\"date\":\"%s\",\"labels\":\"%s\",\"days\":%ld}",
+                wp[i].date, lbl, waste_days_until(wp[i].date));
+        }
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- waste connectivity (covers the dim/home tile's "configure waste"
+     * fallback). The waste items array beyond next-up isn't shipped — the
+     * UI uses waste_next_pickup / waste_next_n_windowed everywhere. */
+    if (p < end) p += snprintf(p, end-p, "\"waste_connected\":%d,",
+        waste_state.connected);
+
+    /* ---- HA lights (configured set; ha_state-coupled live on/brightness) */
+    if (p < end) p += snprintf(p, end-p, "\"ha_lights\":[");
+    for (int i = 0; i < ha_light_count && i < HA_LIGHT_COUNT; i++) {
+        const ha_light_t * L = &ha_lights[i];
+        char name[40], area[40], eid[64];
+        json_strcpy(name, L->name,      sizeof name);
+        json_strcpy(area, L->area,      sizeof area);
+        json_strcpy(eid,  L->entity_id, sizeof eid);
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += snprintf(p, end-p,
+            "{\"id\":\"%s\",\"name\":\"%s\",\"area\":\"%s\","
+            "\"on\":%d,\"av\":%d,\"br\":%d}",
+            eid, name, area, L->on, L->available, L->brightness);
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- schedule entries (target_state + day/hh:mm window) */
+    if (p < end) p += snprintf(p, end-p, "\"schedule\":[");
+    for (int i = 0; i < schedule_count && i < SCHEDULE_MAX; i++) {
+        const schedule_entry_t * e = &schedule_entries[i];
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += snprintf(p, end-p,
+            "{\"s\":%d,\"sd\":%d,\"sh\":%d,\"sm\":%d,"
+            "\"ed\":%d,\"eh\":%d,\"em\":%d}",
+            e->target_state, e->start_day, e->start_hour, e->start_min,
+            e->end_day, e->end_hour, e->end_min);
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- inbox messages (unread flag + text) */
+    if (p < end) p += snprintf(p, end-p, "\"inbox\":[");
+    for (int i = 0; i < inbox_count && i < INBOX_MAX; i++) {
+        const inbox_msg_t * m = &inbox_msgs[i];
+        char text[INBOX_TEXT_LEN], type[INBOX_TYPE_LEN], sub[INBOX_TYPE_LEN];
+        json_strcpy(text, m->text,     sizeof text);
+        json_strcpy(type, m->type,     sizeof type);
+        json_strcpy(sub,  m->sub_type, sizeof sub);
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += snprintf(p, end-p,
+            "{\"uuid\":\"%s\",\"type\":\"%s\",\"sub\":\"%s\","
+            "\"text\":\"%s\",\"ts\":%ld,\"read\":%d}",
+            m->uuid, type, sub, text, m->creation_date, m->read);
+    }
+    if (p < end) p += snprintf(p, end-p, "],\"inbox_unread\":%d,", inbox_unread);
+
+    /* ---- calendar events (next-up) */
+    if (p < end) p += snprintf(p, end-p, "\"cal\":[");
+    for (int i = 0; i < calendar_state.count; i++) {
+        const calendar_event_t * e = &calendar_state.ev[i];
+        char sum[96];
+        json_strcpy(sum, e->summary, sizeof sum);
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += snprintf(p, end-p,
+            "{\"date\":\"%s\",\"time\":\"%s\",\"sum\":\"%s\"}",
+            e->date, e->time, sum);
+    }
+    if (p < end) p += snprintf(p, end-p, "],\"cal_connected\":%d,",
+        calendar_state.connected);
+
+    /* ---- news ticker (title + link + feed index) */
+    if (p < end) p += snprintf(p, end-p, "\"news\":[");
+    for (int i = 0, n = news_count(); i < n; i++) {
+        char title[NEWS_TITLE_MAX], link[NEWS_LINK_MAX];
+        char title_esc[NEWS_TITLE_MAX], link_esc[NEWS_LINK_MAX];
+        if (news_item(i, title, sizeof title, link, sizeof link) != 0) continue;
+        json_strcpy(title_esc, title, sizeof title_esc);
+        json_strcpy(link_esc,  link,  sizeof link_esc);
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += snprintf(p, end-p,
+            "{\"t\":\"%s\",\"u\":\"%s\",\"f\":%d}",
+            title_esc, link_esc, news_item_feed(i));
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- installed marketplace integrations (registry + live values) ----
+     * Sends each integration's manifest fields + latest_value / latest_subtitle
+     * so the WASM slave can mirror the registry without scanning a local
+     * /mnt/data/integrations. New install on the master => next SSE frame
+     * carries it => WASM client renders the new tile, no rebuild. */
+    if (p < end) p += snprintf(p, end-p, "\"integrations\":[");
+    for (int i = 0, ni = tile_slots_integration_count(); i < ni; i++) {
+        const integration_meta_t * M = tile_slots_integration_at(i);
+        if (!M) continue;
+        char id[INTEG_ID_MAX], name[INTEG_NAME_MAX], svc[INTEG_SERVICE_MAX];
+        char ttitle[INTEG_NAME_MAX], tcolor[16], ticon[24];
+        char vfield[INTEG_FIELD_MAX], vunit[INTEG_UNIT_MAX];
+        char sfield[INTEG_FIELD_MAX], sunit[INTEG_UNIT_MAX];
+        char afield[INTEG_FIELD_MAX];
+        char lval[INTEG_VALUE_MAX], lsub[INTEG_VALUE_MAX], lalrt[INTEG_VALUE_MAX];
+        json_strcpy(id,     M->id,             sizeof id);
+        json_strcpy(name,   M->name,           sizeof name);
+        json_strcpy(svc,    M->service_id,     sizeof svc);
+        json_strcpy(ttitle, M->tile_title,     sizeof ttitle);
+        json_strcpy(tcolor, M->tile_color,     sizeof tcolor);
+        json_strcpy(ticon,  M->tile_icon,      sizeof ticon);
+        json_strcpy(vfield, M->value_field,    sizeof vfield);
+        json_strcpy(vunit,  M->value_unit,     sizeof vunit);
+        json_strcpy(sfield, M->subtitle_field, sizeof sfield);
+        json_strcpy(sunit,  M->subtitle_unit,  sizeof sunit);
+        json_strcpy(afield, M->alert_field,    sizeof afield);
+        json_strcpy(lval,   (const char *)M->latest_value,    sizeof lval);
+        json_strcpy(lsub,   (const char *)M->latest_subtitle, sizeof lsub);
+        json_strcpy(lalrt,  (const char *)M->latest_alert,    sizeof lalrt);
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += snprintf(p, end-p,
+            "{\"id\":\"%s\",\"name\":\"%s\",\"svc\":\"%s\","
+            "\"ttitle\":\"%s\",\"tcolor\":\"%s\",\"ticon\":\"%s\","
+            "\"vfield\":\"%s\",\"vunit\":\"%s\","
+            "\"sfield\":\"%s\",\"sunit\":\"%s\","
+            "\"afield\":\"%s\","
+            "\"lval\":\"%s\",\"lsub\":\"%s\",\"lalrt\":\"%s\",\"lts\":%ld}",
+            id, name, svc, ttitle, tcolor, ticon,
+            vfield, vunit, sfield, sunit, afield,
+            lval, lsub, lalrt, M->latest_epoch);
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- packages: delivery banner queue ----
+     * The home + dim screens render the head of this queue as a banner.
+     * Mirroring it makes the same notifications pop on every browser. */
+    if (p < end) p += snprintf(p, end-p, "\"pkg_banners\":[");
+    {
+        int nb = packages_banner_count();
+        packages_banner_t b;
+        for (int i = 0; i < nb; i++) {
+            if (!packages_banner_at(i, &b)) break;
+            char key[100], title[80], msg[180], url[280];
+            json_strcpy(key,   b.key,   sizeof key);
+            json_strcpy(title, b.title, sizeof title);
+            json_strcpy(msg,   b.msg,   sizeof msg);
+            json_strcpy(url,   b.url,   sizeof url);
+            if (i && p < end) *p++ = ',';
+            if (p < end) p += snprintf(p, end-p,
+                "{\"key\":\"%s\",\"title\":\"%s\",\"msg\":\"%s\",\"url\":\"%s\"}",
+                key, title, msg, url);
+        }
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- Z-Wave controller device list (admin screen) ---- */
+    if (p < end) p += snprintf(p, end-p, "\"zwave\":[");
+    {
+        int nz = zwave_dev_count();
+        zwave_dev_t z;
+        for (int i = 0; i < nz; i++) {
+            if (!zwave_dev_at(i, &z)) break;
+            char uuid[48], name[80], type[60];
+            json_strcpy(uuid, z.uuid, sizeof uuid);
+            json_strcpy(name, z.name, sizeof name);
+            json_strcpy(type, z.type, sizeof type);
+            if (i && p < end) *p++ = ',';
+            if (p < end) p += snprintf(p, end-p,
+                "{\"uuid\":\"%s\",\"name\":\"%s\",\"type\":\"%s\","
+                "\"node\":%d,\"sw\":%d,\"st\":%d}",
+                uuid, name, type, z.node_id, z.is_switch, z.state);
+        }
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
+    /* ---- domoticz devices (current on/level state) */
+    if (p < end) p += snprintf(p, end-p, "\"dz\":[");
+    for (int i = 0; i < domoticz_state.count && i < DOMOTICZ_MAX_DEV; i++) {
+        const domoticz_dev_t * d = &domoticz_state.dev[i];
+        char name[40];
+        json_strcpy(name, d->name, sizeof name);
+        if (i && p < end) *p++ = ',';
+        if (p < end) p += snprintf(p, end-p,
+            "{\"idx\":%d,\"kind\":%d,\"name\":\"%s\",\"on\":%d,\"level\":%d}",
+            d->idx, d->kind, name, d->on, d->level);
+    }
+    if (p < end) p += snprintf(p, end-p, "],\"dz_connected\":%d,",
+        domoticz_state.connected);
+
+    /* Replace the trailing comma with a closing brace. */
+    if (p > body + 1 && p[-1] == ',') p[-1] = '}';
+    else if (p < end) *p++ = '}';
+    if (p < end) *p = 0;
+    return (int)(p - body);
 }
 
 static int handle_state(int fd) {
-    char body[2048];
+    char body[32768];    /* full state incl. lights/schedule/inbox/calendar/news/dz arrays */
     int n = render_state_json(body, sizeof(body));
     char hdr[256];
     int hn = snprintf(hdr, sizeof(hdr),
@@ -175,7 +425,7 @@ static int handle_state_stream(int fd) {
     char last[2048] = "";
     int idle_ticks = 0;
     /* Push the first frame immediately so the client doesn't sit on default values. */
-    char body[2048], ev[2200];
+    char body[32768], ev[33000];  /* full state incl. lights/schedule/inbox/calendar/news/dz arrays */
     int n = render_state_json(body, sizeof(body));
     if (n > 0) {
         int en = snprintf(ev, sizeof(ev), "data: %s\n\n", body);
@@ -245,6 +495,39 @@ static int handle_setpoint(int fd, const char * body) {
     }
     boxtalk_set_setpoint(v);
     return send_status(fd, 200, "OK", "{\"ok\":1}");
+}
+
+/* -------- marketplace install / uninstall (plug-and-play bridge) --------
+ * POST /api/install {"id":"<integration-id>"}   → run the install helper
+ * POST /api/uninstall {"id":"<integration-id>"} → run helper with "remove"
+ *
+ * Lets a WASM/PWA client install on the master without shell access. The
+ * helper is the same `/mnt/data/integrations-install.sh` the Marketplace
+ * screen on the Toon's own panel uses; we just give it an HTTP wrapper.
+ * Both forks are detached so the request returns immediately — the next
+ * SSE frame after install carries the new entry in `"integrations":[…]`
+ * and the WASM client shows the new tile. */
+static int handle_install_post(int fd, const char * body, int uninstall) {
+    char id[64] = {0};
+    extract_str(body, "id", id, sizeof id);
+    if (!id[0])
+        return send_status(fd, 400, "Bad Request",
+            "{\"err\":\"need {\\\"id\\\":\\\"<integration-id>\\\"}\"}");
+    /* id sanity check — alnum + '-_/' only, prevents shell injection into
+     * the system() call below. */
+    for (const char * c = id; *c; c++) {
+        if (!(isalnum((unsigned char)*c) || *c == '-' || *c == '_' || *c == '.')) {
+            return send_status(fd, 400, "Bad Request",
+                "{\"err\":\"id has illegal char\"}");
+        }
+    }
+    char cmd[256];
+    snprintf(cmd, sizeof cmd,
+        "(/mnt/data/integrations-install.sh %s %s >> /var/volatile/tmp/integ-install.log 2>&1) &",
+        uninstall ? "remove" : "install", id);
+    int rc = system(cmd);
+    (void)rc;        /* fire-and-forget; status flows back via SSE registry diff */
+    return send_status(fd, 202, "Accepted", "{\"ok\":1,\"async\":1}");
 }
 
 /* -------- weekly schedule (Comfort/Home/Sleep/Away) -------------------- */
@@ -1150,6 +1433,8 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/update"))   return handle_update_post(fd);
         if (!strcmp(path, "/api/packages")) return handle_packages_post(fd, body);
         if (!strcmp(path, "/api/email"))    return handle_email_post(fd, body);
+        if (!strcmp(path, "/api/install"))  return handle_install_post(fd, body, 0);
+        if (!strcmp(path, "/api/uninstall")) return handle_install_post(fd, body, 1);
         /* POST /api/packages/<id>/receive */
         if (!strncmp(path, "/api/packages/", 14)) {
             const char * tail = path + 14;

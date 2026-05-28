@@ -32,16 +32,12 @@
 #define COL_WARN     0x6e3a3a
 #define COL_OFF      0x3a4658
 
-#define MAX_ZW_DEV 24
+#include "screen_zwave.h"
 
-typedef struct {
-    char uuid[40];
-    char name[64];
-    char type[48];
-    int  node_id;
-    int  is_switch;
-    int  state;       /* 0 off, 1 on, -1 unknown */
-} zw_dev_t;
+/* Internal struct + cap now live in screen_zwave.h so the master↔slave
+ * bridge can serialise/deserialise the controller device list. */
+#define MAX_ZW_DEV ZWAVE_DEV_MAX
+typedef zwave_dev_t zw_dev_t;
 
 static lv_obj_t * scr_root      = NULL;
 static lv_obj_t * lbl_ctrl      = NULL;
@@ -476,4 +472,22 @@ lv_obj_t * screen_zwave_create(void) {
 
     refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;
+}
+
+/* ---- master↔slave bridge -------------------------------------------------
+ * The Toon's controller talks Z-Wave over BoxTalk on the master. On the WASM
+ * slave we don't have a controller at all; the master serialises its current
+ * g_dev[] into the SSE frame and the slave applies it here so the admin
+ * screen's list view (build_rows() → g_dev) shows the same nodes. */
+int zwave_dev_count(void) { return g_dev_count; }
+int zwave_dev_at(int i, zwave_dev_t * out) {
+    if (!out || i < 0 || i >= g_dev_count) return 0;
+    *out = g_dev[i];
+    return 1;
+}
+void zwave_set_devices_from_remote(int n, const zwave_dev_t * src) {
+    if (n < 0) n = 0;
+    if (n > MAX_ZW_DEV) n = MAX_ZW_DEV;
+    for (int i = 0; i < n; i++) g_dev[i] = src[i];
+    g_dev_count = n;
 }
