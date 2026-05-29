@@ -16,6 +16,7 @@
 #include "display.h"
 #include "schedule.h"
 #include "boxtalk.h"
+#include "pin_modal.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -303,8 +304,15 @@ static void fill_end_for_new(schedule_entry_t * e) {
     e->end_day  = (e->start_hour + 1 >= 24) ? (e->start_day + 1) % 7 : e->start_day;
 }
 
-static void on_save(lv_event_t * e) {
-    (void)e;
+/* Save + Delete are the only mutation points in this screen — every other
+ * handler (chip taps, hour/minute spinners, state buttons) only mutates
+ * the scratch `edit_state` struct. PIN-gate just the commits so the user
+ * can still browse the schedule and the edit modal freely without being
+ * prompted; the prompt fires when they're about to actually change the
+ * stored schedule. edit_state is a static so it's still valid when the
+ * gated action eventually fires (pin_modal defers asynchronously). */
+static void save_apply(void * ctx) {
+    (void)ctx;
     schedule_entry_t ent = {0};
     ent.target_state = edit_state.target_state;
     ent.start_min    = edit_state.minute;
@@ -326,8 +334,12 @@ static void on_save(lv_event_t * e) {
     }
     close_modal();
 }
-static void on_delete(lv_event_t * e) {
+static void on_save(lv_event_t * e) {
     (void)e;
+    pin_gate(save_apply, NULL);
+}
+static void delete_apply(void * ctx) {
+    (void)ctx;
     if (edit_state.idx >= 0) {
         schedule_remove(edit_state.idx);
         if (schedule_save() == 0) {
@@ -336,6 +348,10 @@ static void on_delete(lv_event_t * e) {
         }
     }
     close_modal();
+}
+static void on_delete(lv_event_t * e) {
+    (void)e;
+    pin_gate(delete_apply, NULL);
 }
 static void on_cancel(lv_event_t * e) { (void)e; close_modal(); }
 
