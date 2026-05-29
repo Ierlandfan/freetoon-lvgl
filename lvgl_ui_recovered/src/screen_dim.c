@@ -602,7 +602,9 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_color(lbl_clock, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_clock, &lv_font_montserrat_96_custom, 0);
     lv_label_set_text(lbl_clock, "--:--");
-    lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, SY(-130));
+    /* Nudged down from -130 so there's more headroom between the clock and the
+     * "ft" logo / top chrome. */
+    lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, SY(-116));
 
     /* Usage bars at the outer edges, centred on the indoor-temp row (gas left,
      * energy right by default). Values + side handled in refresh_cb. */
