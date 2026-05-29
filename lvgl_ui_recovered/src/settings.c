@@ -146,12 +146,16 @@ void settings_load(void) {
     FILE * f = fopen(CFG_PATH, "r");
     if (!f) goto autodetect;
     cfg_existed = 1;
-    char line[128];
+    char line[768];
     while (fgets(line, sizeof(line), f)) {
-        char k[64], v[64];
+        char k[64], v[704];
         /* Value runs to end-of-line, not the first space: city names like
-         * "Sint Pancras" must survive (%63s would truncate to "Sint"). */
-        if (sscanf(line, "%63[^=]=%63[^\n]", k, v) != 2) continue;
+         * "Sint Pancras" must survive (%63s would truncate to "Sint").
+         * v[] is 704 (and line[] 768) so multi-feed news_rss_url (640B,
+         * tab-encoded) and the 256B ICS/stream/rotate fields survive the
+         * load round-trip instead of being truncated — added feeds vanished
+         * after restart because the old 63-char capture dropped them. */
+        if (sscanf(line, "%63[^=]=%703[^\n]", k, v) != 2) continue;
         /* Trim a trailing CR (CRLF cfg files) so values stay clean. */
         size_t vlen = strlen(v);
         if (vlen && v[vlen - 1] == '\r') v[vlen - 1] = 0;

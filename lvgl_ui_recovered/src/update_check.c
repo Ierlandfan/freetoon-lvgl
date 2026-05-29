@@ -28,10 +28,32 @@
  *       non-prerelease, non-draft releases (404 → no update, banner stays off).
  * All freetoon releases are currently beta, so "stable" finds nothing until a
  * non-prerelease is published. */
-#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=30"
+/* per_page kept modest: the asset-metadata blob per release is large and the
+ * shared http_fetch caps the transfer at a few seconds, so a 30-release page
+ * could run past the timeout on the Toon's slow link and fail the whole check.
+ * 10 newest is more than enough to find the highest semver even when GitHub's
+ * created_at order is scrambled by a re-created older release. */
+#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=10"
 #define RELEASES_API_STABLE "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases/latest"
 
+/* Lightweight connectivity probe used to tell "the GitHub API itself is
+ * unreachable / rate-limited / blocked" apart from "the Toon has no internet
+ * at all". This is the SAME reliable host the working tiles can reach over
+ * plain HTTP, so a green here means general internet is fine even when the
+ * api.github.com fetch returned nothing (e.g. Pi-Hole/proxy quirks, the 60/hr
+ * unauthenticated GitHub API rate-limit, or a transfer that ran past the
+ * fetch timeout). When this succeeds we must NOT report "check internet". */
+#define CONNECTIVITY_PROBE_URL "http://detectportal.firefox.com/success.txt"
+
 update_state_t g_update_state = {0};
+
+/* 1 if real internet is reachable right now, 0 otherwise. Cheap captive-portal
+ * style probe (small body, plain HTTP, no TLS handshake to gate on). */
+static int internet_reachable(void) {
+    char tmp[64];
+    int rc = http_fetch(CONNECTIVITY_PROBE_URL, tmp, sizeof tmp);
+    return (rc == 0 && strstr(tmp, "success")) ? 1 : 0;
+}
 
 /* Pull "key":"value" out of a JSON blob. Brittle but jq-free. */
 static int json_extract_str(const char * src, const char * key,
@@ -140,8 +162,17 @@ void update_check_now(void) {
      * non-zero as failure. body[] is also empty after a failure since
      * we cleared it pre-call. */
     if (rc != 0 || body[0] == 0) {
-        g_update_state.last_check_ok = 0;
-        fprintf(stderr, "[update] fetch failed (rc=%d)\n", rc);
+        /* The api.github.com fetch failed — but that is NOT proof the Toon is
+         * offline. The GitHub *API* host is the flaky one: unauthenticated
+         * requests are rate-limited (60/hr → 403/empty), a Pi-Hole/proxy can
+         * single it out, and the larger /releases payload can run past the
+         * fetch timeout on a slow link. Meanwhile buienradar/news/waste/
+         * domoticz all fetch fine. So only report "check internet" when a real
+         * connectivity probe ALSO fails; otherwise treat it as "couldn't reach
+         * the update server right now" without the false offline banner. */
+        g_update_state.last_check_ok = internet_reachable();
+        fprintf(stderr, "[update] github fetch failed (rc=%d), internet=%d\n",
+                rc, g_update_state.last_check_ok);
         return;
     }
     g_update_state.last_check_ok = 1;

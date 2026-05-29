@@ -311,11 +311,14 @@ static void handle_notify(const char* xml) {
             meteradapter_on_flow(v);
             toon_state.msg_count++;
         }
-    } else if (tile_slots_integration_by_service(sid) != NULL) {
+    } else if (tile_slots_integration_by_service(tail) != NULL) {
         /* Marketplace integration — dispatched via the manifest's value_field
          * / subtitle_field. tile_slots_on_notify updates the latest-value
-         * cache the home-tile renderer reads on the next refresh. */
-        tile_slots_on_notify(sid, xml);
+         * cache the home-tile renderer reads on the next refresh.
+         * Match on the stripped `tail` (bare serviceId), not the full URN
+         * `sid`, like every other branch — the manifest's service_id is bare,
+         * so using `sid` here never matched and the crypto tile stayed empty. */
+        tile_slots_on_notify(tail, xml);
     } else if (strcmp(tail, "BoilerInfo") == 0) {
         /* Dump the *full* XML the first 3 times so we can confirm the exact
          * element names this Toon's happ_thermstat publishes. The previous

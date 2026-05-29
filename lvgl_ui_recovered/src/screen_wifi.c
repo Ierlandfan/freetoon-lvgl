@@ -55,6 +55,9 @@ static char g_cur_ip[24] = "";
 static volatile int g_internet = -1;   /* -1 unknown, 0 no, 1 yes */
 static int  g_scanning = 0;
 static int  g_status_ticks = 0;
+static int  g_status_known = 0;   /* 0 until the first real status response lands;
+                                     keeps "querying..." up instead of flashing a
+                                     false "not connected" before the query returns */
 
 /* ===================================================================== */
 /* XML helper                                                            */
@@ -260,6 +263,7 @@ static void on_disc_confirm(lv_event_t * e) {
     if (lbl_hint) lv_label_set_text(lbl_hint,
         "Disconnected. Tap Scan to reconnect.");
     g_cur_ssid[0] = 0; g_internet = -1; g_status_ticks = 0;
+    g_status_known = 1;   /* deliberate disconnect: "not connected" is correct now */
     disc_close();
 }
 static void on_disconnect(lv_event_t * e) {
@@ -364,6 +368,7 @@ static void refresh_cb(lv_timer_t * t) {
                                   g_ap_count, g_ap_count == 1 ? "" : "s");
         } else if (strstr(netcon_response_buf, "GetWirelessNetworkInformationResponse")) {
             parse_status(netcon_response_buf);
+            g_status_known = 1;   /* we now have a real answer to render */
         }
         netcon_response_ready = 0;
     }
@@ -384,8 +389,13 @@ static void refresh_cb(lv_timer_t * t) {
             lv_label_set_text_fmt(lbl_status, "%s   %d%%   %s   %s",
                 g_cur_ssid, g_cur_quality < 0 ? 0 : g_cur_quality,
                 g_cur_ip[0] ? g_cur_ip : "-", net);
-        else
+        else if (g_status_known)
+            /* Only declare "not connected" once a real status query has come
+             * back empty — never in the gap between screen-load and the first
+             * response, which would flash a false "not connected". */
             lv_label_set_text(lbl_status, "not connected");
+        else
+            lv_label_set_text(lbl_status, "querying...");
     }
     if (btn_scan_lbl) lv_label_set_text(btn_scan_lbl, g_scanning ? "Scanning..." : "Scan");
 }
@@ -401,6 +411,7 @@ static void on_scr_event(lv_event_t * e) {
     if (c == LV_EVENT_SCREEN_LOADED) {
         if (refresh_timer) lv_timer_resume(refresh_timer);
         g_status_ticks = 0;
+        g_status_known = 0;   /* show "querying..." until the fresh query returns */
     } else if (c == LV_EVENT_SCREEN_UNLOADED) {
         if (refresh_timer) lv_timer_pause(refresh_timer);
     }

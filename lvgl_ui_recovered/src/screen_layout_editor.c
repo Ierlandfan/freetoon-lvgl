@@ -524,8 +524,18 @@ static void on_delete_tile(lv_event_t * e) {
 }
 static void on_reset(lv_event_t * e) {
     (void)e;
-    layout_reset_default();
-    screen_layout_editor_show();   /* re-open from defaults */
+    /* Recover a messy layout straight from the GUI: restore the built-in default
+     * AND apply it. Just resetting the working copy (the old behaviour) left a
+     * bad SAVED layout active on home unless the user also remembered to Opslaan,
+     * so a wedged layout looked unfixable (BUG 6). Persist defaults to the active
+     * preset, switch home back to the stock (non-custom) arrangement, and restart
+     * so home boots clean — the same apply path on_save uses. */
+    layout_reset_default();                       /* g_layout = built-in default */
+    layout_save_named(settings.active_layout);    /* persist defaults to active preset */
+    settings.custom_layout_enabled = 0;           /* home → built-in hardcoded layout */
+    settings_save();
+    fprintf(stderr, "[layout] reset to default — restarting UI\n");
+    _exit(0);                                      /* ui_launcher.sh respawns; home is clean */
 }
 
 /* ---- preset manager ("Indelingen") ------------------------------------ */
@@ -773,7 +783,20 @@ static void open_preset_mgr(lv_event_t * e) {
     lv_obj_add_event_cb(cl, on_preset_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cll = lv_label_create(cl); lv_label_set_text(cll, "Sluit"); lv_obj_center(cll);
 }
-static void on_cancel(lv_event_t * e) { (void)e; close_chooser(); if (modal) { lv_obj_del(modal); modal = NULL; } sel = -1; }
+static void on_cancel(lv_event_t * e) {
+    (void)e;
+    /* Close the editor and return to the screen underneath (Settings). Deleting
+     * `modal` also frees any open sub-modals (they're its children); NULL their
+     * static handles too so a stale non-NULL pointer can't block a later re-open
+     * or get dereferenced after free. */
+    close_chooser();
+    if (modal) { lv_obj_del(modal); modal = NULL; }
+    chooser = type_grid = NULL;
+    preset_mgr = preset_list = NULL;
+    name_modal = name_ta = NULL;
+    confirm_modal = NULL; confirm_idx = -1;
+    sel = -1;
+}
 static void on_save(lv_event_t * e) {
     (void)e;
     g_layout = edit;

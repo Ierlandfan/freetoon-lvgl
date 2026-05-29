@@ -169,7 +169,16 @@ CFG
         echo "  (skipping bridge install — $QUBY_BRIDGE_BIN absent; OT bridge stays off)"
     fi
     # Stop the running UI / VNC so init respawns through the new launcher.
-    remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; true"
+    # On a FRESH install the live UI is the stock qt-gui (started by its own
+    # stock mechanism / startqt), NOT our toonui — so killing only toonui left
+    # qt-gui owning the framebuffer. init's HUP would add the `toon:` row, but
+    # the freetoon launcher/bootpick could never claim the screen, so qt-gui
+    # appeared to just "restart" and the user had to manually pick restart from
+    # the qt-gui Software tab. Tear down the stock UI too (startqt + qt-gui) so
+    # `kill -HUP 1` lets the new `toon:` launcher engage immediately — exactly
+    # what the in-UI "restart Toon" does. Idempotent: on an upgrade where
+    # toonui was already running, these qt-gui pkills are simply no-ops.
+    remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x qt-gui 2>/dev/null; pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null; pkill -9 -x startqt 2>/dev/null; true"
     remote "kill -HUP 1"
 
     echo

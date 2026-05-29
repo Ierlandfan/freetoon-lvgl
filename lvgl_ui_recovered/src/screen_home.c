@@ -2167,11 +2167,18 @@ static void on_home_gesture(lv_event_t * e) {
     lv_indev_t * indev = lv_indev_get_act();
     lv_dir_t dir = lv_indev_get_gesture_dir(indev);
     lv_point_t p; lv_indev_get_point(indev, &p);
-    /* Right of x≈556 is the tile zone: swipe pages between tile sets.
+    /* When already on page 2, any right-swipe returns to page 0. A custom page 2
+     * is full-screen+opaque so the touch lands left of x≈556 (over the covered
+     * thermostat zone) — gating the back-swipe on x there left the user stuck on
+     * page 2 (BUG 8). The lights shortcut only applies on page 0. */
+    if (home_tile_page != 0) {
+        if (dir == LV_DIR_RIGHT) home_show_page(0);
+        return;
+    }
+    /* Page 0: right of x≈556 is the tile zone: swipe pages between tile sets.
      * Left of it (the thermostat) keeps the swipe-right-for-lights shortcut. */
     if (p.x >= 556) {
-        if      (dir == LV_DIR_LEFT)  home_show_page(1);
-        else if (dir == LV_DIR_RIGHT) home_show_page(0);
+        if (dir == LV_DIR_LEFT) home_show_page(1);
     } else if (dir == LV_DIR_RIGHT) {
         open_lights_backend();
     }
@@ -2647,14 +2654,19 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_t * th = lv_obj_create(scr_root);
     lv_obj_set_size(th, 520, 360);   /* bottom flush with the curtains/right column */
     lv_obj_set_pos(th, 20, 20);
-    /* Custom layout: move/hide the thermostat block from the grid. Position
-     * only — its internals are absolutely positioned, so keep the native size
-     * (the editor treats it as move/hide, not resize). */
+    /* Custom layout: move/size/hide the thermostat block from the grid. Size
+     * it to its grid cell too (like every make_tile tile) so its footprint and
+     * its neighbours line up on the grid — otherwise the native 520x360 tile is
+     * undersized vs its ~597x450 default footprint and the right-column tiles
+     * snap to grid edges, looking shrunk + misaligned (BUG 5). The internals are
+     * absolutely positioned/centred, so a larger box just gives them more room;
+     * SCROLLABLE is cleared below so any overflow is clipped, not scrolled. */
     if (settings.custom_layout_enabled) {
         const layout_tile_t * L = layout_find(LT_THERMOSTAT);
         if (L && L->visible) { int x, y, w, h;
             layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &w, &h);
             lv_obj_set_pos(th, x, y);
+            lv_obj_set_size(th, w, h);
         } else if (L) {
             lv_obj_add_flag(th, LV_OBJ_FLAG_HIDDEN);
         }
@@ -3220,6 +3232,11 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_border_width(home_page1, 0, 0);
     lv_obj_set_style_pad_all(home_page1, 0, 0);
     lv_obj_clear_flag(home_page1, LV_OBJ_FLAG_SCROLLABLE);
+    /* Start hidden so a full-screen+opaque custom page 2 never paints over the
+     * thermostat on first show (BUG 8). home_show_page(0) below re-asserts this,
+     * but a custom page-2 tile that overlaps the left zone is visible during the
+     * rest of screen build until then — hide it up-front. */
+    lv_obj_add_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
     {
         /* Custom layout: render page 2 as the user's grid of assignable slots,
          * full-screen + opaque so it cleanly covers the thermostat/weather when
