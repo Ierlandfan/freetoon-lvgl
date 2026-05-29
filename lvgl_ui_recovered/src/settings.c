@@ -101,6 +101,15 @@ settings_t settings = {
     .update_channel       = 1,   /* beta/dev by default */
     .energy_source       = 0,   /* meteradapter (official) by default */
 
+    /* Toon 1 panel mounting orientation — TSC2007 reports Y flipped vs the
+     * framebuffer on EVERY Toon 1 (not a per-device tweak). Default this
+     * to 1 in the TOON1 build so a fresh install lands with usable touch
+     * on day one, without the customer SSH-editing the cfg. Toon 2's
+     * capacitive panel needs no transform. */
+#ifdef TOON1
+    .touch_invert_y      = 1,
+#endif
+
     /* Web login on by default; password starts empty → first visit to /
      * 302s to /set-password to force the user to mint one. */
     .pwa_login_enabled   = 1,
