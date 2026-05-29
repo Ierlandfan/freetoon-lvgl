@@ -26,6 +26,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#ifdef USE_SDL
+#include "lv_drivers/sdl/sdl.h"
+#endif
 
 static lv_color_t fb[DISP_HOR * DISP_VER];
 
@@ -161,13 +164,20 @@ static void render_one(create_fn fn, const char * out) {
 
 int main(int argc, char ** argv) {
     lv_init();
+#ifdef USE_SDL
+    sdl_init();
+#endif
     static lv_disp_draw_buf_t db;
     static lv_color_t line_buf[DISP_HOR * 60];
     lv_disp_draw_buf_init(&db, line_buf, NULL, DISP_HOR * 60);
     static lv_disp_drv_t dd;
     lv_disp_drv_init(&dd);
     dd.draw_buf = &db;
+#ifdef USE_SDL
+    dd.flush_cb = sdl_display_flush;
+#else
     dd.flush_cb = sim_flush;
+#endif
     dd.hor_res  = DISP_HOR;
     dd.ver_res  = DISP_VER;
     lv_disp_drv_register(&dd);
@@ -175,7 +185,11 @@ int main(int argc, char ** argv) {
     static lv_indev_drv_t id;
     lv_indev_drv_init(&id);
     id.type = LV_INDEV_TYPE_POINTER;
+#ifdef USE_SDL
+    id.read_cb  = sdl_mouse_read;
+#else
     id.read_cb = sim_indev_read;
+#endif
     lv_indev_drv_register(&id);
 
     settings_load();   /* defaults when /mnt/data/toonui.cfg is absent */
@@ -189,6 +203,23 @@ int main(int argc, char ** argv) {
 
     const char * mode = (argc > 1) ? argv[1] : "home";
 
+#ifdef USE_SDL
+    ui_init(); 
+    
+    uint32_t last_idle_check = 0;
+    while(1) {
+        lv_timer_handler(); 
+        usleep(5000);
+        lv_tick_inc(5);
+
+        uint32_t now = lv_tick_get();
+        if (now - last_idle_check > 200) {
+            ui_idle_tick();
+            last_idle_check = now;
+        }
+    }
+    return 0;
+#endif
     if (!strcmp(mode, "all")) {
         const char * dir = (argc > 2) ? argv[2] : "/tmp";
         char path[256];

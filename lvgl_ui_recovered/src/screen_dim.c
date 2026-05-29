@@ -19,6 +19,7 @@
 #include <stdlib.h>     /* abs() — emscripten/musl doesn't transitively expose it */
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
 
 LV_FONT_DECLARE(lv_font_montserrat_96_custom);
 LV_FONT_DECLARE(lv_font_montserrat_64_custom);   /* big indoor-temp readout */

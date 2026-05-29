@@ -7,6 +7,7 @@
  * picker process exits as soon as a button is tapped or the timer fires,
  * and ui_launcher.sh dispatches to the chosen binary based on rc.
  */
+#ifndef SIM
 #include "bootpick.h"
 #include "display.h"
 #include "settings.h"
@@ -286,3 +287,4 @@ int bootpick_run(void) {
     write_choice_file(bp_final_choice);
     return bp_final_choice;
 }
+#endif
