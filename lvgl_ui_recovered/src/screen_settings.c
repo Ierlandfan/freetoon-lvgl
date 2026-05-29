@@ -1048,6 +1048,12 @@ static void open_marketplace(lv_event_t * e) {
     ui_push(screen_marketplace_create());
 }
 
+/* Crypto tile-tap: live-search picker for the crypto integration's coins. */
+static void open_crypto_picker(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_crypto_picker_create());
+}
+
 /* Z-Wave tile-tap: push the built-in Z-Wave controller management screen. */
 static void open_zwave(lv_event_t * e) {
     (void)e;
@@ -3180,6 +3186,8 @@ lv_obj_t * screen_settings_create(void) {
               "freetoon vs qt-gui", open_uimode_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
               "install integrations", open_marketplace); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Crypto",
+              "kies munten", open_crypto_picker); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Tiles",
               "assign home tiles", open_tile_slots_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, "Z-Wave",
