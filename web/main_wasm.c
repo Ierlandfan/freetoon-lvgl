@@ -324,7 +324,6 @@ int main(int argc, char * argv[]) {
      * through the SSE itself (ha_connected, p1_connected, etc). */
     settings.energy_source  = 1;   /* read hw_state.power_w (HomeWizard from master) */
     settings.enable_p1_elec = 1;
-    settings.enable_p1_water = 1;  /* Water tile — hw_state.connected_water/water_total_m3 via SSE */
     settings.enable_ha      = 1;
     settings.enable_vent    = 1;   /* Itho — vent_state.connected comes via SSE */
     settings.news_enabled   = 1;   /* RSS ticker — news_set_count/item from SSE */
