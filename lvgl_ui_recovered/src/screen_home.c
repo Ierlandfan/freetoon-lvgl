@@ -975,6 +975,24 @@ static void vent_apply_fan_anim(int rpm) {
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
     lv_anim_start(&a);
 }
+
+/* Map the SELECTED Itho preset (fan_info) to an intuitive display % and a
+ * synthetic spin rpm. This unit's ExhFanSpeed % is broken (Error:16, often
+ * stuck at 100) and its physical rpm is inverted (Low spins faster than High),
+ * so the user saw "Low → 100% + fast spin". Driving the tile off the chosen
+ * mode instead is intuitive and unit-independent: Low = low %/slow icon,
+ * High = high %/fast icon. out_spin is fed to vent_apply_fan_anim (higher =
+ * faster). Unknown preset → fall back to the raw sensor values. */
+static void vent_mode_display(int * out_pct, int * out_spin) {
+    char fi[16];
+    memcpy(fi, (const char *)vent_state.fan_info, sizeof fi);
+    fi[sizeof fi - 1] = 0;
+    if (vent_state.remaining_min > 0 || strcmp(fi, "timer") == 0) { *out_pct = 100; *out_spin = 2800; }
+    else if (strcmp(fi, "high") == 0)                             { *out_pct = 100; *out_spin = 2800; }
+    else if (strcmp(fi, "low")  == 0)                             { *out_pct = 30;  *out_spin = 900;  }
+    else if (strcmp(fi, "auto") == 0 || strcmp(fi, "medium") == 0){ *out_pct = 50;  *out_spin = 1500; }
+    else { *out_pct = vent_state.speed_pct; *out_spin = vent_state.fan_rpm; }
+}
 static void open_settings_action(void * ctx) {
     (void)ctx;
     ui_push(screen_settings_create());
@@ -1620,20 +1638,24 @@ static void refresh_cb(lv_timer_t * t) {
                 (lv_tick_get() - vent_local_press_ms) < 90000) {
                 src_tag = "TOON";
             }
+            int mode_pct, mode_spin; vent_mode_display(&mode_pct, &mode_spin);
+            (void)mode_spin;
             lv_label_set_text_fmt(lbl_boiler_pressure,
                                   "%d%%  %drpm\nvia %s",
-                                  vent_state.speed_pct,
-                                  vent_state.fan_rpm,
+                                  mode_pct,            /* mode-driven, not the broken ExhFanSpeed % */
+                                  vent_state.fan_rpm,  /* real rpm kept as a diagnostic */
                                   src_tag);
         } else {
             lv_label_set_text(lbl_boiler_pressure, "-- %");
         }
     }
-    /* spin speed tracks fan_rpm, not the %, because Itho's % is unreliable
-       on this unit (Error:16 sticks ExhFanSpeed at 0 and the Low/High labels
-       are backwards relative to actual airflow). */
-    if (vent_state.connected)
-        vent_apply_fan_anim(vent_state.fan_rpm);
+    /* Spin speed follows the SELECTED MODE (Low = slow, High = fast), not the
+       raw fan_rpm — on this unit Low actually reports higher rpm than High, so
+       an rpm-driven icon spins the wrong way ("Low spins fast"). */
+    if (vent_state.connected) {
+        int mp, ms; vent_mode_display(&mp, &ms);
+        vent_apply_fan_anim(ms);
+    }
 
     /* Curtains tile — state + position + battery from the HA poller.
        Spinner is shown only while actively moving; the position bar always
