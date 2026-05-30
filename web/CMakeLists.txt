@@ -106,7 +106,7 @@ target_compile_definitions(index PRIVATE
     SDL_VER_RES=${PANEL_VER}
     $<$<BOOL:${TOON1}>:TOON1>
     WASM_BUILD
-    BUILD_VERSION="v0.9.33")
+    BUILD_VERSION="v0.9.34")
 
 target_compile_options(index PRIVATE
     -O2
