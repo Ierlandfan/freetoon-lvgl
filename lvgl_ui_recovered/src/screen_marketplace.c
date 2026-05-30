@@ -14,6 +14,7 @@
  * "find next id/name/description/version/url" walks reliably.
  */
 #include "screens.h"
+#include "display.h"
 #include "http.h"
 #include "settings.h"
 #include "icons.h"
@@ -217,7 +218,7 @@ static void build_rows(void) {
     for (int i = 0; i < entry_count; i++) {
         integration_t * ent = &entries[i];
         ent->row = lv_obj_create(list_box);
-        lv_obj_set_size(ent->row, 940, 90);
+        lv_obj_set_size(ent->row, SX(940), SY(90));
         lv_obj_set_style_bg_color(ent->row, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_border_width(ent->row, 0, 0);
         lv_obj_set_style_radius(ent->row, 12, 0);
@@ -226,27 +227,27 @@ static void build_rows(void) {
 
         /* Name + version on top row */
         lv_obj_t * lbl = lv_label_create(ent->row);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(lbl, SF(22), 0);
         lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT_HI), 0);
         if (ent->version[0])
             lv_label_set_text_fmt(lbl, "%s  v%s", ent->name, ent->version);
         else
             lv_label_set_text(lbl, ent->name);
-        lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, 0);
+        lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), 0);
 
         /* Description, scrolling if long */
         lv_obj_t * desc = lv_label_create(ent->row);
-        lv_obj_set_style_text_font(desc, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(desc, SF(18), 0);
         lv_obj_set_style_text_color(desc, lv_color_hex(COL_TEXT_DIM), 0);
-        lv_obj_set_width(desc, 720);
+        lv_obj_set_width(desc, SX(720));
         lv_label_set_long_mode(desc, LV_LABEL_LONG_WRAP);
         lv_label_set_text(desc, ent->description);
-        lv_obj_align(desc, LV_ALIGN_TOP_LEFT, 4, 30);
+        lv_obj_align(desc, LV_ALIGN_TOP_LEFT, SX(4), SY(30));
 
         /* Install button */
         ent->btn_install = lv_btn_create(ent->row);
-        lv_obj_set_size(ent->btn_install, 180, 60);
-        lv_obj_align(ent->btn_install, LV_ALIGN_RIGHT_MID, -4, 0);
+        lv_obj_set_size(ent->btn_install, SX(180), SY(60));
+        lv_obj_align(ent->btn_install, LV_ALIGN_RIGHT_MID, SX(-4), 0);
         lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(0x2a4060), 0);
         lv_obj_set_style_radius(ent->btn_install, 10, 0);
         lv_obj_add_event_cb(ent->btn_install, on_install_clicked,
@@ -255,7 +256,7 @@ static void build_rows(void) {
         lv_obj_set_style_text_color(ent->btn_install_lbl,
                                     lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(ent->btn_install_lbl,
-                                    &lv_font_montserrat_22, 0);
+                                    SF(22), 0);
         lv_label_set_text(ent->btn_install_lbl,
                           install_helper_ok() ? "Install" : "No helper");
         lv_obj_center(ent->btn_install_lbl);
@@ -283,34 +284,34 @@ lv_obj_t * screen_marketplace_create(void) {
     /* Header */
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Marketplace");
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 24);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(24));
 
     lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, 140, 56);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 20, 14);
+    lv_obj_set_size(back, SX(140), SY(56));
+    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(20), SY(14));
     lv_obj_set_style_bg_color(back, lv_color_hex(0x3a4658), 0);
     lv_obj_set_style_radius(back, 10, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_label_set_text(bl, "< Back");
     lv_obj_center(bl);
 
     /* Status line shown above the list while we fetch + report errors. */
     status_lbl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(status_lbl, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(status_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(status_lbl, SF(18), 0);
     lv_label_set_text(status_lbl, "Fetching catalog...");
-    lv_obj_align(status_lbl, LV_ALIGN_TOP_LEFT, 22, 80);
+    lv_obj_align(status_lbl, LV_ALIGN_TOP_LEFT, SX(22), SY(80));
 
     /* Scrollable container for the rows */
     list_box = lv_obj_create(scr_root);
-    lv_obj_set_size(list_box, 980, 470);
-    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, 22, 110);
+    lv_obj_set_size(list_box, SX(980), SY(470));
+    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, SX(22), SY(110));
     lv_obj_set_style_bg_opa(list_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list_box, 0, 0);
     lv_obj_set_style_pad_all(list_box, 4, 0);

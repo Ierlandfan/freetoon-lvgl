@@ -93,7 +93,7 @@ static void rebuild_timeline(void) {
         lv_obj_t * hl = lv_label_create(scr_root);
         lv_label_set_text_fmt(hl, "%02d", hr);
         lv_obj_set_style_text_color(hl, lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(hl, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(hl, SF(14), 0);
         /* timeline_box at (TL_X-20=60, TL_Y); pad_all=8 internally → the
          * y=0 row inside the box is at screen y = TL_Y+8. Labels sit
          * just left of the box. */
@@ -178,7 +178,7 @@ static void rebuild_day_list(void) {
 
     lv_obj_t * hdr = lv_label_create(day_list);
     lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(hdr, SF(22), 0);
     lv_label_set_text_fmt(hdr, "%s - switch points", schedule_day_short(selected_day));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 0, 0);
 
@@ -211,7 +211,7 @@ static void rebuild_day_list(void) {
                  e->start_hour, e->start_min, schedule_state_name(e->target_state));
         lv_obj_t * lbl = lv_label_create(row);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(lbl, SF(22), 0);
         lv_label_set_text(lbl, buf);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 28, 0);
 
@@ -232,7 +232,7 @@ static void rebuild_day_list(void) {
     if (row_count == 0) {
         lv_obj_t * empty = lv_label_create(day_list);
         lv_obj_set_style_text_color(empty, lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(empty, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(empty, SF(22), 0);
         lv_label_set_text(empty, "No switch points for this day.");
         lv_obj_align(empty, LV_ALIGN_TOP_LEFT, 0, 44);
         row_y = 100;
@@ -248,7 +248,7 @@ static void rebuild_day_list(void) {
     lv_obj_t * add_lbl = lv_label_create(add);
     lv_label_set_text(add_lbl, "+ Add switch point");
     lv_obj_set_style_text_color(add_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(add_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(add_lbl, SF(18), 0);
     lv_obj_center(add_lbl);
 }
 
@@ -390,7 +390,7 @@ static void show_edit_modal(int idx) {
 
     lv_obj_t * title = lv_label_create(panel);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text_fmt(title, "%s - switch point",
                           schedule_day_short(selected_day));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -398,7 +398,7 @@ static void show_edit_modal(int idx) {
     /* Time editor: big time label on top, buttons below in their own row. */
     edit_time_lbl = lv_label_create(panel);
     lv_obj_set_style_text_color(edit_time_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(edit_time_lbl, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(edit_time_lbl, SF(48), 0);
     edit_update_time();
     lv_obj_align(edit_time_lbl, LV_ALIGN_TOP_MID, 0, 50);
 
@@ -409,25 +409,25 @@ static void show_edit_modal(int idx) {
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, -190, row_y);
     lv_obj_add_event_cb(b, on_hour_dec, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, "h-");
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, -100, row_y);
     lv_obj_add_event_cb(b, on_hour_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, "h+");
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, 100, row_y);
     lv_obj_add_event_cb(b, on_min_dec, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, "m-");
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, 190, row_y);
     lv_obj_add_event_cb(b, on_min_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, "m+");
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     /* State picker row (4 buttons) */
     const char * names[] = {"Comfort", "Home", "Sleep", "Away"};
@@ -440,7 +440,7 @@ static void show_edit_modal(int idx) {
         lv_obj_t * lbl = lv_label_create(sb);
         lv_label_set_text(lbl, names[i]);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(lbl, SF(22), 0);
         lv_obj_center(lbl);
         edit_state_lbls[i] = lbl;
     }
@@ -454,7 +454,7 @@ static void show_edit_modal(int idx) {
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(save); lv_label_set_text(l, "Save");
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(l, SF(22), 0);
     lv_obj_center(l);
 
     if (idx >= 0) {
@@ -465,7 +465,7 @@ static void show_edit_modal(int idx) {
         lv_obj_add_event_cb(del, on_delete, LV_EVENT_CLICKED, NULL);
         l = lv_label_create(del); lv_label_set_text(l, "Delete");
         lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(l, SF(22), 0);
         lv_obj_center(l);
     }
 
@@ -476,7 +476,7 @@ static void show_edit_modal(int idx) {
     lv_obj_add_event_cb(cancel, on_cancel, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(cancel); lv_label_set_text(l, "Cancel");
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(l, SF(22), 0);
     lv_obj_center(l);
 }
 
@@ -532,12 +532,12 @@ lv_obj_t * screen_schedule_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_label_set_text(bl, "< Back");
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Schedule");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 26);
 
@@ -556,7 +556,7 @@ lv_obj_t * screen_schedule_create(void) {
         lv_obj_t * lbl = lv_label_create(c);
         lv_label_set_text(lbl, schedule_day_short(i));
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(lbl, SF(22), 0);
         lv_obj_center(lbl);
 
         day_chips[i] = c;

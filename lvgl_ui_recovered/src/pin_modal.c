@@ -121,7 +121,7 @@ void pin_gate(pin_action_cb action, void * ctx) {
     lv_obj_t * title = lv_label_create(panel);
     lv_label_set_text(title, "Enter PIN");
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(title, SF(22), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
     g_ta = lv_textarea_create(panel);
@@ -131,13 +131,13 @@ void pin_gate(pin_action_cb action, void * ctx) {
     lv_textarea_set_placeholder_text(g_ta, "••••");
     lv_obj_set_width(g_ta, panel_w - 80);
     lv_obj_align(g_ta, LV_ALIGN_TOP_MID, 0, 38);
-    lv_obj_set_style_text_font(g_ta, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(g_ta, SF(22), 0);
     lv_obj_set_style_text_align(g_ta, LV_TEXT_ALIGN_CENTER, 0);
 
     g_err_lbl = lv_label_create(panel);
     lv_label_set_text(g_err_lbl, "");
     lv_obj_set_style_text_color(g_err_lbl, lv_color_hex(0xaaaaaa), 0);
-    lv_obj_set_style_text_font(g_err_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(g_err_lbl, SF(14), 0);
     lv_obj_align_to(g_err_lbl, g_ta, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
 
     /* Numeric keyboard fills the rest of the panel. Built-in ✓ = OK,

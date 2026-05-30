@@ -133,7 +133,7 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_label_set_text(bl, "< Back");
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
 
     /* Radar image — buienradar serves a 500x512 PNG of the Netherlands
@@ -174,7 +174,7 @@ lv_obj_t * screen_forecast_create(void) {
                             (void *)(intptr_t)z[i].d);
         lv_obj_t * bl = lv_label_create(b);
         lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(bl, &lv_font_montserrat_28, 0);
+        lv_obj_set_style_text_font(bl, SF(28), 0);
         lv_label_set_text(bl, z[i].t);
         lv_obj_center(bl);
     }
@@ -182,7 +182,7 @@ lv_obj_t * screen_forecast_create(void) {
     /* Right side: title + body text */
     lbl_title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(lbl_title, SF(28), 0);
     lv_obj_set_width(lbl_title, SX(540));
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, SX(440), SY(100));
@@ -201,7 +201,7 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_scrollbar_mode(body_scroll, LV_SCROLLBAR_MODE_AUTO);
     lbl_body = lv_label_create(body_scroll);
     lv_obj_set_style_text_color(lbl_body, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_body, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_body, SF(18), 0);
     lv_obj_set_width(lbl_body, SX(540));
     lv_label_set_long_mode(lbl_body, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_body, "(laden...)");
@@ -246,19 +246,19 @@ lv_obj_t * screen_forecast_create(void) {
 
         fc_wind_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_wind_lbl[i], lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(fc_wind_lbl[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(fc_wind_lbl[i], SF(18), 0);
         lv_label_set_text(fc_wind_lbl[i], "");
         lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, 30, -2);
 
         fc_day_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(fc_day_lbl[i], &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(fc_day_lbl[i], SF(22), 0);
         lv_label_set_text(fc_day_lbl[i], "--");
         lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_LEFT, 0, 0);
 
         fc_temp_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(0xffcc44), 0);
-        lv_obj_set_style_text_font(fc_temp_lbl[i], &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(fc_temp_lbl[i], SF(22), 0);
         lv_label_set_text(fc_temp_lbl[i], "");
         lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_RIGHT, 0, 0);
 

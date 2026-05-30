@@ -10,6 +10,7 @@
  * news feeds.
  */
 #include "screens.h"
+#include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,37 +182,37 @@ lv_obj_t * screen_crypto_picker_create(void) {
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 8, 8);
+    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
     lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, LV_SYMBOL_LEFT " Terug");
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * save = lv_btn_create(scr_root);
-    lv_obj_align(save, LV_ALIGN_TOP_RIGHT, -8, 8);
+    lv_obj_align(save, LV_ALIGN_TOP_RIGHT, SX(-8), SY(8));
     lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, LV_SYMBOL_SAVE " Opslaan");
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * title = lv_label_create(scr_root);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(title, SF(22), 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_label_set_text(title, "Crypto munten");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 14);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, SY(14));
 
     ta_search = lv_textarea_create(scr_root);
     lv_textarea_set_one_line(ta_search, true);
     lv_textarea_set_placeholder_text(ta_search, "Zoek munt (bv. bitcoin, eth, solana)…");
     lv_obj_set_width(ta_search, LV_PCT(70));
-    lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, 64);
+    lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, SY(64));
     lv_obj_add_event_cb(ta_search, on_search_changed, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(ta_search, on_search_focus, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(ta_search, on_search_focus, LV_EVENT_DEFOCUSED, NULL);
 
     lbl_picked = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_picked, lv_color_hex(0x88dd66), 0);
-    lv_obj_align(lbl_picked, LV_ALIGN_TOP_MID, 0, 112);
+    lv_obj_align(lbl_picked, LV_ALIGN_TOP_MID, 0, SY(112));
 
     lst_results = lv_list_create(scr_root);
-    lv_obj_set_size(lst_results, LV_PCT(94), 330);
-    lv_obj_align(lst_results, LV_ALIGN_TOP_MID, 0, 140);
+    lv_obj_set_size(lst_results, LV_PCT(94), SY(330));
+    lv_obj_align(lst_results, LV_ALIGN_TOP_MID, 0, SY(140));
 
     kb = lv_keyboard_create(lv_layer_top());
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);

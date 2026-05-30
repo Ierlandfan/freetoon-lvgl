@@ -15,6 +15,7 @@
  * live boiler (see boxtalk.c).
  */
 #include "screens.h"
+#include "display.h"
 #include "settings.h"
 #include "domoticz.h"
 #include "calendar.h"
@@ -194,8 +195,8 @@ static void on_offset_change(lv_event_t * e) {
 static lv_obj_t * panel_row(lv_obj_t * parent, int y, const char * title,
                             lv_obj_t ** out_val_lbl) {
     lv_obj_t * row = lv_obj_create(parent);
-    lv_obj_set_size(row, 800, 74);
-    lv_obj_align(row, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(row, SX(800), SY(74));
+    lv_obj_align(row, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(row, lv_color_hex(0x1f3050), 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_radius(row, 12, 0);
@@ -205,14 +206,14 @@ static lv_obj_t * panel_row(lv_obj_t * parent, int y, const char * title,
 
     lv_obj_t * lbl = lv_label_create(row);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, title);
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 0, 0);
 
     if (out_val_lbl) {
         *out_val_lbl = lv_label_create(row);
         lv_obj_set_style_text_color(*out_val_lbl, lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(*out_val_lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(*out_val_lbl, SF(22), 0);
         lv_obj_align(*out_val_lbl, LV_ALIGN_TOP_RIGHT, 0, 0);
     }
     return row;
@@ -222,8 +223,8 @@ static lv_obj_t * panel_row(lv_obj_t * parent, int y, const char * title,
 static lv_obj_t * row_slider(lv_obj_t * row, int lo, int hi, int val,
                              lv_event_cb_t cb) {
     lv_obj_t * s = lv_slider_create(row);
-    lv_obj_set_size(s, 760, 14);
-    lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_set_size(s, SX(760), SY(14));
+    lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, SY(-2));
     lv_slider_set_range(s, lo, hi);
     lv_slider_set_value(s, val, LV_ANIM_OFF);
     lv_obj_add_event_cb(s, cb, LV_EVENT_VALUE_CHANGED, NULL);
@@ -233,8 +234,8 @@ static lv_obj_t * row_slider(lv_obj_t * row, int lo, int hi, int val,
 /* A switch pinned to the right of a panel_row(). */
 static lv_obj_t * row_switch(lv_obj_t * row, int checked, lv_event_cb_t cb) {
     lv_obj_t * sw = lv_switch_create(row);
-    lv_obj_set_size(sw, 64, 30);
-    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_set_size(sw, SX(64), SY(30));
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, SX(-4), 0);
     if (checked) lv_obj_add_state(sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw, cb, LV_EVENT_VALUE_CHANGED, NULL);
     return sw;
@@ -281,7 +282,7 @@ static void ta_kb_event(lv_event_t * e) {
     if (c == LV_EVENT_FOCUSED || c == LV_EVENT_CLICKED) {
         if (!g_kb) {
             g_kb = lv_keyboard_create(lv_layer_top());
-            lv_obj_set_size(g_kb, LV_HOR_RES, 240);
+            lv_obj_set_size(g_kb, LV_HOR_RES, SY(240));
             lv_obj_align(g_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
             lv_obj_add_event_cb(g_kb, kb_event, LV_EVENT_ALL, NULL);
             lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, kb_num_map, kb_num_ctrl);
@@ -336,7 +337,7 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
      * the tile-slots picker can be opened from the home screen too. */
     cur_modal = lv_obj_create(lv_scr_act());
     lv_obj_remove_style_all(cur_modal);
-    lv_obj_set_size(cur_modal, 1024, 600);
+    lv_obj_set_size(cur_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(cur_modal, 0, 0);
     lv_obj_set_style_bg_color(cur_modal, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(cur_modal, LV_OPA_70, 0);
@@ -345,7 +346,7 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_add_event_cb(cur_modal, modal_close, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * panel = lv_obj_create(cur_modal);
-    lv_obj_set_size(panel, 860, panel_h);
+    lv_obj_set_size(panel, SX(860), SY(panel_h));
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
@@ -355,14 +356,14 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);              /* stop taps reaching backdrop */
 
     lv_obj_t * t = lv_label_create(panel);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(t, SF(28), 0);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
     lv_label_set_text(t, title);
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 4);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(4), SY(4));
 
     lv_obj_t * x = lv_btn_create(panel);
-    lv_obj_set_size(x, 56, 56);
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, 4, -4);
+    lv_obj_set_size(x, SX(56), SY(56));
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(4), SY(-4));
     lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
     lv_obj_set_style_radius(x, 12, 0);
     lv_obj_add_event_cb(x, modal_close, LV_EVENT_CLICKED, NULL);
@@ -407,7 +408,7 @@ static void on_boiler_switch(lv_event_t * e) {
     /* Confirm dialog, layered on top of the Heating modal. */
     confirm_box = lv_obj_create(cur_modal);
     lv_obj_remove_style_all(confirm_box);
-    lv_obj_set_size(confirm_box, 1024, 600);
+    lv_obj_set_size(confirm_box, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(confirm_box, 0, 0);
     lv_obj_set_style_bg_color(confirm_box, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(confirm_box, LV_OPA_60, 0);
@@ -415,7 +416,7 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_add_flag(confirm_box, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * dlg = lv_obj_create(confirm_box);
-    lv_obj_set_size(dlg, 720, 360);
+    lv_obj_set_size(dlg, SX(720), SY(360));
     lv_obj_center(dlg);
     lv_obj_set_style_bg_color(dlg, lv_color_hex(0x2a1c1c), 0);
     lv_obj_set_style_border_color(dlg, lv_color_hex(0xcc5544), 0);
@@ -426,44 +427,44 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_add_flag(dlg, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * dt = lv_label_create(dlg);
-    lv_obj_set_style_text_font(dt, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(dt, SF(28), 0);
     lv_obj_set_style_text_color(dt, lv_color_hex(0xffcc66), 0);
     lv_label_set_text(dt, "Change boiler control?");
     lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t * body = lv_label_create(dlg);
-    lv_obj_set_style_text_font(body, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(body, SF(18), 0);
     lv_obj_set_style_text_color(body, lv_color_hex(0xddddee), 0);
     lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(body, 672);
+    lv_obj_set_width(body, SX(672));
     lv_label_set_text_fmt(body,
         "Switch boiler control to %s?\n\n"
         "This reconfigures how Toon drives your boiler and is written to "
         "the device immediately. Only change it if you know your boiler "
         "wiring — the wrong setting can stop your heating from working.",
         want_onoff ? "On/Off" : "OpenTherm");
-    lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, 48);
+    lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, SY(48));
 
     lv_obj_t * b_no = lv_btn_create(dlg);
-    lv_obj_set_size(b_no, 200, 64);
+    lv_obj_set_size(b_no, SX(200), SY(64));
     lv_obj_align(b_no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_color(b_no, lv_color_hex(0x44556a), 0);
     lv_obj_set_style_radius(b_no, 12, 0);
     lv_obj_add_event_cb(b_no, on_boiler_confirm_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_no_l = lv_label_create(b_no);
     lv_label_set_text(b_no_l, "Cancel");
-    lv_obj_set_style_text_font(b_no_l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(b_no_l, SF(22), 0);
     lv_obj_center(b_no_l);
 
     lv_obj_t * b_yes = lv_btn_create(dlg);
-    lv_obj_set_size(b_yes, 260, 64);
+    lv_obj_set_size(b_yes, SX(260), SY(64));
     lv_obj_align(b_yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(b_yes, lv_color_hex(0xcc5544), 0);
     lv_obj_set_style_radius(b_yes, 12, 0);
     lv_obj_add_event_cb(b_yes, on_boiler_confirm_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_yes_l = lv_label_create(b_yes);
     lv_label_set_text_fmt(b_yes_l, "Set %s", want_onoff ? "On/Off" : "OpenTherm");
-    lv_obj_set_style_text_font(b_yes_l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(b_yes_l, SF(22), 0);
     lv_obj_center(b_yes_l);
 }
 
@@ -582,24 +583,24 @@ static void open_weather_modal(lv_event_t * e) {
     /* City name (cosmetic) + Buienradar GeoNames id (used by the API). */
     lv_obj_t * lbl_city = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_city, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_city, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_city, SF(22), 0);
     lv_label_set_text(lbl_city, "City:");
-    lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_wx_city = lv_textarea_create(p);
-    lv_obj_set_size(ta_wx_city, 380, 44);
-    lv_obj_align(ta_wx_city, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_wx_city, SX(380), SY(44));
+    lv_obj_align(ta_wx_city, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_wx_city, true);
     lv_textarea_set_text(ta_wx_city, settings.weather_location);
     y += 60;
 
     lv_obj_t * lbl_id = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_id, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_id, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_id, SF(22), 0);
     lv_label_set_text(lbl_id, "Buienradar id:");
-    lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_wx_id = lv_textarea_create(p);
-    lv_obj_set_size(ta_wx_id, 380, 44);
-    lv_obj_align(ta_wx_id, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_wx_id, SX(380), SY(44));
+    lv_obj_align(ta_wx_id, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_wx_id, true);
     lv_textarea_set_accepted_chars(ta_wx_id, "0123456789");
     char id_str[16]; snprintf(id_str, sizeof id_str, "%d",
@@ -610,17 +611,17 @@ static void open_weather_modal(lv_event_t * e) {
     /* Hint — where to find the id. */
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(hint, SF(14), 0);
     lv_label_set_text(hint,
         "Find your city's id in the URL on buienradar.nl/weer/<city>/nl/<ID>\n"
         "(e.g. Medemblik = 2751073, De Bilt = 2757783). Plain KNMI codes\n"
         "won't work — these are GeoNames ids.");
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 70;
 
     lv_obj_t * btn = lv_btn_create(p);
-    lv_obj_set_size(btn, 200, 50);
-    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(btn, SX(200), SY(50));
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_weather_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
@@ -630,9 +631,9 @@ static void open_weather_modal(lv_event_t * e) {
 
     lbl_wx_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_wx_status, lv_color_hex(0x9fc4e6), 0);
-    lv_obj_set_style_text_font(lbl_wx_status, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_wx_status, SF(18), 0);
     lv_label_set_text(lbl_wx_status, "");
-    lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, 220, y + 12);
+    lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, SX(220), y + 12);
 }
 
 static lv_obj_t * lbl_waste_status = NULL;
@@ -712,12 +713,12 @@ static void on_waste_apply(lv_event_t * e) {
 static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lbl, const char * val) {
     lv_obj_t * l = lv_label_create(p);
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, lbl);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, x, y);
     lv_obj_t * ta = lv_textarea_create(p);
-    lv_obj_set_size(ta, w, 44);
-    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, x, y + 26);
+    lv_obj_set_size(ta, w, SY(44));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, x, y + SY(26));
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, val ? val : "");
     return ta;
@@ -748,13 +749,13 @@ static void open_waste_modal(lv_event_t * e) {
        the chosen provider's script. */
     lv_obj_t * lp = lv_label_create(p);
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lp, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, "Afvalverwerker (provider):");
-    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
     waste_load_providers();
     dd_waste_prov = lv_dropdown_create(p);
-    lv_obj_set_width(dd_waste_prov, 720);
-    lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, 4, y + 30);
+    lv_obj_set_width(dd_waste_prov, SX(720));
+    lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, SX(4), y + 30);
     if (g_prov_count) {
         lv_dropdown_set_options(dd_waste_prov, g_prov_opts);
         for (int i = 0; i < g_prov_count; i++)
@@ -778,19 +779,19 @@ static void open_waste_modal(lv_event_t * e) {
     y += 92;
 
     lv_obj_t * apply = lv_btn_create(p);
-    lv_obj_set_size(apply, 200, 50);
-    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(apply, SX(200), SY(50));
+    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(apply, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(apply, on_waste_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, "Opslaan"); lv_obj_center(al);
 
     lbl_waste_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_waste_status, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_waste_status, &lv_font_montserrat_14, 0);
-    lv_obj_set_width(lbl_waste_status, 736);
+    lv_obj_set_style_text_font(lbl_waste_status, SF(14), 0);
+    lv_obj_set_width(lbl_waste_status, SX(736));
     lv_label_set_long_mode(lbl_waste_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_waste_status, "Kies een provider en vul de velden die deze nodig heeft.");
-    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, 220, y + 8);
+    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, SX(220), y + 8);
 }
 
 static void open_heating_modal(lv_event_t * e) {
@@ -806,8 +807,8 @@ static void open_heating_modal(lv_event_t * e) {
 
     /* boiler control type */
     lv_obj_t * box = lv_obj_create(p);
-    lv_obj_set_size(box, 800, 200);
-    lv_obj_align(box, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(box, SX(800), SY(200));
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(box, lv_color_hex(0x1f3050), 0);
     lv_obj_set_style_border_width(box, 0, 0);
     lv_obj_set_style_radius(box, 12, 0);
@@ -817,37 +818,37 @@ static void open_heating_modal(lv_event_t * e) {
 
     lv_obj_t * hdr = lv_label_create(box);
     lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(hdr, SF(22), 0);
     lv_label_set_text(hdr, "Boiler control");
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 0, 0);
 
     sw_boiler = lv_switch_create(box);
-    lv_obj_set_size(sw_boiler, 64, 30);
-    lv_obj_align(sw_boiler, LV_ALIGN_TOP_RIGHT, -4, 2);
+    lv_obj_set_size(sw_boiler, SX(64), SY(30));
+    lv_obj_align(sw_boiler, LV_ALIGN_TOP_RIGHT, SX(-4), SY(2));
     if (toon_state.boiler_type == 1) lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw_boiler, on_boiler_switch, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t * swlbl = lv_label_create(box);
     lv_obj_set_style_text_color(swlbl, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(swlbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(swlbl, SF(18), 0);
     lv_label_set_text(swlbl, "Off = OpenTherm    On = On/Off");
-    lv_obj_align(swlbl, LV_ALIGN_TOP_RIGHT, -4, 38);
+    lv_obj_align(swlbl, LV_ALIGN_TOP_RIGHT, SX(-4), SY(38));
 
     lbl_boiler_mode = lv_label_create(box);
     lv_obj_set_style_text_color(lbl_boiler_mode, lv_color_hex(0xffcc44), 0);
-    lv_obj_set_style_text_font(lbl_boiler_mode, &lv_font_montserrat_22, 0);
-    lv_obj_align(lbl_boiler_mode, LV_ALIGN_TOP_LEFT, 0, 36);
+    lv_obj_set_style_text_font(lbl_boiler_mode, SF(22), 0);
+    lv_obj_align(lbl_boiler_mode, LV_ALIGN_TOP_LEFT, 0, SY(36));
 
     lbl_boiler_ot = lv_label_create(box);
     lv_obj_set_style_text_color(lbl_boiler_ot, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_boiler_ot, &lv_font_montserrat_18, 0);
-    lv_obj_align(lbl_boiler_ot, LV_ALIGN_TOP_LEFT, 0, 70);
+    lv_obj_set_style_text_font(lbl_boiler_ot, SF(18), 0);
+    lv_obj_align(lbl_boiler_ot, LV_ALIGN_TOP_LEFT, 0, SY(70));
 
     lv_obj_t * warn = lv_label_create(box);
     lv_obj_set_style_text_color(warn, lv_color_hex(0xcc7766), 0);
-    lv_obj_set_style_text_font(warn, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(warn, SF(18), 0);
     lv_label_set_long_mode(warn, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(warn, 772);
+    lv_obj_set_width(warn, SX(772));
     lv_label_set_text(warn,
         "Changing this writes to the live boiler. You'll be asked to confirm.");
     lv_obj_align(warn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
@@ -897,8 +898,8 @@ static void open_presets_modal(lv_event_t * e) {
         lv_obj_t * r = panel_row(p, y, names[i], &lbl_preset_val[i]);
         lv_label_set_text_fmt(lbl_preset_val[i], "%.1f C", v / 100.0f);
         lv_obj_t * s = lv_slider_create(r);
-        lv_obj_set_size(s, 760, 14);
-        lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, -2);
+        lv_obj_set_size(s, SX(760), SY(14));
+        lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, SY(-2));
         lv_slider_set_range(s, 500, 3000);
         lv_slider_set_value(s, v, LV_ANIM_OFF);
         lv_obj_add_event_cb(s, on_preset_change, LV_EVENT_VALUE_CHANGED,
@@ -979,7 +980,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
      * freetoon mid-session is disruptive. */
     confirm_uimode = lv_obj_create(cur_modal);
     lv_obj_remove_style_all(confirm_uimode);
-    lv_obj_set_size(confirm_uimode, 1024, 600);
+    lv_obj_set_size(confirm_uimode, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(confirm_uimode, 0, 0);
     lv_obj_set_style_bg_color(confirm_uimode, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(confirm_uimode, LV_OPA_70, 0);
@@ -987,7 +988,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_obj_add_flag(confirm_uimode, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * dlg = lv_obj_create(confirm_uimode);
-    lv_obj_set_size(dlg, 760, 380);
+    lv_obj_set_size(dlg, SX(760), SY(380));
     lv_obj_center(dlg);
     lv_obj_set_style_bg_color(dlg, lv_color_hex(0x2a1c1c), 0);
     lv_obj_set_style_border_color(dlg, lv_color_hex(0xcc5544), 0);
@@ -998,16 +999,16 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_obj_add_flag(dlg, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * dt = lv_label_create(dlg);
-    lv_obj_set_style_text_font(dt, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(dt, SF(28), 0);
     lv_obj_set_style_text_color(dt, lv_color_hex(0xffcc66), 0);
     lv_label_set_text(dt, "Switch to stock qt-gui?");
     lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t * body = lv_label_create(dlg);
-    lv_obj_set_style_text_font(body, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(body, SF(18), 0);
     lv_obj_set_style_text_color(body, lv_color_hex(0xddddee), 0);
     lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(body, 712);
+    lv_obj_set_width(body, SX(712));
     lv_label_set_text(body,
         "The freetoon UI will exit and the original Eneco UI takes "
         "over within about a second. Our companion bridges (p1bridge, "
@@ -1015,28 +1016,28 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
         "remain in charge. To come back, tap the freetoon button in "
         "the boot picker (or hold the touch top-right for 10 s during "
         "the qt-gui boot).");
-    lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, 56);
+    lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, SY(56));
 
     lv_obj_t * b_no = lv_btn_create(dlg);
-    lv_obj_set_size(b_no, 220, 64);
+    lv_obj_set_size(b_no, SX(220), SY(64));
     lv_obj_align(b_no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_color(b_no, lv_color_hex(0x44556a), 0);
     lv_obj_set_style_radius(b_no, 12, 0);
     lv_obj_add_event_cb(b_no, on_uimode_confirm_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_no_l = lv_label_create(b_no);
     lv_label_set_text(b_no_l, "Cancel");
-    lv_obj_set_style_text_font(b_no_l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(b_no_l, SF(22), 0);
     lv_obj_center(b_no_l);
 
     lv_obj_t * b_yes = lv_btn_create(dlg);
-    lv_obj_set_size(b_yes, 300, 64);
+    lv_obj_set_size(b_yes, SX(300), SY(64));
     lv_obj_align(b_yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(b_yes, lv_color_hex(0xcc5544), 0);
     lv_obj_set_style_radius(b_yes, 12, 0);
     lv_obj_add_event_cb(b_yes, on_uimode_confirm_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_yes_l = lv_label_create(b_yes);
     lv_label_set_text(b_yes_l, "Switch to qt-gui");
-    lv_obj_set_style_text_font(b_yes_l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(b_yes_l, SF(22), 0);
     lv_obj_center(b_yes_l);
 }
 
@@ -1077,7 +1078,7 @@ static void on_restart_yes(lv_event_t * e) {
 static void open_restart_confirm(lv_event_t * e) {
     (void)e;
     g_restart_modal = lv_obj_create(scr_root);
-    lv_obj_set_size(g_restart_modal, 1024, 600);
+    lv_obj_set_size(g_restart_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(g_restart_modal, 0, 0);
     lv_obj_set_style_bg_color(g_restart_modal, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(g_restart_modal, LV_OPA_70, 0);
@@ -1085,7 +1086,7 @@ static void open_restart_confirm(lv_event_t * e) {
     lv_obj_clear_flag(g_restart_modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * card = lv_obj_create(g_restart_modal);
-    lv_obj_set_size(card, 620, 250);
+    lv_obj_set_size(card, SX(620), SY(250));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -1094,22 +1095,22 @@ static void open_restart_confirm(lv_event_t * e) {
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
-    lv_obj_set_width(t, 560);
+    lv_obj_set_style_text_font(t, SF(22), 0);
+    lv_obj_set_width(t, SX(560));
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_label_set_text(t, "Restart the freetoon UI now?\n\nIt reloads settings from toonui.cfg and comes back in a few seconds.");
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 14, 12);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(14), SY(12));
 
     lv_obj_t * yes = lv_btn_create(card);
-    lv_obj_set_size(yes, 180, 52);
-    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, -12, -12);
+    lv_obj_set_size(yes, SX(180), SY(52));
+    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, SX(-12), SY(-12));
     lv_obj_set_style_bg_color(yes, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(yes, on_restart_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, "Restart"); lv_obj_center(yl);
 
     lv_obj_t * no = lv_btn_create(card);
-    lv_obj_set_size(no, 180, 52);
-    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, 12, -12);
+    lv_obj_set_size(no, SX(180), SY(52));
+    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, SX(12), SY(-12));
     lv_obj_set_style_bg_color(no, lv_color_hex(0x3a4658), 0);
     lv_obj_add_event_cb(no, on_restart_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, "Cancel"); lv_obj_center(nl);
@@ -1177,38 +1178,38 @@ static void open_domoticz(lv_event_t * e) {
 
     lv_obj_t * lh = lv_label_create(p);
     lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lh, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lh, SF(22), 0);
     lv_label_set_text(lh, "Host (ip:port):");
-    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_domoticz_host = lv_textarea_create(p); ta_make_numeric(ta_domoticz_host);
-    lv_obj_set_size(ta_domoticz_host, 420, 44);
-    lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, 260, y - 4);
+    lv_obj_set_size(ta_domoticz_host, SX(420), SY(44));
+    lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_domoticz_host, true);
     lv_textarea_set_text(ta_domoticz_host, settings.domoticz_host);
     y += 60;
 
     lv_obj_t * lu = lv_label_create(p);
     lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lu, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, "User (opt):");
-    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_domoticz_user = lv_textarea_create(p);
-    lv_obj_set_size(ta_domoticz_user, 420, 44);
-    lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, 260, y - 4);
+    lv_obj_set_size(ta_domoticz_user, SX(420), SY(44));
+    lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_domoticz_user, true);
     lv_textarea_set_text(ta_domoticz_user, settings.domoticz_user);
     y += 64;
 
     lv_obj_t * b_apply = lv_btn_create(p);
-    lv_obj_set_size(b_apply, 220, 50);
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(b_apply, SX(220), SY(50));
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_domoticz_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, "Save + connect"); lv_obj_center(la);
 
     lv_obj_t * b_view = lv_btn_create(p);
-    lv_obj_set_size(b_view, 240, 50);
-    lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, 244, y);
+    lv_obj_set_size(b_view, SX(240), SY(50));
+    lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(244), y);
     lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_view, on_domoticz_view_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, "View lights/blinds"); lv_obj_center(lv);
@@ -1216,10 +1217,10 @@ static void open_domoticz(lv_event_t * e) {
 
     lbl_domoticz_result = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_domoticz_result, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(lbl_domoticz_result, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_domoticz_result, 770);
+    lv_obj_set_style_text_font(lbl_domoticz_result, SF(18), 0);
+    lv_obj_set_width(lbl_domoticz_result, SX(770));
     lv_label_set_long_mode(lbl_domoticz_result, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_domoticz_result, "Set the Domoticz host, then Save + connect.");
 }
 
@@ -1245,30 +1246,30 @@ static void open_client_modal(lv_event_t * e) {
 
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, "Master IP:");
-    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_master = lv_textarea_create(p); ta_make_numeric(ta_master);
-    lv_obj_set_size(ta_master, 400, 44);
-    lv_obj_align(ta_master, LV_ALIGN_TOP_LEFT, 200, y - 4);
+    lv_obj_set_size(ta_master, SX(400), SY(44));
+    lv_obj_align(ta_master, LV_ALIGN_TOP_LEFT, SX(200), y - 4);
     lv_textarea_set_one_line(ta_master, true);
     lv_textarea_set_text(ta_master, settings.master_host);
     y += 64;
 
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(hint, SF(18), 0);
     lv_label_set_text(hint,
         "This Toon becomes a display-only slave: it shows the master's\n"
         "thermostat/boiler/air/curtains and sends control back to it, with\n"
         "no local sensors or integrations. Enter the master Toon's IP\n"
         "(an Android tablet can instead just open http://<master>:10081 ).");
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 110;
 
     lv_obj_t * btn = lv_btn_create(p);
-    lv_obj_set_size(btn, 220, 50);
-    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(btn, SX(220), SY(50));
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_client_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
@@ -1310,9 +1311,9 @@ static void rotate_add_cb(lv_obj_t * sc, const char * id, const char * label, in
     if (rotate_cb_count >= 16) return;
     lv_obj_t * cb = lv_checkbox_create(sc);
     lv_checkbox_set_text(cb, label);
-    lv_obj_set_style_text_font(cb, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(cb, SF(22), 0);
     lv_obj_set_style_text_color(cb, lv_color_hex(0xffffff), 0);
-    lv_obj_align(cb, LV_ALIGN_TOP_LEFT, 6, *cy);
+    lv_obj_align(cb, LV_ALIGN_TOP_LEFT, SX(6), *cy);
     if (rotate_member_is_checked(id)) lv_obj_add_state(cb, LV_STATE_CHECKED);
     rotate_cb[rotate_cb_count] = cb;
     snprintf(rotate_cb_id[rotate_cb_count], 48, "%s", id);
@@ -1331,12 +1332,12 @@ static void open_rotate_modal(lv_event_t * e) {
 
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, "Interval (s):");
-    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_rotate_secs = lv_textarea_create(p);
-    lv_obj_set_size(ta_rotate_secs, 160, 44);
-    lv_obj_align(ta_rotate_secs, LV_ALIGN_TOP_LEFT, 200, y - 4);
+    lv_obj_set_size(ta_rotate_secs, SX(160), SY(44));
+    lv_obj_align(ta_rotate_secs, LV_ALIGN_TOP_LEFT, SX(200), y - 4);
     lv_textarea_set_one_line(ta_rotate_secs, true);
     lv_textarea_set_accepted_chars(ta_rotate_secs, "0123456789");
     char sbuf[8]; snprintf(sbuf, sizeof sbuf, "%d", settings.tile_rotate_seconds);
@@ -1347,13 +1348,13 @@ static void open_rotate_modal(lv_event_t * e) {
 
     lv_obj_t * pick = lv_label_create(p);
     lv_obj_set_style_text_color(pick, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(pick, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(pick, SF(18), 0);
     lv_label_set_text(pick, "Cycle through:");
-    lv_obj_align(pick, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(pick, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 34;
 
     lv_obj_t * sc = lv_obj_create(p);
-    lv_obj_set_size(sc, 820, 200);
+    lv_obj_set_size(sc, SX(820), SY(200));
     lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, y);
     lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sc, 0, 0);
@@ -1377,8 +1378,8 @@ static void open_rotate_modal(lv_event_t * e) {
     if (rotate_cb_count == 0) {
         lv_obj_t * m = lv_label_create(sc);
         lv_obj_set_style_text_color(m, lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(m, &lv_font_montserrat_18, 0);
-        lv_obj_set_width(m, 780);
+        lv_obj_set_style_text_font(m, SF(18), 0);
+        lv_obj_set_width(m, SX(780));
         lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
         lv_label_set_text(m, "Geen integraties aan. Zet ze aan bij Integraties, of installeer er een uit de Marketplace.");
     }
@@ -1387,15 +1388,15 @@ static void open_rotate_modal(lv_event_t * e) {
     /* Remark pointing at the marketplace for more. */
     lv_obj_t * note = lv_label_create(p);
     lv_obj_set_style_text_color(note, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(note, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(note, 540);
+    lv_obj_set_style_text_font(note, SF(18), 0);
+    lv_obj_set_width(note, SX(540));
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
     lv_label_set_text(note, "Meer integraties vind je in de Marketplace.");
-    lv_obj_align(note, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y);
 
     lv_obj_t * btn = lv_btn_create(p);
-    lv_obj_set_size(btn, 160, 50);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+    lv_obj_set_size(btn, SX(160), SY(50));
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(4), SY(-8));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_rotate_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, "Apply");
@@ -1446,7 +1447,7 @@ static void news_feeds_rebuild(void) {
         while (*u == ' ' || *u == '\r') u++;
         if (!*u) continue;
         lv_obj_t * b = lv_list_add_btn(news_feeds_list, LV_SYMBOL_TRASH, u);
-        lv_obj_set_style_text_font(b, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(b, SF(14), 0);
         lv_obj_add_event_cb(b, on_news_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         i++;
     }
@@ -1516,12 +1517,12 @@ static void open_calendar_modal(lv_event_t * e) {
 
     lv_obj_t * l1 = lv_label_create(p);
     lv_obj_set_style_text_color(l1, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l1, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(l1, SF(18), 0);
     lv_label_set_text(l1, "Home Assistant agenda-entiteit (optioneel):");
-    lv_obj_align(l1, LV_ALIGN_TOP_LEFT, 4, y); y += 30;
+    lv_obj_align(l1, LV_ALIGN_TOP_LEFT, SX(4), y); y += 30;
     ta_cal_ha = lv_textarea_create(p);
-    lv_obj_set_size(ta_cal_ha, 470, 44);
-    lv_obj_align(ta_cal_ha, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(ta_cal_ha, SX(470), SY(44));
+    lv_obj_align(ta_cal_ha, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_cal_ha, true);
     lv_textarea_set_placeholder_text(ta_cal_ha, "calendar.gezin");
     lv_textarea_set_text(ta_cal_ha, settings.calendar_ha_entity);
@@ -1529,27 +1530,27 @@ static void open_calendar_modal(lv_event_t * e) {
 
     lv_obj_t * l2 = lv_label_create(p);
     lv_obj_set_style_text_color(l2, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l2, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(l2, SF(18), 0);
     lv_label_set_text(l2, "iCal (.ics) URL (optioneel):");
-    lv_obj_align(l2, LV_ALIGN_TOP_LEFT, 4, y); y += 30;
+    lv_obj_align(l2, LV_ALIGN_TOP_LEFT, SX(4), y); y += 30;
     ta_cal_ics = lv_textarea_create(p);
-    lv_obj_set_size(ta_cal_ics, 470, 44);
-    lv_obj_align(ta_cal_ics, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(ta_cal_ics, SX(470), SY(44));
+    lv_obj_align(ta_cal_ics, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_cal_ics, true);
     lv_textarea_set_placeholder_text(ta_cal_ics, "https://… .ics");
     lv_textarea_set_text(ta_cal_ics, settings.calendar_ics_url);
     y += 60;
 
     lv_obj_t * saveb = lv_btn_create(p);
-    lv_obj_set_size(saveb, 150, 46);
-    lv_obj_align(saveb, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(saveb, SX(150), SY(46));
+    lv_obj_align(saveb, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(saveb, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(saveb, on_cal_save_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(saveb); lv_label_set_text(sl, "Opslaan"); lv_obj_center(sl);
 
     lv_obj_t * openb = lv_btn_create(p);
-    lv_obj_set_size(openb, 180, 46);
-    lv_obj_align(openb, LV_ALIGN_TOP_LEFT, 170, y);
+    lv_obj_set_size(openb, SX(180), SY(46));
+    lv_obj_align(openb, LV_ALIGN_TOP_LEFT, SX(170), y);
     lv_obj_set_style_bg_color(openb, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(openb, on_cal_open_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * ol = lv_label_create(openb); lv_label_set_text(ol, "Agenda openen"); lv_obj_center(ol);
@@ -1570,8 +1571,8 @@ static void open_news_modal(lv_event_t * e) {
     /* Open the reader directly — so the news is reachable even with the ticker
        turned off (the ticker tap is otherwise the only entry point). */
     lv_obj_t * onb = lv_btn_create(p);
-    lv_obj_set_size(onb, 220, 46);
-    lv_obj_align(onb, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(onb, SX(220), SY(46));
+    lv_obj_align(onb, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(onb, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(onb, on_news_open_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * onl = lv_label_create(onb); lv_label_set_text(onl, "Nieuws openen"); lv_obj_center(onl);
@@ -1580,31 +1581,31 @@ static void open_news_modal(lv_event_t * e) {
     /* RSS feeds — a list (tap a row to remove) + an Add box below it. */
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, "RSS feeds (tik om te verwijderen):");
-    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
     news_feeds_list = lv_list_create(p);
-    lv_obj_set_size(news_feeds_list, 740, 150);
-    lv_obj_align(news_feeds_list, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(news_feeds_list, SX(740), SY(150));
+    lv_obj_align(news_feeds_list, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(news_feeds_list, lv_color_hex(0x0e1a2a), 0);
     news_feeds_rebuild();
     y += 158;
 
     ta_news_url = lv_textarea_create(p);
-    lv_obj_set_size(ta_news_url, 470, 44);
-    lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(ta_news_url, SX(470), SY(44));
+    lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_news_url, true);
     lv_textarea_set_placeholder_text(ta_news_url, "https://… RSS feed");
     lv_obj_t * addb = lv_btn_create(p);
-    lv_obj_set_size(addb, 120, 44);
-    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, 484, y);
+    lv_obj_set_size(addb, SX(120), SY(44));
+    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(484), y);
     lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(addb, on_news_add_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, "Toevoegen"); lv_obj_center(al);
     lv_obj_t * tbtn = lv_btn_create(p);
-    lv_obj_set_size(tbtn, 120, 44);
-    lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, 614, y);
+    lv_obj_set_size(tbtn, SX(120), SY(44));
+    lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, SX(614), y);
     lv_obj_set_style_bg_color(tbtn, lv_color_hex(0x33445a), 0);
     lv_obj_add_event_cb(tbtn, on_news_test, LV_EVENT_CLICKED, NULL);
     lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, "Test"); lv_obj_center(tl);
@@ -1619,27 +1620,27 @@ static void open_news_modal(lv_event_t * e) {
 
     lbl_news_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_news_status, lv_color_hex(0x9fc4e6), 0);
-    lv_obj_set_style_text_font(lbl_news_status, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_news_status, 800);
+    lv_obj_set_style_text_font(lbl_news_status, SF(18), 0);
+    lv_obj_set_width(lbl_news_status, SX(800));
     lv_label_set_long_mode(lbl_news_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_news_status, "");
-    lv_obj_align(lbl_news_status, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_news_status, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 30;
 
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(hint, 800);
+    lv_obj_set_style_text_font(hint, SF(18), 0);
+    lv_obj_set_width(hint, SX(800));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint,
         "Headlines scroll above the forecast; tap them to get a QR code that "
         "opens the article on your phone. Any RSS/Atom feed works "
         "(default: NOS Nieuws).");
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
 
     lv_obj_t * btn = lv_btn_create(p);
-    lv_obj_set_size(btn, 220, 50);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+    lv_obj_set_size(btn, SX(220), SY(50));
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(4), SY(-8));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_news_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
@@ -1668,14 +1669,14 @@ static void open_uimode_modal(lv_event_t * e) {
      * fires a destructive action — keep it visually distinct from the
      * benign panel rows. */
     lv_obj_t * b_switch = lv_btn_create(p);
-    lv_obj_set_size(b_switch, 800, 64);
-    lv_obj_align(b_switch, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(b_switch, SX(800), SY(64));
+    lv_obj_align(b_switch, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_switch, lv_color_hex(0x6a3a2a), 0);
     lv_obj_set_style_radius(b_switch, 12, 0);
     lv_obj_add_event_cb(b_switch, on_uimode_to_qtgui, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bsw_l = lv_label_create(b_switch);
     lv_label_set_text(bsw_l, "Switch to stock qt-gui...");
-    lv_obj_set_style_text_font(bsw_l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bsw_l, SF(22), 0);
     lv_obj_set_style_text_color(bsw_l, lv_color_hex(0xffffff), 0);
     lv_obj_center(bsw_l);
 }
@@ -1767,15 +1768,15 @@ static void open_integrations_modal(lv_event_t * e) {
     y += 92;
 
     lbl_integ_hint = lv_label_create(p);
-    lv_obj_set_style_text_font(lbl_integ_hint, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_integ_hint, SF(18), 0);
     lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_width(lbl_integ_hint, 800);
+    lv_obj_set_width(lbl_integ_hint, SX(800));
     lv_label_set_long_mode(lbl_integ_hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_integ_hint,
         "Each integration needs its companion config "
         "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
         "Toggle a switch then restart toonui.");
-    lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), y);
 }
 
 /* ==================== Tile slots modal ====================
@@ -1831,8 +1832,8 @@ static void on_modal_to_marketplace(lv_event_t * e) {
 }
 static lv_obj_t * marketplace_button(lv_obj_t * parent) {
     lv_obj_t * b = lv_btn_create(parent);
-    lv_obj_set_size(b, 250, 50);
-    lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, -4, -8);
+    lv_obj_set_size(b, SX(250), SY(50));
+    lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, SX(-4), SY(-8));
     lv_obj_set_style_bg_color(b, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(b, on_modal_to_marketplace, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
@@ -1848,15 +1849,15 @@ static void open_tile_slots_modal(lv_event_t * e) {
 
     if (tile_slots_integration_count() == 0) {
         lv_obj_t * msg = lv_label_create(p);
-        lv_obj_set_style_text_font(msg, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(msg, SF(22), 0);
         lv_obj_set_style_text_color(msg, lv_color_hex(0x88aabb), 0);
-        lv_obj_set_width(msg, 800);
+        lv_obj_set_width(msg, SX(800));
         lv_label_set_long_mode(msg, LV_LABEL_LONG_WRAP);
         lv_label_set_text(msg,
             "No marketplace integrations installed yet. Open the "
             "Marketplace to add one, then come back here to assign it "
             "to a tile.");
-        lv_obj_align(msg, LV_ALIGN_TOP_LEFT, 4, 80);
+        lv_obj_align(msg, LV_ALIGN_TOP_LEFT, SX(4), SY(80));
         marketplace_button(p);
         return;
     }
@@ -1866,8 +1867,8 @@ static void open_tile_slots_modal(lv_event_t * e) {
 
     /* 8 slots don't fit — host the rows in a vertical scroller. */
     lv_obj_t * sc = lv_obj_create(p);
-    lv_obj_set_size(sc, 820, 372);
-    lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, 64);
+    lv_obj_set_size(sc, SX(820), SY(372));
+    lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, SY(64));
     lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sc, 0, 0);
     lv_obj_set_style_pad_all(sc, 0, 0);
@@ -1877,26 +1878,26 @@ static void open_tile_slots_modal(lv_event_t * e) {
     int y = 0;
     for (int s = 0; s < TILE_SLOT_COUNT; s++) {
         lv_obj_t * row = lv_obj_create(sc);
-        lv_obj_set_size(row, 790, 72);
-        lv_obj_align(row, LV_ALIGN_TOP_LEFT, 4, y);
+        lv_obj_set_size(row, SX(790), SY(72));
+        lv_obj_align(row, LV_ALIGN_TOP_LEFT, SX(4), y);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x152033), 0);
         lv_obj_set_style_radius(row, 10, 0);
         lv_obj_set_style_pad_all(row, 8, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t * lbl = lv_label_create(row);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(lbl, SF(22), 0);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
         lv_label_set_text(lbl, tile_slot_label(s));
-        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 8, 0);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, SX(8), 0);
 
         lv_obj_t * dd = lv_dropdown_create(row);
-        lv_obj_set_size(dd, 480, 56);
-        lv_obj_align(dd, LV_ALIGN_RIGHT_MID, -8, 0);
+        lv_obj_set_size(dd, SX(480), SY(56));
+        lv_obj_align(dd, LV_ALIGN_RIGHT_MID, SX(-8), 0);
         lv_dropdown_set_options_static(dd, options);
         lv_dropdown_set_selected(dd,
             slot_dropdown_from_id(tile_slots_binding(s)));
-        lv_obj_set_style_text_font(dd, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(dd, SF(22), 0);
         lv_obj_add_event_cb(dd, on_tile_slot_change, LV_EVENT_VALUE_CHANGED,
                             (void *)(intptr_t)s);
         dd_tile_slot[s] = dd;
@@ -1905,14 +1906,14 @@ static void open_tile_slots_modal(lv_event_t * e) {
     }
 
     lv_obj_t * hint = lv_label_create(p);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(hint, SF(18), 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_width(hint, 540);
+    lv_obj_set_width(hint, SX(540));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint,
         "Energy/Family/Vent/Water are the page-1 tiles; \"Page 2\" slots show on "
         "the swipe page. \"Built-in\" keeps the default content.");
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, SX(4), SY(-8));
     marketplace_button(p);
 }
 
@@ -1930,26 +1931,26 @@ static void open_about_modal(lv_event_t * e) {
        freetoon · version · beta · author/MIT, then the live update status. */
     lv_obj_t * t = lv_label_create(p);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(t, SF(28), 0);
     lv_label_set_text(t, "freetoon");
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 58);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(4), SY(58));
 
     lv_obj_t * ver = lv_label_create(p);
     lv_obj_set_style_text_color(ver, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(ver, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(ver, SF(18), 0);
     lv_label_set_text_fmt(ver, "%s  -  beta", BUILD_VERSION);
-    lv_obj_align(ver, LV_ALIGN_TOP_LEFT, 4, 94);
+    lv_obj_align(ver, LV_ALIGN_TOP_LEFT, SX(4), SY(94));
 
     lv_obj_t * cred = lv_label_create(p);
     lv_obj_set_style_text_color(cred, lv_color_hex(0x6f8aa0), 0);
-    lv_obj_set_style_text_font(cred, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(cred, SF(14), 0);
     lv_label_set_text(cred, "alternative UI by Ierlandfan  -  MIT License");
-    lv_obj_align(cred, LV_ALIGN_TOP_LEFT, 4, 120);
+    lv_obj_align(cred, LV_ALIGN_TOP_LEFT, SX(4), SY(120));
 
     lbl_about_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_about_status, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_about_status, &lv_font_montserrat_18, 0);
-    lv_obj_align(lbl_about_status, LV_ALIGN_TOP_LEFT, 4, 150);
+    lv_obj_set_style_text_font(lbl_about_status, SF(18), 0);
+    lv_obj_align(lbl_about_status, LV_ALIGN_TOP_LEFT, SX(4), SY(150));
 
     about_tick();
     modal_tick_fn = about_tick;
@@ -2329,9 +2330,9 @@ static void open_otbridge_modal(lv_event_t * e) {
     /* Mode picker — 3-way: off / proxy / wireless. */
     lv_obj_t * mode_lbl = lv_label_create(p);
     lv_obj_set_style_text_color(mode_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(mode_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(mode_lbl, SF(22), 0);
     lv_label_set_text(mode_lbl, "Mode:");
-    lv_obj_align(mode_lbl, LV_ALIGN_TOP_LEFT, 4, y + 12);
+    lv_obj_align(mode_lbl, LV_ALIGN_TOP_LEFT, SX(4), y + 12);
 
     const struct { lv_obj_t ** btn_slot; lv_obj_t ** lbl_slot;
                    const char * caption;
@@ -2342,13 +2343,13 @@ static void open_otbridge_modal(lv_event_t * e) {
     };
     for (unsigned i = 0; i < sizeof picks / sizeof picks[0]; i++) {
         lv_obj_t * b = lv_btn_create(p);
-        lv_obj_set_size(b, 140, 50);
-        lv_obj_align(b, LV_ALIGN_TOP_LEFT, picks[i].x, y);
+        lv_obj_set_size(b, SX(140), SY(50));
+        lv_obj_align(b, LV_ALIGN_TOP_LEFT, SX(picks[i].x), SY(y));
         lv_obj_set_style_radius(b, 12, 0);
         lv_obj_add_event_cb(b, picks[i].cb, LV_EVENT_CLICKED, NULL);
         lv_obj_t * l = lv_label_create(b);
         lv_label_set_text(l, picks[i].caption);
-        lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(l, SF(22), 0);
         lv_obj_center(l);
         *picks[i].btn_slot = b;
         *picks[i].lbl_slot = l;
@@ -2358,23 +2359,23 @@ static void open_otbridge_modal(lv_event_t * e) {
     /* Mode description (one-liner that flips with the selection). */
     lbl_otmode = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_otmode, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(lbl_otmode, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_otmode, 560);
+    lv_obj_set_style_text_font(lbl_otmode, SF(18), 0);
+    lv_obj_set_width(lbl_otmode, SX(560));
     lv_label_set_long_mode(lbl_otmode, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_otmode, mode_label(settings.ot_bridge_mode));
-    lv_obj_align(lbl_otmode, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_otmode, LV_ALIGN_TOP_LEFT, SX(4), y);
     paint_mode_buttons();
     y += 50;
 
     /* OTGW host */
     lv_obj_t * lbl_host = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_host, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_host, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_host, SF(22), 0);
     lv_label_set_text(lbl_host, "OTGW host:");
-    lv_obj_align(lbl_host, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_host, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_host = lv_textarea_create(p); ta_make_numeric(ta_otgw_host);
-    lv_obj_set_size(ta_otgw_host, 380, 44);
-    lv_obj_align(ta_otgw_host, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_otgw_host, SX(380), SY(44));
+    lv_obj_align(ta_otgw_host, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_otgw_host, true);
     lv_textarea_set_text(ta_otgw_host, settings.otgw_host);
     y += 60;
@@ -2382,24 +2383,24 @@ static void open_otbridge_modal(lv_event_t * e) {
     /* OTGW user/pass */
     lv_obj_t * lbl_user = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_user, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_user, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_user, SF(22), 0);
     lv_label_set_text(lbl_user, "OTGW user (opt):");
-    lv_obj_align(lbl_user, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_user, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_user = lv_textarea_create(p);
-    lv_obj_set_size(ta_otgw_user, 380, 44);
-    lv_obj_align(ta_otgw_user, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_otgw_user, SX(380), SY(44));
+    lv_obj_align(ta_otgw_user, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_otgw_user, true);
     lv_textarea_set_text(ta_otgw_user, settings.otgw_user);
     y += 60;
 
     lv_obj_t * lbl_pass = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_pass, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_pass, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_pass, SF(22), 0);
     lv_label_set_text(lbl_pass, "OTGW pass (opt):");
-    lv_obj_align(lbl_pass, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_pass, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_pass = lv_textarea_create(p);
-    lv_obj_set_size(ta_otgw_pass, 380, 44);
-    lv_obj_align(ta_otgw_pass, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_otgw_pass, SX(380), SY(44));
+    lv_obj_align(ta_otgw_pass, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_otgw_pass, true);
     lv_textarea_set_password_mode(ta_otgw_pass, true);
     lv_textarea_set_text(ta_otgw_pass, settings.otgw_pass);
@@ -2415,8 +2416,8 @@ static void open_otbridge_modal(lv_event_t * e) {
 
     /* Buttons row — three OTGW-side buttons */
     lv_obj_t * b_test = lv_btn_create(p);
-    lv_obj_set_size(b_test, 200, 50);
-    lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(b_test, SX(200), SY(50));
+    lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_test, on_test_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_test_lbl = lv_label_create(b_test);
@@ -2424,8 +2425,8 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_center(b_test_lbl);
 
     lv_obj_t * b_check = lv_btn_create(p);
-    lv_obj_set_size(b_check, 220, 50);
-    lv_obj_align(b_check, LV_ALIGN_TOP_LEFT, 218, y);
+    lv_obj_set_size(b_check, SX(220), SY(50));
+    lv_obj_align(b_check, LV_ALIGN_TOP_LEFT, SX(218), y);
     lv_obj_set_style_bg_color(b_check, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_check, on_check_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_check_lbl = lv_label_create(b_check);
@@ -2433,8 +2434,8 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_center(b_check_lbl);
 
     lv_obj_t * b_ket = lv_btn_create(p);
-    lv_obj_set_size(b_ket, 220, 50);
-    lv_obj_align(b_ket, LV_ALIGN_TOP_LEFT, 452, y);
+    lv_obj_set_size(b_ket, SX(220), SY(50));
+    lv_obj_align(b_ket, LV_ALIGN_TOP_LEFT, SX(452), y);
     lv_obj_set_style_bg_color(b_ket, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_ket, on_ket_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_ket_lbl = lv_label_create(b_ket);
@@ -2444,8 +2445,8 @@ static void open_otbridge_modal(lv_event_t * e) {
 
     /* Second button row — just Apply */
     lv_obj_t * b_apply = lv_btn_create(p);
-    lv_obj_set_size(b_apply, 200, 50);
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(b_apply, SX(200), SY(50));
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0x884422), 0);
     lv_obj_add_event_cb(b_apply, on_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_apply_lbl = lv_label_create(b_apply);
@@ -2456,37 +2457,37 @@ static void open_otbridge_modal(lv_event_t * e) {
     /* Result labels stacked below the button rows */
     lbl_test_result = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_test_result, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(lbl_test_result, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_test_result, SF(18), 0);
     lv_label_set_long_mode(lbl_test_result, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(lbl_test_result, 770);
-    lv_obj_align(lbl_test_result, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_width(lbl_test_result, SX(770));
+    lv_obj_align(lbl_test_result, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_test_result, "OTGW test: (not run)");
     y += 35;
 
     lbl_check_result = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_check_result, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(lbl_check_result, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_check_result, 770);
+    lv_obj_set_style_text_font(lbl_check_result, SF(18), 0);
+    lv_obj_set_width(lbl_check_result, SX(770));
     lv_label_set_long_mode(lbl_check_result, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_check_result, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_check_result, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_check_result, "GW mode check: (not run)");
     y += 35;
 
     lbl_ket_result = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_ket_result, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(lbl_ket_result, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_ket_result, 770);
+    lv_obj_set_style_text_font(lbl_ket_result, SF(18), 0);
+    lv_obj_set_width(lbl_ket_result, SX(770));
     lv_label_set_long_mode(lbl_ket_result, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_ket_result, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_ket_result, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_ket_result, "Keteladapter test: (not run)");
     y += 45;
 
     lbl_apply_warning = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_apply_warning, lv_color_hex(0xcc8866), 0);
-    lv_obj_set_style_text_font(lbl_apply_warning, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_apply_warning, SF(18), 0);
     lv_label_set_long_mode(lbl_apply_warning, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(lbl_apply_warning, 770);
-    lv_obj_align(lbl_apply_warning, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_width(lbl_apply_warning, SX(770));
+    lv_obj_align(lbl_apply_warning, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_apply_warning,
         "Apply rewrites /etc/inittab and restarts quby_bridge + happ_thermstat. "
         "Heat will pause for ~10s during the switch.");
@@ -2543,7 +2544,7 @@ static void open_clean_modal(lv_event_t * e) {
     g_clean_lbl = lv_label_create(g_clean_scr);
     lv_obj_set_style_text_color(g_clean_lbl, lv_color_hex(0xffffff), 0);
     LV_FONT_DECLARE(lv_font_montserrat_96_custom);
-    lv_obj_set_style_text_font(g_clean_lbl, &lv_font_montserrat_96_custom, 0);
+    lv_obj_set_style_text_font(g_clean_lbl, SF(96), 0);
     lv_label_set_text_fmt(g_clean_lbl, "%d", g_clean_remaining);
     lv_obj_center(g_clean_lbl);
     ui_push(g_clean_scr);
@@ -2559,7 +2560,7 @@ static void open_clean_modal(lv_event_t * e) {
 static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
                       const char * title, const char * caption, lv_event_cb_t cb) {
     lv_obj_t * tile = lv_btn_create(scr_root);
-    lv_obj_set_size(tile, SETT_TILE_W, SETT_TILE_H);
+    lv_obj_set_size(tile, SX(SETT_TILE_W), SY(SETT_TILE_H));
     lv_obj_set_pos(tile, x, y);
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x1a2a44), 0);
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x24385c), LV_STATE_PRESSED);
@@ -2572,29 +2573,39 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
         lv_img_set_src(im, icon);
         lv_obj_set_style_img_recolor(im, lv_color_hex(0x9fc4e6), 0);
         lv_obj_set_style_img_recolor_opa(im, 255, 0);
-        lv_obj_align(im, LV_ALIGN_TOP_MID, 0, 6);
+#ifdef TOON1
+        /* The icon bitmap is a fixed 40px (zoom blanks these ALPHA_8BIT assets,
+         * so leave it native); pin it to the top and push the title below it. */
+        lv_obj_align(im, LV_ALIGN_TOP_MID, 0, 1);
+#else
+        lv_obj_align(im, LV_ALIGN_TOP_MID, 0, SY(6));
+#endif
     } else if (sym) {
         lv_obj_t * s = lv_label_create(tile);
-        lv_obj_set_style_text_font(s, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(s, SF(22), 0);
         lv_obj_set_style_text_color(s, lv_color_hex(0x9fc4e6), 0);
         lv_label_set_text(s, sym);
-        lv_obj_align(s, LV_ALIGN_TOP_MID, 0, 8);
+        lv_obj_align(s, LV_ALIGN_TOP_MID, 0, SY(8));
     }
 
     lv_obj_t * t = lv_label_create(tile);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(t, SF(22), 0);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
     lv_label_set_text(t, title);
-    lv_obj_align(t, LV_ALIGN_CENTER, 0, 8);
+#ifdef TOON1
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, 10);   /* clear the 40px icon above, the caption below */
+#else
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, SY(8));
+#endif
 
     lv_obj_t * c = lv_label_create(tile);
-    lv_obj_set_style_text_font(c, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(c, SF(14), 0);
     lv_obj_set_style_text_color(c, lv_color_hex(0x7d97b5), 0);
-    lv_obj_set_width(c, SETT_TILE_W - 16);
+    lv_obj_set_width(c, SX(SETT_TILE_W - 16));
     lv_label_set_long_mode(c, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(c, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(c, caption);
-    lv_obj_align(c, LV_ALIGN_BOTTOM_MID, 0, -6);
+    lv_obj_align(c, LV_ALIGN_BOTTOM_MID, 0, SY(-6));
 }
 
 /* ===================================================================== */
@@ -2665,32 +2676,32 @@ static void open_web_modal(lv_event_t * e) {
 
     lv_obj_t * lu = lv_label_create(p);
     lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lu, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, "Username:");
-    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_pwa_user = lv_textarea_create(p);
-    lv_obj_set_size(ta_pwa_user, 420, 44);
-    lv_obj_align(ta_pwa_user, LV_ALIGN_TOP_LEFT, 260, y - 4);
+    lv_obj_set_size(ta_pwa_user, SX(420), SY(44));
+    lv_obj_align(ta_pwa_user, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_pwa_user, true);
     lv_textarea_set_text(ta_pwa_user, settings.pwa_login_user);
     y += 60;
 
     lv_obj_t * lp = lv_label_create(p);
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lp, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, "Password:");
-    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_pwa_pass = lv_textarea_create(p);
-    lv_obj_set_size(ta_pwa_pass, 420, 44);
-    lv_obj_align(ta_pwa_pass, LV_ALIGN_TOP_LEFT, 260, y - 4);
+    lv_obj_set_size(ta_pwa_pass, SX(420), SY(44));
+    lv_obj_align(ta_pwa_pass, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_pwa_pass, true);
     lv_textarea_set_password_mode(ta_pwa_pass, true);
     lv_textarea_set_text(ta_pwa_pass, settings.pwa_login_pass);
     y += 64;
 
     lv_obj_t * b_apply = lv_btn_create(p);
-    lv_obj_set_size(b_apply, 220, 50);
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(b_apply, SX(220), SY(50));
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_pwa_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
@@ -2700,8 +2711,8 @@ static void open_web_modal(lv_event_t * e) {
      * the field + Save does the same thing, but a dedicated button is
      * faster to find when the password is genuinely lost. */
     lv_obj_t * b_reset = lv_btn_create(p);
-    lv_obj_set_size(b_reset, 200, 50);
-    lv_obj_align(b_reset, LV_ALIGN_TOP_LEFT, 244, y);
+    lv_obj_set_size(b_reset, SX(200), SY(50));
+    lv_obj_align(b_reset, LV_ALIGN_TOP_LEFT, SX(244), y);
     lv_obj_set_style_bg_color(b_reset, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(b_reset, on_pwa_reset_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lr = lv_label_create(b_reset);
@@ -2711,12 +2722,12 @@ static void open_web_modal(lv_event_t * e) {
      * surprised when clearing the field doesn't fully disable login. */
     lv_obj_t * note = lv_label_create(p);
     lv_obj_set_style_text_color(note, lv_color_hex(0x99aabb), 0);
-    lv_obj_set_style_text_font(note, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(note, SF(14), 0);
     lv_label_set_text(note,
         "Empty password = next browser visit prompts to set one.\n"
         "Reset password = same, in one tap (when you forgot it).\n"
         "Turn the toggle off to disable login entirely.");
-    lv_obj_align(note, LV_ALIGN_TOP_LEFT, 4, y + 60);
+    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
 }
 
 static void on_pin_enabled_change(lv_event_t * e) {
@@ -2752,12 +2763,12 @@ static void open_pin_settings_modal(lv_event_t * e) {
 
     lv_obj_t * lp = lv_label_create(p);
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lp, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, "PIN (4-6 digits):");
-    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_pin_code = lv_textarea_create(p); ta_make_numeric(ta_pin_code);
-    lv_obj_set_size(ta_pin_code, 260, 44);
-    lv_obj_align(ta_pin_code, LV_ALIGN_TOP_LEFT, 260, y - 4);
+    lv_obj_set_size(ta_pin_code, SX(260), SY(44));
+    lv_obj_align(ta_pin_code, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_pin_code, true);
     lv_textarea_set_password_mode(ta_pin_code, true);
     lv_textarea_set_max_length(ta_pin_code, sizeof settings.pin_code - 1);
@@ -2765,8 +2776,8 @@ static void open_pin_settings_modal(lv_event_t * e) {
     y += 64;
 
     lv_obj_t * b_apply = lv_btn_create(p);
-    lv_obj_set_size(b_apply, 220, 50);
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(b_apply, SX(220), SY(50));
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_pin_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
@@ -2774,13 +2785,13 @@ static void open_pin_settings_modal(lv_event_t * e) {
 
     lv_obj_t * note = lv_label_create(p);
     lv_obj_set_style_text_color(note, lv_color_hex(0x99aabb), 0);
-    lv_obj_set_style_text_font(note, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(note, SF(14), 0);
     lv_label_set_text(note,
         "When enabled, the PIN gates: opening Settings,\n"
         "thermostat presets (Comfort/Home/Sleep/Away),\n"
         "+/- setpoint nudges, and schedule/manual toggle.\n"
         "Empty PIN = gate stays open even if toggle is on.");
-    lv_obj_align(note, LV_ALIGN_TOP_LEFT, 4, y + 64);
+    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y + 64);
 }
 
 /* ===================================================================== */
@@ -2911,7 +2922,7 @@ static void rebuild_topic_checkboxes(void) {
     int y = 0;
     for (int i = 0; i < n; i++) {
         lv_obj_t * row = lv_obj_create(topics_container);
-        lv_obj_set_size(row, 760, 36);
+        lv_obj_set_size(row, SX(760), SY(36));
         lv_obj_align(row, LV_ALIGN_TOP_LEFT, 0, y);
         lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(row, 0, 0);
@@ -2926,9 +2937,9 @@ static void rebuild_topic_checkboxes(void) {
 
         lbl_topics[i] = lv_label_create(row);
         lv_obj_set_style_text_color(lbl_topics[i], lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl_topics[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(lbl_topics[i], SF(18), 0);
         lv_label_set_text(lbl_topics[i], snap[i]);
-        lv_obj_align(lbl_topics[i], LV_ALIGN_LEFT_MID, 36, 0);
+        lv_obj_align(lbl_topics[i], LV_ALIGN_LEFT_MID, SX(36), 0);
 
         y += 38;
     }
@@ -3010,23 +3021,23 @@ static void open_mqtt_modal(lv_event_t * e) {
     /* Host */
     lv_obj_t * lbl_h = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_h, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_h, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_h, SF(22), 0);
     lv_label_set_text(lbl_h, "Broker host:");
-    lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_mqtt_host = lv_textarea_create(p); ta_make_numeric(ta_mqtt_host);
-    lv_obj_set_size(ta_mqtt_host, 380, 44);
-    lv_obj_align(ta_mqtt_host, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_mqtt_host, SX(380), SY(44));
+    lv_obj_align(ta_mqtt_host, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_mqtt_host, true);
     lv_textarea_set_text(ta_mqtt_host, settings.mqtt_host);
     /* Port — separate text area on the right */
     lv_obj_t * lbl_p = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_p, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_p, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_p, SF(22), 0);
     lv_label_set_text(lbl_p, "Port:");
-    lv_obj_align(lbl_p, LV_ALIGN_TOP_LEFT, 640, y);
+    lv_obj_align(lbl_p, LV_ALIGN_TOP_LEFT, SX(640), y);
     ta_mqtt_port = lv_textarea_create(p); ta_make_numeric(ta_mqtt_port);
-    lv_obj_set_size(ta_mqtt_port, 100, 44);
-    lv_obj_align(ta_mqtt_port, LV_ALIGN_TOP_LEFT, 720, y - 4);
+    lv_obj_set_size(ta_mqtt_port, SX(100), SY(44));
+    lv_obj_align(ta_mqtt_port, LV_ALIGN_TOP_LEFT, SX(720), y - 4);
     lv_textarea_set_one_line(ta_mqtt_port, true);
     char portbuf[8]; snprintf(portbuf, sizeof(portbuf), "%d",
                               settings.mqtt_port ? settings.mqtt_port : 1883);
@@ -3036,12 +3047,12 @@ static void open_mqtt_modal(lv_event_t * e) {
     /* User */
     lv_obj_t * lbl_u = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_u, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_u, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_u, SF(22), 0);
     lv_label_set_text(lbl_u, "User (opt):");
-    lv_obj_align(lbl_u, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_u, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_mqtt_user = lv_textarea_create(p);
-    lv_obj_set_size(ta_mqtt_user, 380, 44);
-    lv_obj_align(ta_mqtt_user, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_mqtt_user, SX(380), SY(44));
+    lv_obj_align(ta_mqtt_user, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_mqtt_user, true);
     lv_textarea_set_text(ta_mqtt_user, settings.mqtt_user);
     y += 60;
@@ -3049,12 +3060,12 @@ static void open_mqtt_modal(lv_event_t * e) {
     /* Pass */
     lv_obj_t * lbl_pw = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_pw, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_pw, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_pw, SF(22), 0);
     lv_label_set_text(lbl_pw, "Pass (opt):");
-    lv_obj_align(lbl_pw, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_pw, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_mqtt_pass = lv_textarea_create(p);
-    lv_obj_set_size(ta_mqtt_pass, 380, 44);
-    lv_obj_align(ta_mqtt_pass, LV_ALIGN_TOP_LEFT, 240, y - 4);
+    lv_obj_set_size(ta_mqtt_pass, SX(380), SY(44));
+    lv_obj_align(ta_mqtt_pass, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
     lv_textarea_set_one_line(ta_mqtt_pass, true);
     lv_textarea_set_password_mode(ta_mqtt_pass, true);
     lv_textarea_set_text(ta_mqtt_pass, settings.mqtt_pass);
@@ -3062,24 +3073,24 @@ static void open_mqtt_modal(lv_event_t * e) {
 
     /* Test / Discover / Apply buttons */
     lv_obj_t * b_test = lv_btn_create(p);
-    lv_obj_set_size(b_test, 220, 50);
-    lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(b_test, SX(220), SY(50));
+    lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_test, on_mqtt_test_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl1 = lv_label_create(b_test);
     lv_label_set_text(bl1, "Test connection"); lv_obj_center(bl1);
 
     lv_obj_t * b_disc = lv_btn_create(p);
-    lv_obj_set_size(b_disc, 250, 50);
-    lv_obj_align(b_disc, LV_ALIGN_TOP_LEFT, 240, y);
+    lv_obj_set_size(b_disc, SX(250), SY(50));
+    lv_obj_align(b_disc, LV_ALIGN_TOP_LEFT, SX(240), y);
     lv_obj_set_style_bg_color(b_disc, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_disc, on_mqtt_discover_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl2 = lv_label_create(b_disc);
     lv_label_set_text(bl2, "Discover topics (5s)"); lv_obj_center(bl2);
 
     lv_obj_t * b_apply = lv_btn_create(p);
-    lv_obj_set_size(b_apply, 200, 50);
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, 500, y);
+    lv_obj_set_size(b_apply, SX(200), SY(50));
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(500), y);
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_mqtt_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl3 = lv_label_create(b_apply);
@@ -3089,17 +3100,17 @@ static void open_mqtt_modal(lv_event_t * e) {
     /* Result line */
     lbl_mqtt_result = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_mqtt_result, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(lbl_mqtt_result, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_mqtt_result, 770);
+    lv_obj_set_style_text_font(lbl_mqtt_result, SF(18), 0);
+    lv_obj_set_width(lbl_mqtt_result, SX(770));
     lv_label_set_long_mode(lbl_mqtt_result, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_mqtt_result, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_align(lbl_mqtt_result, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_mqtt_result, "Ready. Test the broker or hit Discover.");
     y += 40;
 
     /* Discovered-topic checklist container — scrollable column */
     topics_container = lv_obj_create(p);
-    lv_obj_set_size(topics_container, 770, 280);
-    lv_obj_align(topics_container, LV_ALIGN_TOP_LEFT, 4, y);
+    lv_obj_set_size(topics_container, SX(770), SY(280));
+    lv_obj_align(topics_container, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_opa(topics_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(topics_container, 0, 0);
     lv_obj_set_style_pad_all(topics_container, 0, 0);
@@ -3135,8 +3146,8 @@ lv_obj_t * screen_settings_create(void) {
 
     /* header */
     lv_obj_t * btn_back = lv_btn_create(scr_root);
-    lv_obj_set_size(btn_back, 140, 80);
-    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 12, 12);
+    lv_obj_set_size(btn_back, SX(140), SY(80));
+    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
     lv_obj_set_style_bg_color(btn_back, lv_color_hex(0x223344), 0);
     lv_obj_set_style_radius(btn_back, 14, 0);
     lv_obj_set_ext_click_area(btn_back, 20);
@@ -3144,14 +3155,14 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_t * back_lbl = lv_label_create(btn_back);
     lv_label_set_text(back_lbl, "< Back");
     lv_obj_set_style_text_color(back_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(back_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(back_lbl, SF(22), 0);
     lv_obj_center(back_lbl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Settings");
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 30);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(30));
 
     /* Category tiles in a compact 4-column grid. 232x104 each, so 4 rows
      * of 4 (13 tiles) fit in ~4 rows starting below the header — the first
@@ -3159,8 +3170,8 @@ lv_obj_t * screen_settings_create(void) {
      * index-driven via the GX macro so adding a tile doesn't need manual
      * row/column arithmetic. */
     const int COLS = 4, MX = 20, TOP = 112, GAPX = 14, GAPY = 12;
-    #define GX(i) (MX + ((i) % COLS) * (SETT_TILE_W + GAPX))
-    #define GY(i) (TOP + ((i) / COLS) * (SETT_TILE_H + GAPY))
+    #define GX(i) (SX(MX + ((i) % COLS) * (SETT_TILE_W + GAPX)))
+    #define GY(i) (SY(TOP + ((i) / COLS) * (SETT_TILE_H + GAPY)))
     int n = 0;
     make_tile(GX(n), GY(n), &icon_wx_sun, NULL, "Display",
               "dim, timeout, brightness", open_display_modal); n++;

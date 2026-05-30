@@ -11,6 +11,7 @@
  */
 #define _GNU_SOURCE
 #include "packages.h"
+#include "display.h"
 #include "mqtt_client.h"
 #include "lvgl/lvgl.h"
 #include <stdio.h>
@@ -342,20 +343,20 @@ void packages_banner_attach(lv_obj_t * parent) {
 
     bw->lbl_title = lv_label_create(bw->box);
     lv_obj_set_style_text_color(bw->lbl_title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bw->lbl_title, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bw->lbl_title, SF(22), 0);
     lv_obj_align(bw->lbl_title, LV_ALIGN_LEFT_MID, 12, -10);
     lv_label_set_text(bw->lbl_title, "");
 
     bw->lbl_msg = lv_label_create(bw->box);
     lv_obj_set_style_text_color(bw->lbl_msg, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(bw->lbl_msg, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(bw->lbl_msg, SF(18), 0);
     lv_obj_align(bw->lbl_msg, LV_ALIGN_LEFT_MID, 12, 14);
     lv_label_set_text(bw->lbl_msg, "");
 
     /* Small "tap to dismiss" hint on the right side */
     lv_obj_t * hint = lv_label_create(bw->box);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(hint, SF(14), 0);
     lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -12, 0);
     lv_label_set_text(hint, "tap to dismiss  x");
 

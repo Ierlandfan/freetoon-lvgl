@@ -13,6 +13,7 @@
  * the canvas, giving near-live footage (true H.264 isn't available on this
  * stack — this is the MJPEG-style "rapid still" approach Frigate feeds well). */
 #include "lvgl/lvgl.h"
+#include "display.h"
 #include "lvgl/src/extra/libs/sjpg/tjpgd.h"
 #include "doorbell.h"
 #include "homeassistant.h"
@@ -119,14 +120,14 @@ static void show_overlay(void) {
     } else {
         lv_obj_t * err = lv_label_create(overlay);
         lv_obj_set_style_text_color(err, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(err, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(err, SF(22), 0);
         lv_label_set_text(err, "Doorbell: snapshot unavailable");
         lv_obj_center(err);
     }
 
     lv_obj_t * lbl = lv_label_create(overlay);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(lbl, SF(28), 0);
     lv_obj_set_style_bg_color(lbl, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(lbl, LV_OPA_50, 0);
     lv_obj_set_style_pad_all(lbl, 8, 0);

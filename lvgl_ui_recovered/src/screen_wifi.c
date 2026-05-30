@@ -15,6 +15,7 @@
  * shown as unsupported rather than implemented unsafely.
  */
 #include "screens.h"
+#include "display.h"
 #include "boxtalk.h"
 #include "http.h"
 #include <pthread.h>
@@ -177,7 +178,7 @@ static void open_connect_modal(ap_t * a) {
     snprintf(g_conn_ssid, sizeof g_conn_ssid, "%s", a->ssid);
 
     g_conn_modal = lv_obj_create(scr_root);
-    lv_obj_set_size(g_conn_modal, 1024, 600);
+    lv_obj_set_size(g_conn_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(g_conn_modal, 0, 0);
     lv_obj_set_style_bg_color(g_conn_modal, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(g_conn_modal, LV_OPA_70, 0);
@@ -185,7 +186,7 @@ static void open_connect_modal(ap_t * a) {
     lv_obj_clear_flag(g_conn_modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * card = lv_obj_create(g_conn_modal);
-    lv_obj_set_size(card, 660, 340);
+    lv_obj_set_size(card, SX(660), SY(340));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -194,41 +195,41 @@ static void open_connect_modal(ap_t * a) {
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(t, SF(22), 0);
     lv_label_set_text_fmt(t, "Connect to %s", a->ssid);
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 8, 6);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(8), SY(6));
 
     if (a->secured) {
         g_conn_ta = lv_textarea_create(card);
         lv_textarea_set_one_line(g_conn_ta, true);
         lv_textarea_set_password_mode(g_conn_ta, true);
         lv_textarea_set_placeholder_text(g_conn_ta, "password");
-        lv_obj_set_width(g_conn_ta, 620);
-        lv_obj_align(g_conn_ta, LV_ALIGN_TOP_MID, 0, 44);
+        lv_obj_set_width(g_conn_ta, SX(620));
+        lv_obj_align(g_conn_ta, LV_ALIGN_TOP_MID, 0, SY(44));
 
         lv_obj_t * kb = lv_keyboard_create(card);
-        lv_obj_set_size(kb, 640, 190);
-        lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, -50);
+        lv_obj_set_size(kb, SX(640), SY(190));
+        lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, SY(-50));
         lv_keyboard_set_textarea(kb, g_conn_ta);
     } else {
         lv_obj_t * o = lv_label_create(card);
         lv_obj_set_style_text_color(o, lv_color_hex(COL_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(o, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(o, SF(18), 0);
         lv_label_set_text(o, "Open network - no password needed.");
         lv_obj_align(o, LV_ALIGN_CENTER, 0, 0);
     }
 
     lv_obj_t * go = lv_btn_create(card);
-    lv_obj_set_size(go, 150, 44);
-    lv_obj_align(go, LV_ALIGN_BOTTOM_RIGHT, -8, -4);
+    lv_obj_set_size(go, SX(150), SY(44));
+    lv_obj_align(go, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
     lv_obj_set_style_bg_color(go, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(go, on_conn_go, LV_EVENT_CLICKED, NULL);
     lv_obj_t * gl = lv_label_create(go); lv_label_set_text(gl, "Connect");
     lv_obj_center(gl);
 
     lv_obj_t * cancel = lv_btn_create(card);
-    lv_obj_set_size(cancel, 130, 44);
-    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 8, -4);
+    lv_obj_set_size(cancel, SX(130), SY(44));
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
     lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(cancel, on_conn_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, "Cancel");
@@ -269,7 +270,7 @@ static void on_disc_confirm(lv_event_t * e) {
 static void on_disconnect(lv_event_t * e) {
     (void)e;
     g_disc_modal = lv_obj_create(scr_root);
-    lv_obj_set_size(g_disc_modal, 1024, 600);
+    lv_obj_set_size(g_disc_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(g_disc_modal, 0, 0);
     lv_obj_set_style_bg_color(g_disc_modal, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(g_disc_modal, LV_OPA_70, 0);
@@ -277,7 +278,7 @@ static void on_disconnect(lv_event_t * e) {
     lv_obj_clear_flag(g_disc_modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * card = lv_obj_create(g_disc_modal);
-    lv_obj_set_size(card, 640, 240);
+    lv_obj_set_size(card, SX(640), SY(240));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -286,24 +287,24 @@ static void on_disconnect(lv_event_t * e) {
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
-    lv_obj_set_width(t, 600);
+    lv_obj_set_style_text_font(t, SF(22), 0);
+    lv_obj_set_width(t, SX(600));
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_label_set_text_fmt(t, "Disconnect from %s?\nThe Toon will leave the network until it reconnects.",
                           g_cur_ssid[0] ? g_cur_ssid : "WiFi");
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 12, 12);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
 
     lv_obj_t * yes = lv_btn_create(card);
-    lv_obj_set_size(yes, 170, 48);
-    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, -8, -4);
+    lv_obj_set_size(yes, SX(170), SY(48));
+    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
     lv_obj_set_style_bg_color(yes, lv_color_hex(COL_WARN), 0);
     lv_obj_add_event_cb(yes, on_disc_confirm, LV_EVENT_CLICKED, NULL);
     lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, "Disconnect");
     lv_obj_center(yl);
 
     lv_obj_t * no = lv_btn_create(card);
-    lv_obj_set_size(no, 130, 48);
-    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, 8, -4);
+    lv_obj_set_size(no, SX(130), SY(48));
+    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
     lv_obj_set_style_bg_color(no, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(no, on_disc_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, "Cancel");
@@ -325,14 +326,14 @@ static void build_rows(void) {
     if (g_ap_count == 0) {
         lv_obj_t * empty = lv_label_create(list_box);
         lv_obj_set_style_text_color(empty, lv_color_hex(COL_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(empty, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(empty, SF(18), 0);
         lv_label_set_text(empty, "Tap Scan to list nearby networks.");
         return;
     }
     for (int i = 0; i < g_ap_count; i++) {
         ap_t * a = &g_ap[i];
         lv_obj_t * row = lv_btn_create(list_box);
-        lv_obj_set_size(row, 940, 64);
+        lv_obj_set_size(row, SX(940), SY(64));
         lv_obj_set_style_bg_color(row, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x24385c), LV_STATE_PRESSED);
         lv_obj_set_style_border_width(row, 0, 0);
@@ -343,17 +344,17 @@ static void build_rows(void) {
         int connected = (strcmp(a->ssid, g_cur_ssid) == 0);
 
         lv_obj_t * nm = lv_label_create(row);
-        lv_obj_set_style_text_font(nm, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(nm, SF(22), 0);
         lv_obj_set_style_text_color(nm, lv_color_hex(connected ? COL_OK : COL_TEXT_HI), 0);
         lv_label_set_text_fmt(nm, "%s%s", a->ssid, connected ? "  (connected)" : "");
-        lv_obj_align(nm, LV_ALIGN_LEFT_MID, 4, 0);
+        lv_obj_align(nm, LV_ALIGN_LEFT_MID, SX(4), 0);
 
         lv_obj_t * meta = lv_label_create(row);
-        lv_obj_set_style_text_font(meta, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(meta, SF(18), 0);
         lv_obj_set_style_text_color(meta, lv_color_hex(COL_TEXT_DIM), 0);
         lv_label_set_text_fmt(meta, "%s %d%%  %s", bars_for(a->quality), a->quality,
                               a->secured ? LV_SYMBOL_KEYBOARD : "");
-        lv_obj_align(meta, LV_ALIGN_RIGHT_MID, -8, 0);
+        lv_obj_align(meta, LV_ALIGN_RIGHT_MID, SX(-8), 0);
     }
 }
 
@@ -427,69 +428,69 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_UNLOADED, NULL);
 
     lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, 140, 52);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 20, 14);
+    lv_obj_set_size(back, SX(140), SY(52));
+    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(20), SY(14));
     lv_obj_set_style_bg_color(back, lv_color_hex(0x3a4658), 0);
     lv_obj_set_style_radius(back, 10, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_label_set_text(bl, "< Back");
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "WiFi");
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 24);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(24));
 
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_status, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_status, SF(18), 0);
     lv_label_set_text(lbl_status, "querying...");
-    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, 280, 30);
+    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(280), SY(30));
 
     /* Scan button (top-right) */
     lv_obj_t * scan = lv_btn_create(scr_root);
-    lv_obj_set_size(scan, 150, 52);
-    lv_obj_align(scan, LV_ALIGN_TOP_RIGHT, -16, 14);
+    lv_obj_set_size(scan, SX(150), SY(52));
+    lv_obj_align(scan, LV_ALIGN_TOP_RIGHT, SX(-16), SY(14));
     lv_obj_set_style_bg_color(scan, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_radius(scan, 10, 0);
     lv_obj_set_ext_click_area(scan, 12);
     lv_obj_add_event_cb(scan, on_scan, LV_EVENT_CLICKED, NULL);
     btn_scan_lbl = lv_label_create(scan);
     lv_obj_set_style_text_color(btn_scan_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(btn_scan_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(btn_scan_lbl, SF(22), 0);
     lv_label_set_text(btn_scan_lbl, "Scan");
     lv_obj_center(btn_scan_lbl);
 
     /* Disconnect button (left of Scan) */
     lv_obj_t * disc = lv_btn_create(scr_root);
-    lv_obj_set_size(disc, 170, 52);
-    lv_obj_align(disc, LV_ALIGN_TOP_RIGHT, -176, 14);
+    lv_obj_set_size(disc, SX(170), SY(52));
+    lv_obj_align(disc, LV_ALIGN_TOP_RIGHT, SX(-176), SY(14));
     lv_obj_set_style_bg_color(disc, lv_color_hex(COL_WARN), 0);
     lv_obj_set_style_radius(disc, 10, 0);
     lv_obj_set_ext_click_area(disc, 8);
     lv_obj_add_event_cb(disc, on_disconnect, LV_EVENT_CLICKED, NULL);
     lv_obj_t * dl = lv_label_create(disc);
     lv_obj_set_style_text_color(dl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(dl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(dl, SF(22), 0);
     lv_label_set_text(dl, "Disconnect");
     lv_obj_center(dl);
 
     lbl_hint = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_hint, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_hint, &lv_font_montserrat_14, 0);
-    lv_obj_set_width(lbl_hint, 980);
+    lv_obj_set_style_text_font(lbl_hint, SF(14), 0);
+    lv_obj_set_width(lbl_hint, SX(980));
     lv_label_set_long_mode(lbl_hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_hint, "Tap Scan to list nearby networks.  WPS is not supported by the Toon's network manager.");
-    lv_obj_align(lbl_hint, LV_ALIGN_TOP_LEFT, 22, 76);
+    lv_obj_align(lbl_hint, LV_ALIGN_TOP_LEFT, SX(22), SY(76));
 
     list_box = lv_obj_create(scr_root);
-    lv_obj_set_size(list_box, 980, 470);
-    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, 22, 110);
+    lv_obj_set_size(list_box, SX(980), SY(470));
+    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, SX(22), SY(110));
     lv_obj_set_style_bg_opa(list_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list_box, 0, 0);
     lv_obj_set_style_pad_all(list_box, 4, 0);

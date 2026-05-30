@@ -134,7 +134,7 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
 
     *cap = lv_label_create(scr_root);
     lv_obj_set_style_text_color(*cap, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(*cap, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(*cap, SF(18), 0);
     lv_obj_set_style_text_align(*cap, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(*cap, "");
     /* Anchor to the bar's edge so the value reads inward and never clips the
@@ -163,7 +163,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
         if (cap) {
             lv_label_set_text(cap, txt);
             lv_obj_set_style_text_color(cap, lv_color_hex(color), 0);
-            lv_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
+            lv_obj_set_style_text_font(cap, SF(22), 0);
             lv_obj_align_to(cap, env,
                 (side < 0) ? LV_ALIGN_OUT_RIGHT_MID : LV_ALIGN_OUT_LEFT_MID,
                 (side < 0) ? SX(6) : -SX(6), 0);
@@ -182,7 +182,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
     if (cap) {
         lv_label_set_text(cap, txt);
         lv_obj_set_style_text_color(cap, lv_color_hex(color), 0);
-        lv_obj_set_style_text_font(cap, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(cap, SF(18), 0);
         lv_obj_align_to(cap, env,
             (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
             0, SY(14));
@@ -592,7 +592,7 @@ lv_obj_t * screen_dim_create(void) {
         lv_obj_t * logo_lbl = lv_label_create(logo);
         lv_label_set_text(logo_lbl, "ft");
         lv_obj_set_style_text_color(logo_lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(logo_lbl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(logo_lbl, SF(22), 0);
         lv_obj_center(logo_lbl);
     }
 
@@ -600,7 +600,7 @@ lv_obj_t * screen_dim_create(void) {
        generated via lv_font_conv into lv_font_montserrat_96_custom.c). */
     lbl_clock = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_clock, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_clock, &lv_font_montserrat_96_custom, 0);
+    lv_obj_set_style_text_font(lbl_clock, SF(96), 0);
     lv_label_set_text(lbl_clock, "--:--");
     /* Nudged down from -130 so there's more headroom between the clock and the
      * "ft" logo / top chrome. */
@@ -616,7 +616,7 @@ lv_obj_t * screen_dim_create(void) {
        different content widths can't drift them out of alignment. */
     lbl_date = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_date, SF(22), 0);
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
 
@@ -634,13 +634,13 @@ lv_obj_t * screen_dim_create(void) {
 
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_64_custom, 0);
+    lv_obj_set_style_text_font(lbl_temp, SF(64), 0);
     lv_label_set_text(lbl_temp, "-- C");
     lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(45));
 
     lbl_setpoint = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_setpoint, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(lbl_setpoint, SF(28), 0);
     lv_label_set_text(lbl_setpoint, "to -- C");
     lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, SY(115));
 
@@ -649,7 +649,7 @@ lv_obj_t * screen_dim_create(void) {
        home thermostat tile so the eye-tracking matches. */
     lbl_program = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_program, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_program, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_program, SF(22), 0);
     lv_label_set_text(lbl_program, "--");
     lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, SY(140));
 
@@ -659,7 +659,7 @@ lv_obj_t * screen_dim_create(void) {
        and the forecast strip at y=518 without anything overlapping. */
     lbl_metrics = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_metrics, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(lbl_metrics, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_metrics, SF(22), 0);
     lv_label_set_text(lbl_metrics, "");
     lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, SY(162));
 
@@ -667,7 +667,7 @@ lv_obj_t * screen_dim_create(void) {
        CH-heating shows "-> 90 C" (red). DHW shows the faucet+drop pair
        slightly to the left of where the text would be. Idle hides both. */
     lbl_burner = lv_label_create(scr_root);
-    lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_burner, SF(22), 0);
     lv_label_set_text(lbl_burner, "");
     lv_obj_align(lbl_burner, LV_ALIGN_CENTER, 80, SY(140));
     lv_obj_add_flag(lbl_burner, LV_OBJ_FLAG_HIDDEN);
@@ -715,7 +715,7 @@ lv_obj_t * screen_dim_create(void) {
 
     dim_lbl_water = lv_label_create(scr_root);
     lv_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
-    lv_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(dim_lbl_water, SF(22), 0);
     lv_label_set_text(dim_lbl_water, "");
     lv_obj_align(dim_lbl_water, LV_ALIGN_CENTER, 175, SY(80));
     lv_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
@@ -743,7 +743,7 @@ lv_obj_t * screen_dim_create(void) {
 
     dim_vent_lbl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(dim_vent_lbl, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(dim_vent_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(dim_vent_lbl, SF(18), 0);
     lv_label_set_text(dim_vent_lbl, "-- %");
     lv_obj_set_style_text_align(dim_vent_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(dim_vent_lbl, 120);
@@ -761,7 +761,7 @@ lv_obj_t * screen_dim_create(void) {
 
     lbl_outside = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_outside, SF(22), 0);
     lv_label_set_text(lbl_outside, "-- C");
     lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, -30, SY(140));
 
@@ -770,7 +770,7 @@ lv_obj_t * screen_dim_create(void) {
      * names extend to the LEFT instead of clipping the bezel. */
     dim_lbl_life360_a = lv_label_create(scr_root);
     lv_obj_set_style_text_color(dim_lbl_life360_a, lv_color_hex(0x88aaff), 0);
-    lv_obj_set_style_text_font(dim_lbl_life360_a, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(dim_lbl_life360_a, SF(18), 0);
     lv_obj_set_width(dim_lbl_life360_a, 340);
     lv_obj_set_style_text_align(dim_lbl_life360_a, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_a, LV_LABEL_LONG_DOT);
@@ -780,7 +780,7 @@ lv_obj_t * screen_dim_create(void) {
 
     dim_lbl_life360_b = lv_label_create(scr_root);
     lv_obj_set_style_text_color(dim_lbl_life360_b, lv_color_hex(0xff88cc), 0);
-    lv_obj_set_style_text_font(dim_lbl_life360_b, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(dim_lbl_life360_b, SF(18), 0);
     lv_obj_set_width(dim_lbl_life360_b, 340);
     lv_obj_set_style_text_align(dim_lbl_life360_b, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_b, LV_LABEL_LONG_DOT);
@@ -799,7 +799,7 @@ lv_obj_t * screen_dim_create(void) {
 
     lbl_waste = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_waste, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_waste, SF(22), 0);
     /* Cap the width and word-wrap so a long pickup string ("vrijdag: GFT en
      * etensresten") stacks onto a 2nd line in the left column instead of
      * running rightward into the centered clock. */
@@ -815,7 +815,7 @@ lv_obj_t * screen_dim_create(void) {
      * the small gap left between the metrics row and the icons. */
     dim_lbl_city = lv_label_create(scr_root);
     lv_obj_set_style_text_color(dim_lbl_city, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(dim_lbl_city, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(dim_lbl_city, SF(18), 0);
     lv_obj_set_width(dim_lbl_city, DISP_HOR);
     lv_obj_set_style_text_align(dim_lbl_city, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(dim_lbl_city, "");
@@ -844,7 +844,7 @@ lv_obj_t * screen_dim_create(void) {
 
         dim_fc_day[i] = lv_label_create(scr_root);
         lv_obj_set_style_text_color(dim_fc_day[i], lv_color_hex(0xbbbbbb), 0);
-        lv_obj_set_style_text_font(dim_fc_day[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(dim_fc_day[i], SF(18), 0);
         lv_label_set_text(dim_fc_day[i], "");
         lv_obj_set_style_text_align(dim_fc_day[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_day[i], col_w);
@@ -853,7 +853,7 @@ lv_obj_t * screen_dim_create(void) {
 
         dim_fc_temp[i] = lv_label_create(scr_root);
         lv_obj_set_style_text_color(dim_fc_temp[i], lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(dim_fc_temp[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(dim_fc_temp[i], SF(18), 0);
         lv_label_set_text(dim_fc_temp[i], "");
         lv_obj_set_style_text_align(dim_fc_temp[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_temp[i], col_w);
@@ -866,7 +866,7 @@ lv_obj_t * screen_dim_create(void) {
        sits cleanly above it instead of overlapping. */
     lv_obj_t * hint = lv_label_create(scr_root);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), 0);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(hint, SF(18), 0);
     lv_label_set_text(hint, "tap to wake");
     lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, SY(24));
 

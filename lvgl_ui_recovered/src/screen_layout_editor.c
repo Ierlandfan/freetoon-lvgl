@@ -13,6 +13,7 @@
  */
 #include "lvgl/lvgl.h"
 #include "screens.h"
+#include "display.h"   /* SF()/SX()/SY() scaling for Toon 1 */
 #include "layout.h"
 #include "settings.h"
 #include <stdio.h>
@@ -244,7 +245,7 @@ static void create_rect(int i) {
     lv_obj_t * l = lv_label_create(r);
     lv_label_set_text(l, layout_type_name(t->type));
     lv_obj_set_style_text_color(l, lv_color_hex(0x0a121e), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(l, SF(14), 0);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 2, 2);
     place_rect(i);
 }
@@ -354,7 +355,7 @@ static void on_add(lv_event_t * e) {
     lv_obj_t * title = lv_label_create(chooser);
     lv_label_set_text(title, "Tegel toevoegen  -  kies grootte, dan type");
     lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(title, SF(14), 0);
 
     /* size row */
     lv_obj_t * srow = lv_obj_create(chooser);
@@ -497,20 +498,20 @@ static void show_delete_confirm(int i) {
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(0xeaf2ff), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(t, SF(18), 0);
     lv_label_set_text_fmt(t, "%s verwijderen?", layout_type_name(edit.tiles[i].type));
     lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 16);
 
     lv_obj_t * del = lv_btn_create(card);
-    lv_obj_set_size(del, 150, 50);
-    lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, -10, -14);
+    lv_obj_set_size(del, SX(150), SY(50));
+    lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, SX(-10), SY(-14));
     lv_obj_set_style_bg_color(del, lv_color_hex(0x6e2e2e), 0);
     lv_obj_add_event_cb(del, on_confirm_ok, LV_EVENT_CLICKED, NULL);
     lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, "Verwijder"); lv_obj_center(dl);
 
     lv_obj_t * ca = lv_btn_create(card);
-    lv_obj_set_size(ca, 150, 50);
-    lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, 10, -14);
+    lv_obj_set_size(ca, SX(150), SY(50));
+    lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, SX(10), SY(-14));
     lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(ca, on_confirm_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, "Annuleer"); lv_obj_center(cal);
@@ -592,7 +593,7 @@ static void open_name_modal(lv_event_t * e) {
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(0xeaf2ff), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(t, SF(18), 0);
     lv_label_set_text(t, "Naam van de indeling");
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 6, 6);
 
@@ -603,15 +604,15 @@ static void open_name_modal(lv_event_t * e) {
     lv_obj_align(name_ta, LV_ALIGN_TOP_MID, 0, 40);
 
     lv_obj_t * ok = lv_btn_create(card);
-    lv_obj_set_size(ok, 130, 42);
-    lv_obj_align(ok, LV_ALIGN_TOP_RIGHT, -6, 90);
+    lv_obj_set_size(ok, SX(130), SY(42));
+    lv_obj_align(ok, LV_ALIGN_TOP_RIGHT, SX(-6), SY(90));
     lv_obj_set_style_bg_color(ok, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(ok, on_name_ok, LV_EVENT_CLICKED, NULL);
     lv_obj_t * okl = lv_label_create(ok); lv_label_set_text(okl, "Opslaan"); lv_obj_center(okl);
 
     lv_obj_t * ca = lv_btn_create(card);
-    lv_obj_set_size(ca, 130, 42);
-    lv_obj_align(ca, LV_ALIGN_TOP_LEFT, 6, 90);
+    lv_obj_set_size(ca, SX(130), SY(42));
+    lv_obj_align(ca, LV_ALIGN_TOP_LEFT, SX(6), SY(90));
     lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(ca, on_name_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, "Annuleer"); lv_obj_center(cal);
@@ -682,7 +683,7 @@ static void preset_row(const char * name, int idx, int deletable) {
     int active = (strcmp(settings.active_layout, idx < 0 ? "" : name) == 0);
     lv_obj_t * l = lv_label_create(row);
     lv_obj_set_style_text_color(l, lv_color_hex(active ? 0x66dd88 : 0xccddee), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text_fmt(l, "%s%s", active ? LV_SYMBOL_OK " " : "",
                           (idx < 0) ? "Standaard" : name);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 4, 0);
@@ -727,7 +728,7 @@ static void open_preset_mgr(lv_event_t * e) {
 
     lv_obj_t * title = lv_label_create(preset_mgr);
     lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(title, SF(18), 0);
     lv_label_set_text(title, "Indelingen  -  Startscherm = tonen op home, Bewerk = aanpassen");
 
     preset_list = lv_obj_create(preset_mgr);
@@ -813,12 +814,17 @@ static void on_save(lv_event_t * e) {
 static lv_obj_t * tb_btn(lv_obj_t * bar, int x, int w, const char * txt,
                          lv_event_cb_t cb, void * ud, uint32_t col) {
     lv_obj_t * b = lv_btn_create(bar);
-    lv_obj_set_size(b, w, BAR_H - 14);
-    lv_obj_set_pos(b, x, 7);
+    lv_obj_set_size(b, w, SY(BAR_H - 14));
+    lv_obj_set_pos(b, x, SY(7));
     lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text(l, txt);
+#ifdef TOON1
+    /* Toolbar buttons are width-tightened for 800px; use a smaller label so
+     * long words ("Indelingen", "Verwijder") fit without clipping. */
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+#endif
     lv_obj_center(l);
     return b;
 }
@@ -940,24 +946,24 @@ void screen_layout_editor_show(void) {
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Widths tightened so the new "Verwijder" button fits on both 1024 and 800. */
-    int x = 8;
-    tb_btn(bar, x, 62, "Sluit",      on_cancel,       NULL, 0x444444); x += 68;
-    page_btn = tb_btn(bar, x, 78, "Pagina 1", on_page_toggle, NULL, 0x4a3a6a); x += 84;
-    tb_btn(bar, x, 40, "W-", on_resize, (void *)(intptr_t)0, 0x2a4060); x += 44;
-    tb_btn(bar, x, 40, "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += 44;
-    tb_btn(bar, x, 40, "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += 44;
-    tb_btn(bar, x, 40, "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += 46;
-    tb_btn(bar, x, 82, "Verberg",    on_toggle_vis,   NULL, 0x553355); x += 88;
-    tb_btn(bar, x, 84, "Verwijder",  on_delete_tile,  NULL, 0x6e2e2e); x += 90;
-    tb_btn(bar, x, 70, "+ Tegel",    on_add,          NULL, 0x2e5e6e); x += 76;
-    tb_btn(bar, x, 92, "Indelingen", open_preset_mgr, NULL, 0x2e4e6e); x += 98;
+    int x = SX(8);
+    tb_btn(bar, x, SX(62), "Sluit",      on_cancel,       NULL, 0x444444); x += SX(68);
+    page_btn = tb_btn(bar, x, SX(78), "Pagina 1", on_page_toggle, NULL, 0x4a3a6a); x += SX(84);
+    tb_btn(bar, x, SX(40), "W-", on_resize, (void *)(intptr_t)0, 0x2a4060); x += SX(44);
+    tb_btn(bar, x, SX(40), "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += SX(44);
+    tb_btn(bar, x, SX(40), "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += SX(44);
+    tb_btn(bar, x, SX(40), "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += SX(46);
+    tb_btn(bar, x, SX(82), "Verberg",    on_toggle_vis,   NULL, 0x553355); x += SX(88);
+    tb_btn(bar, x, SX(84), "Verwijder",  on_delete_tile,  NULL, 0x6e2e2e); x += SX(90);
+    tb_btn(bar, x, SX(70), "+ Tegel",    on_add,          NULL, 0x2e5e6e); x += SX(76);
+    tb_btn(bar, x, SX(92), "Indelingen", open_preset_mgr, NULL, 0x2e4e6e); x += SX(98);
 
     sel_lbl = lv_label_create(bar);
     lv_obj_set_style_text_color(sel_lbl, lv_color_hex(0xccddee), 0);
-    lv_obj_set_style_text_font(sel_lbl, &lv_font_montserrat_14, 0);
-    lv_obj_align(sel_lbl, LV_ALIGN_LEFT_MID, x + 6, 0);
+    lv_obj_set_style_text_font(sel_lbl, SF(14), 0);
+    lv_obj_align(sel_lbl, LV_ALIGN_LEFT_MID, x + SX(6), 0);
 
-    lv_obj_t * save = tb_btn(bar, SCR_W - 96, 88, "Opslaan", on_save, NULL, 0x2e6e3a);
+    lv_obj_t * save = tb_btn(bar, SCR_W - SX(96), SX(88), "Opslaan", on_save, NULL, 0x2e6e3a);
     (void)save;
     update_sel_label();
 }

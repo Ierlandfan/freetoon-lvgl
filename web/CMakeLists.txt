@@ -87,7 +87,7 @@ target_compile_definitions(index PRIVATE
     SDL_HOR_RES=1024
     SDL_VER_RES=600
     WASM_BUILD
-    BUILD_VERSION="v0.9.31")
+    BUILD_VERSION="v0.9.33")
 
 target_compile_options(index PRIVATE
     -O2

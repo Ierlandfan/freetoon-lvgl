@@ -9,6 +9,7 @@
  * overflow int16), and the real min/max/last are shown as text.
  */
 #include "screens.h"
+#include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,8 +123,8 @@ static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 
 static lv_obj_t * chip(lv_obj_t * parent, const char * txt, lv_event_cb_t cb, int idx, int x, int y) {
     lv_obj_t * b = lv_btn_create(parent);
-    lv_obj_set_size(b, 96, 40);
-    lv_obj_set_pos(b, x, y);
+    lv_obj_set_size(b, SX(96), SY(40));
+    lv_obj_set_pos(b, SX(x), SY(y));
     lv_obj_set_style_bg_color(b, lv_color_hex(0x33415c), 0);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
     lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, txt); lv_obj_center(l);
@@ -136,14 +137,14 @@ lv_obj_t * screen_crypto_create(void) {
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 8, 8);
+    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
     lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, LV_SYMBOL_LEFT " Terug");
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     lbl_title = lv_label_create(scr_root);
-    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_title, SF(22), 0);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xffffff), 0);
-    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 16);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, SY(16));
 
     load_coins();
 
@@ -158,8 +159,8 @@ lv_obj_t * screen_crypto_create(void) {
     style_selected(tf_btns, 5, cur_tf);
 
     chart = lv_chart_create(scr_root);
-    lv_obj_set_size(chart, LV_PCT(92), 360);
-    lv_obj_align(chart, LV_ALIGN_TOP_MID, 0, 154);
+    lv_obj_set_size(chart, LV_PCT(92), SY(300));
+    lv_obj_align(chart, LV_ALIGN_TOP_MID, 0, SY(154));
     lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
     lv_chart_set_div_line_count(chart, 5, 0);
     lv_obj_set_style_bg_color(chart, lv_color_hex(0x1a2a44), 0);
@@ -168,9 +169,11 @@ lv_obj_t * screen_crypto_create(void) {
 
     lbl_hi = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_hi, lv_color_hex(0x88dd66), 0);
+    lv_label_set_text(lbl_hi, "");
     lv_obj_align_to(lbl_hi, chart, LV_ALIGN_OUT_TOP_RIGHT, 0, -2);
     lbl_lo = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_lo, lv_color_hex(0xff8866), 0);
+    lv_label_set_text(lbl_lo, "");
     lv_obj_align_to(lbl_lo, chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
 
     if (coin_n == 0) lv_label_set_text(lbl_title, "Geen munten gekozen — Instellingen → Crypto");

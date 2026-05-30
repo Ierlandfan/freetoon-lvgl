@@ -5,6 +5,7 @@
  */
 #include "lvgl/lvgl.h"
 #include "screens.h"
+#include "display.h"   /* SF()/SX()/SY() scaling for Toon 1 */
 #include "calendar.h"
 #include "settings.h"
 #include <stdio.h>
@@ -38,7 +39,7 @@ void screen_calendar_show(void) {
     if (modal) lv_obj_del(modal);
 
     modal = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(modal, 1024, 600);
+    lv_obj_set_size(modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(modal, 0, 0);
     lv_obj_set_style_bg_color(modal, lv_color_hex(0x0f1a2a), 0);
     lv_obj_set_style_bg_opa(modal, 240, 0);
@@ -48,8 +49,8 @@ void screen_calendar_show(void) {
     lv_obj_clear_flag(modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * close = lv_btn_create(modal);
-    lv_obj_set_size(close, 140, 70);
-    lv_obj_align(close, LV_ALIGN_TOP_LEFT, 12, 12);
+    lv_obj_set_size(close, SX(140), SY(70));
+    lv_obj_align(close, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
     lv_obj_set_style_bg_color(close, lv_color_hex(0x223344), 0);
     lv_obj_set_style_radius(close, 12, 0);
     lv_obj_set_ext_click_area(close, 20);
@@ -57,18 +58,18 @@ void screen_calendar_show(void) {
     lv_obj_t * cl = lv_label_create(close);
     lv_label_set_text(cl, "Sluit");
     lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(cl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(cl, SF(22), 0);
     lv_obj_center(cl);
 
     lv_obj_t * title = lv_label_create(modal);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Agenda");
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 26);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(26));
 
     lv_obj_t * list = lv_obj_create(modal);
-    lv_obj_set_size(list, 960, 480);
-    lv_obj_set_pos(list, 30, 100);
+    lv_obj_set_size(list, SX(960), SY(480));
+    lv_obj_set_pos(list, SX(30), SY(100));
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_style_pad_row(list, 6, 0);
@@ -78,7 +79,7 @@ void screen_calendar_show(void) {
         lv_obj_t * m = lv_label_create(list);
         lv_label_set_text(m, "Agenda niet ingesteld.\nZet een HA-agenda of een iCal-URL in Instellingen.");
         lv_obj_set_style_text_color(m, lv_color_hex(0x99aabb), 0);
-        lv_obj_set_style_text_font(m, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(m, SF(22), 0);
         return;
     }
     if (calendar_state.count == 0) {
@@ -87,7 +88,7 @@ void screen_calendar_show(void) {
             ? "Geen aankomende afspraken."
             : "Agenda laden... (of geen verbinding)");
         lv_obj_set_style_text_color(m, lv_color_hex(0x99aabb), 0);
-        lv_obj_set_style_text_font(m, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(m, SF(22), 0);
         return;
     }
 
@@ -101,17 +102,17 @@ void screen_calendar_show(void) {
             lv_obj_t * h = lv_label_create(list);
             lv_label_set_text(h, pd);
             lv_obj_set_style_text_color(h, lv_color_hex(0x66ccff), 0);
-            lv_obj_set_style_text_font(h, &lv_font_montserrat_22, 0);
+            lv_obj_set_style_text_font(h, SF(22), 0);
             lv_obj_set_style_pad_top(h, i ? 10 : 0, 0);
         }
         lv_obj_t * row = lv_label_create(list);
-        lv_obj_set_width(row, 900);
+        lv_obj_set_width(row, SX(900));
         lv_label_set_long_mode(row, LV_LABEL_LONG_DOT);
         char line[120];
         snprintf(line, sizeof line, "   %s  %s",
                  ev->time[0] ? ev->time : "hele dag", ev->summary);
         lv_label_set_text(row, line);
         lv_obj_set_style_text_color(row, lv_color_hex(0xdddddd), 0);
-        lv_obj_set_style_text_font(row, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(row, SF(18), 0);
     }
 }

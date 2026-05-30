@@ -49,7 +49,7 @@ static void mk_btn(lv_obj_t * parent, int x, int y, int w, int h,
     lv_obj_add_event_cb(b, on_cmd_btn, LV_EVENT_CLICKED, (void *)cmd);
     lv_obj_t * l = lv_label_create(b);
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(l, SF(28), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
 }
@@ -68,14 +68,14 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_label_set_text(bl, "< Back");
     lv_obj_center(bl);
 
     /* title */
     lv_obj_t * hdr = lv_label_create(scr_root);
     lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(hdr, SF(28), 0);
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 150, 22);
     lv_label_set_text(hdr, "Ventilation");
 
@@ -88,14 +88,14 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_add_event_cb(adv, on_open_advanced, LV_EVENT_CLICKED, NULL);
     lv_obj_t * advl = lv_label_create(adv);
     lv_obj_set_style_text_color(advl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(advl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(advl, SF(22), 0);
     lv_label_set_text(advl, "Advanced");
     lv_obj_center(advl);
 
     /* status line */
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_status, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_status, SF(18), 0);
     lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, 20, 92);
     lv_label_set_text(lbl_status, "(loading...)");
 

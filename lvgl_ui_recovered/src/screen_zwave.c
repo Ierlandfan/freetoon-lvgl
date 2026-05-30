@@ -18,6 +18,7 @@
  * restart the driver; reads work regardless and the API responds either way.
  */
 #include "screens.h"
+#include "display.h"
 #include "settings.h"
 #include "boxtalk.h"
 #include <stdio.h>
@@ -167,7 +168,7 @@ static void on_row_rename(lv_event_t * e) {
     snprintf(g_rename_uuid, sizeof g_rename_uuid, "%s", d->uuid);
 
     g_rename_modal = lv_obj_create(scr_root);
-    lv_obj_set_size(g_rename_modal, 1024, 600);
+    lv_obj_set_size(g_rename_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(g_rename_modal, 0, 0);
     lv_obj_set_style_bg_color(g_rename_modal, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(g_rename_modal, LV_OPA_70, 0);
@@ -175,7 +176,7 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_clear_flag(g_rename_modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * card = lv_obj_create(g_rename_modal);
-    lv_obj_set_size(card, 640, 340);
+    lv_obj_set_size(card, SX(640), SY(340));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -184,32 +185,32 @@ static void on_row_rename(lv_event_t * e) {
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(t, SF(22), 0);
     lv_label_set_text(t, "Rename device");
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 8, 6);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(8), SY(6));
 
     g_rename_ta = lv_textarea_create(card);
     lv_textarea_set_one_line(g_rename_ta, true);
     lv_textarea_set_text(g_rename_ta, d->name);
-    lv_obj_set_width(g_rename_ta, 600);
-    lv_obj_align(g_rename_ta, LV_ALIGN_TOP_MID, 0, 44);
+    lv_obj_set_width(g_rename_ta, SX(600));
+    lv_obj_align(g_rename_ta, LV_ALIGN_TOP_MID, 0, SY(44));
 
     lv_obj_t * kb = lv_keyboard_create(card);
-    lv_obj_set_size(kb, 620, 190);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, -50);
+    lv_obj_set_size(kb, SX(620), SY(190));
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, SY(-50));
     lv_keyboard_set_textarea(kb, g_rename_ta);
 
     lv_obj_t * save = lv_btn_create(card);
-    lv_obj_set_size(save, 130, 42);
-    lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, -8, -4);
+    lv_obj_set_size(save, SX(130), SY(42));
+    lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
     lv_obj_set_style_bg_color(save, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(save, on_rename_save, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, "Save");
     lv_obj_center(sl);
 
     lv_obj_t * cancel = lv_btn_create(card);
-    lv_obj_set_size(cancel, 130, 42);
-    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 8, -4);
+    lv_obj_set_size(cancel, SX(130), SY(42));
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
     lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(cancel, on_rename_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, "Cancel");
@@ -264,7 +265,7 @@ static void build_rows(void) {
     if (g_dev_count == 0) {
         lv_obj_t * empty = lv_label_create(list_box);
         lv_obj_set_style_text_color(empty, lv_color_hex(COL_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(empty, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(empty, SF(18), 0);
         lv_label_set_text(empty,
             "No Z-Wave devices paired.\n"
             "Tap \"Add device\" and trigger inclusion on the device.");
@@ -274,7 +275,7 @@ static void build_rows(void) {
     for (int i = 0; i < g_dev_count; i++) {
         zw_dev_t * d = &g_dev[i];
         lv_obj_t * row = lv_obj_create(list_box);
-        lv_obj_set_size(row, 940, 84);
+        lv_obj_set_size(row, SX(940), SY(84));
         lv_obj_set_style_bg_color(row, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_radius(row, 12, 0);
@@ -282,29 +283,29 @@ static void build_rows(void) {
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t * nm = lv_label_create(row);
-        lv_obj_set_style_text_font(nm, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(nm, SF(22), 0);
         lv_obj_set_style_text_color(nm, lv_color_hex(COL_TEXT_HI), 0);
         lv_label_set_text(nm, d->name[0] ? d->name : d->type);
-        lv_obj_align(nm, LV_ALIGN_TOP_LEFT, 4, 0);
+        lv_obj_align(nm, LV_ALIGN_TOP_LEFT, SX(4), 0);
 
         lv_obj_t * sub = lv_label_create(row);
-        lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(sub, SF(14), 0);
         lv_obj_set_style_text_color(sub, lv_color_hex(COL_TEXT_DIM), 0);
         lv_label_set_text_fmt(sub, "%s   node %d", d->type, d->node_id);
-        lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 4, 34);
+        lv_obj_align(sub, LV_ALIGN_TOP_LEFT, SX(4), SY(34));
 
         int x = -4;
         if (d->is_switch && settings.enable_zwave) {
             lv_obj_t * sw = lv_switch_create(row);
-            lv_obj_align(sw, LV_ALIGN_RIGHT_MID, x, 0);
+            lv_obj_align(sw, LV_ALIGN_RIGHT_MID, SX(x), 0);
             if (d->state == 1) lv_obj_add_state(sw, LV_STATE_CHECKED);
             lv_obj_add_event_cb(sw, on_switch_toggled, LV_EVENT_VALUE_CHANGED, d);
             x -= 80;
         }
         if (settings.enable_zwave) {
             lv_obj_t * ren = lv_btn_create(row);
-            lv_obj_set_size(ren, 110, 48);
-            lv_obj_align(ren, LV_ALIGN_RIGHT_MID, x, 0);
+            lv_obj_set_size(ren, SX(110), SY(48));
+            lv_obj_align(ren, LV_ALIGN_RIGHT_MID, SX(x), 0);
             lv_obj_set_style_bg_color(ren, lv_color_hex(0x2a4060), 0);
             lv_obj_add_event_cb(ren, on_row_rename, LV_EVENT_CLICKED, d);
             lv_obj_t * rl = lv_label_create(ren); lv_label_set_text(rl, "Rename");
@@ -377,15 +378,15 @@ static lv_obj_t * mk_action_btn(lv_obj_t * parent, const char * txt,
                                 uint32_t col, lv_event_cb_t cb, int x,
                                 lv_obj_t ** out_lbl) {
     lv_obj_t * b = lv_btn_create(parent);
-    lv_obj_set_size(b, 210, 56);
-    lv_obj_align(b, LV_ALIGN_LEFT_MID, x, 0);
+    lv_obj_set_size(b, SX(210), SY(56));
+    lv_obj_align(b, LV_ALIGN_LEFT_MID, SX(x), 0);
     lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
     lv_obj_set_style_radius(b, 10, 0);
     lv_obj_set_ext_click_area(b, 10);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(l, SF(22), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
     if (out_lbl) *out_lbl = l;
@@ -402,44 +403,44 @@ lv_obj_t * screen_zwave_create(void) {
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_UNLOADED, NULL);
 
     lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, 140, 52);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 20, 14);
+    lv_obj_set_size(back, SX(140), SY(52));
+    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(20), SY(14));
     lv_obj_set_style_bg_color(back, lv_color_hex(0x3a4658), 0);
     lv_obj_set_style_radius(back, 10, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_label_set_text(bl, "< Back");
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Z-Wave");
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 24);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(24));
 
     lbl_ctrl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_ctrl, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_ctrl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(lbl_ctrl, SF(14), 0);
     lv_label_set_text(lbl_ctrl, "querying...");
-    lv_obj_align(lbl_ctrl, LV_ALIGN_TOP_LEFT, 300, 34);
+    lv_obj_align(lbl_ctrl, LV_ALIGN_TOP_LEFT, SX(300), SY(34));
 
     lv_obj_t * en_lbl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(en_lbl, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(en_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(en_lbl, SF(18), 0);
     lv_label_set_text(en_lbl, "Enable control");
-    lv_obj_align(en_lbl, LV_ALIGN_TOP_RIGHT, -90, 24);
+    lv_obj_align(en_lbl, LV_ALIGN_TOP_RIGHT, SX(-90), SY(24));
 
     sw_enable = lv_switch_create(scr_root);
-    lv_obj_align(sw_enable, LV_ALIGN_TOP_RIGHT, -16, 18);
+    lv_obj_align(sw_enable, LV_ALIGN_TOP_RIGHT, SX(-16), SY(18));
     if (settings.enable_zwave) lv_obj_add_state(sw_enable, LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw_enable, on_enable_toggled, LV_EVENT_VALUE_CHANGED, NULL);
 
     bar_actions = lv_obj_create(scr_root);
-    lv_obj_set_size(bar_actions, 980, 76);
-    lv_obj_align(bar_actions, LV_ALIGN_TOP_LEFT, 22, 70);
+    lv_obj_set_size(bar_actions, SX(980), SY(76));
+    lv_obj_align(bar_actions, LV_ALIGN_TOP_LEFT, SX(22), SY(70));
     lv_obj_set_style_bg_opa(bar_actions, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(bar_actions, 0, 0);
     lv_obj_set_style_pad_all(bar_actions, 0, 0);
@@ -451,16 +452,16 @@ lv_obj_t * screen_zwave_create(void) {
 
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_status, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_status, 980);
+    lv_obj_set_style_text_font(lbl_status, SF(18), 0);
+    lv_obj_set_width(lbl_status, SX(980));
     lv_label_set_long_mode(lbl_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_status,
         settings.enable_zwave ? "Control enabled." : "Enable control to manage devices.");
-    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, 22, 152);
+    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(22), SY(152));
 
     list_box = lv_obj_create(scr_root);
-    lv_obj_set_size(list_box, 980, 388);
-    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, 22, 188);
+    lv_obj_set_size(list_box, SX(980), SY(388));
+    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, SX(22), SY(188));
     lv_obj_set_style_bg_opa(list_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list_box, 0, 0);
     lv_obj_set_style_pad_all(list_box, 4, 0);

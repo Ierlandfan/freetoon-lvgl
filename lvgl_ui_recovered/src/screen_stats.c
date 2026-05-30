@@ -383,12 +383,12 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_label_set_text(bl, "< Back");
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Statistics");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 26);
 
@@ -405,7 +405,7 @@ lv_obj_t * screen_stats_create(void) {
         lv_obj_t * lbl = lv_label_create(t);
         lv_label_set_text(lbl, metrics[i].label);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, 0);  /* 6 tabs → smaller */
+        lv_obj_set_style_text_font(lbl, SF(18), 0);  /* 6 tabs → smaller */
         lv_obj_center(lbl);
         tab_metric_btns[i] = t;
         style_metric_tab(i, i == selected_metric);
@@ -425,7 +425,7 @@ lv_obj_t * screen_stats_create(void) {
         lv_obj_t * lbl = lv_label_create(t);
         lv_label_set_text(lbl, periods[i]);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(lbl, SF(18), 0);
         lv_obj_center(lbl);
         tab_period_btns[i] = t;
         style_period_tab(i, i == (int)selected_period);
@@ -434,7 +434,7 @@ lv_obj_t * screen_stats_create(void) {
     /* Headline */
     lbl_metric_name = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_metric_name, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_metric_name, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_metric_name, SF(22), 0);
     lv_label_set_text(lbl_metric_name, "Electricity");
     lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, 30, SY(235));
 
@@ -442,13 +442,13 @@ lv_obj_t * screen_stats_create(void) {
      * value. Was rendering a duplicated unit ("W" under "369.0 W"). */
     lbl_unit = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_unit, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_unit, SF(18), 0);
     lv_label_set_text(lbl_unit, "Current");
     lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, 30, SY(265));
 
     lbl_value = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_value, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_value, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(lbl_value, SF(48), 0);
     lv_label_set_text(lbl_value, "--");
     lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, 30, SY(290));
 
@@ -479,7 +479,7 @@ lv_obj_t * screen_stats_create(void) {
     for (int i = 0; i < XLBL_COUNT; i++) {
         g_xlbl[i] = lv_label_create(scr_root);
         lv_obj_set_style_text_color(g_xlbl[i], lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(g_xlbl[i], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(g_xlbl[i], SF(14), 0);
         lv_label_set_text(g_xlbl[i], "");
         lv_obj_add_flag(g_xlbl[i], LV_OBJ_FLAG_HIDDEN);
     }

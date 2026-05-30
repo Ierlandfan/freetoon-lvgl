@@ -151,7 +151,7 @@ static void on_pair_clicked(lv_event_t * e) {
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(t, SF(22), 0);
     lv_obj_set_width(t, 600);
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_label_set_text(t,
@@ -227,7 +227,7 @@ static lv_obj_t * mk_btn(lv_obj_t * parent, const char * txt, uint32_t col,
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(l, SF(20), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
     if (out_lbl) *out_lbl = l;
@@ -249,25 +249,25 @@ static lv_obj_t * mk_card(int y, const char * title, const char * kind,
 
     lv_obj_t * tt = lv_label_create(card);
     lv_obj_set_style_text_color(tt, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(tt, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(tt, SF(22), 0);
     lv_label_set_text(tt, title);
     lv_obj_align(tt, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t * kd = lv_label_create(card);
     lv_obj_set_style_text_color(kd, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(kd, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(kd, SF(14), 0);
     lv_label_set_text(kd, kind);
     lv_obj_align(kd, LV_ALIGN_TOP_LEFT, 2, SY(34));
 
     lv_obj_t * st = lv_label_create(card);
-    lv_obj_set_style_text_font(st, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(st, SF(22), 0);
     lv_obj_set_style_text_color(st, lv_color_hex(COL_TEXT_DIM), 0);
     lv_label_set_text(st, "...");
     lv_obj_align(st, LV_ALIGN_TOP_LEFT, 0, SY(64));
     *out_state = st;
 
     lv_obj_t * sub = lv_label_create(card);
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(sub, SF(14), 0);
     lv_obj_set_style_text_color(sub, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_width(sub, DISP_HOR - 280);
     lv_label_set_long_mode(sub, LV_LABEL_LONG_WRAP);
@@ -296,13 +296,13 @@ lv_obj_t * screen_adapters_create(void) {
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_label_set_text(bl, "< Back");
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Adapters");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 24);
 

@@ -115,13 +115,13 @@ static void build_light_row(lv_obj_t * parent, int i, int y) {
 
     R->lbl_name = lv_label_create(R->row);
     lv_obj_set_style_text_color(R->lbl_name, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(R->lbl_name, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(R->lbl_name, SF(18), 0);
     lv_label_set_text(R->lbl_name, ha_lights[i].name);
     lv_obj_align(R->lbl_name, LV_ALIGN_LEFT_MID, 0, -8);
 
     R->lbl_state = lv_label_create(R->row);
     lv_obj_set_style_text_color(R->lbl_state, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(R->lbl_state, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(R->lbl_state, SF(14), 0);
     lv_label_set_text(R->lbl_state, "--");
     lv_obj_align(R->lbl_state, LV_ALIGN_LEFT_MID, 0, 12);
 
@@ -137,7 +137,7 @@ static void build_light_row(lv_obj_t * parent, int i, int y) {
 
     R->btn_lbl = lv_label_create(R->btn);
     lv_obj_set_style_text_color(R->btn_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(R->btn_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(R->btn_lbl, SF(14), 0);
     lv_label_set_text(R->btn_lbl, "Toggle");
     lv_obj_center(R->btn_lbl);
 }
@@ -161,7 +161,7 @@ static void build_area_card(int col, const char * area_name) {
 
     lv_obj_t * hdr = lv_label_create(card);
     lv_obj_set_style_text_color(hdr, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(hdr, SF(22), 0);
     lv_label_set_text(hdr, area_name);
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 4, 0);
 
@@ -188,7 +188,7 @@ lv_obj_t * screen_lights_create(void) {
     /* Top bar: title + Back button (left), All On / All Off (right) */
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "Lights");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 24, 16);
 
@@ -218,7 +218,7 @@ lv_obj_t * screen_lights_create(void) {
 
     lv_obj_t * lbl_all = lv_label_create(master);
     lv_obj_set_style_text_color(lbl_all, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_all, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_all, SF(22), 0);
     lv_label_set_text(lbl_all, "All Lights");
     lv_obj_align(lbl_all, LV_ALIGN_LEFT_MID, 8, 0);
 
@@ -231,7 +231,7 @@ lv_obj_t * screen_lights_create(void) {
     lv_obj_add_event_cb(b_on, on_all_on, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lbl_on = lv_label_create(b_on);
     lv_obj_set_style_text_color(lbl_on, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_on, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_on, SF(22), 0);
     lv_label_set_text(lbl_on, "All ON");
     lv_obj_center(lbl_on);
 
@@ -244,7 +244,7 @@ lv_obj_t * screen_lights_create(void) {
     lv_obj_add_event_cb(b_off, on_all_off, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lbl_off = lv_label_create(b_off);
     lv_obj_set_style_text_color(lbl_off, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_off, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_off, SF(22), 0);
     lv_label_set_text(lbl_off, "All OFF");
     lv_obj_center(lbl_off);
 
@@ -274,19 +274,19 @@ lv_obj_t * screen_lights_create(void) {
         lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
         lv_obj_t * bl = lv_label_create(back);
         lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(bl, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(bl, SF(22), 0);
         lv_label_set_text(bl, "< Back");
         lv_obj_center(bl);
 
         lv_obj_t * big = lv_label_create(ha_offline_overlay);
         lv_obj_set_style_text_color(big, lv_color_hex(COL_TEXT_HI), 0);
-        lv_obj_set_style_text_font(big, &lv_font_montserrat_28, 0);
+        lv_obj_set_style_text_font(big, SF(28), 0);
         lv_label_set_text(big, "HA offline");
         lv_obj_align(big, LV_ALIGN_CENTER, 0, -30);
 
         lv_obj_t * hint = lv_label_create(ha_offline_overlay);
         lv_obj_set_style_text_color(hint, lv_color_hex(COL_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(hint, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(hint, SF(22), 0);
         /* Leave a margin so the centered wrapped text never reaches the
          * panel edge (was a fixed 800px → clipped on Toon 1). */
         lv_obj_set_width(hint, DISP_HOR - 80);

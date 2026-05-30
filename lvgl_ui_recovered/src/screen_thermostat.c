@@ -203,19 +203,19 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * btn_back_lbl = lv_label_create(btn_back);
     lv_label_set_text(btn_back_lbl, "< Back");
     lv_obj_set_style_text_color(btn_back_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(btn_back_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(btn_back_lbl, SF(22), 0);
     lv_obj_center(btn_back_lbl);
 
     /* Clock + date */
     lbl_clock = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_clock, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_clock, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(lbl_clock, SF(28), 0);
     lv_obj_align(lbl_clock, LV_ALIGN_TOP_LEFT, 180, 25);
     lv_label_set_text(lbl_clock, "--:--");
 
     lbl_date = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_date, SF(18), 0);
     lv_obj_align_to(lbl_date, lbl_clock, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
 
     /* Schedule button (top-right) */
@@ -229,20 +229,20 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * sched_lbl = lv_label_create(btn_sched);
     lv_label_set_text(sched_lbl, "Schedule");
     lv_obj_set_style_text_color(sched_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(sched_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(sched_lbl, SF(22), 0);
     lv_obj_center(sched_lbl);
 
     /* Connection indicator just under the Schedule button */
     lbl_conn = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
-    lv_obj_set_style_text_font(lbl_conn, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_conn, SF(18), 0);
     lv_obj_align(lbl_conn, LV_ALIGN_TOP_RIGHT, -20, 95);
     lv_label_set_text(lbl_conn, "BoxTalk: connecting...");
 
     /* Big indoor temp */
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffcc44), 0);
-    lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(lbl_temp, SF(48), 0);
     lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(-80));
     lv_label_set_text(lbl_temp, "-- C");
 
@@ -285,7 +285,7 @@ lv_obj_t * screen_thermostat_create(void) {
             lv_obj_t * bl = lv_label_create(b);
             lv_label_set_text(bl, names[i]);
             lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(bl, &lv_font_montserrat_18, 0);
+            lv_obj_set_style_text_font(bl, SF(18), 0);
             lv_obj_center(bl);
             btn_prog[i] = b;
         }
@@ -296,21 +296,21 @@ lv_obj_t * screen_thermostat_create(void) {
        moved further up. */
     lbl_humidity = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_humidity, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_humidity, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_humidity, SF(22), 0);
     lv_obj_align(lbl_humidity, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-260) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_humidity, "RH --%");
 
     lbl_voc = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_voc, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_voc, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_voc, SF(22), 0);
     lv_obj_align(lbl_voc, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-225) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_voc, "eCO2 -- ppm");
 
     lbl_water = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_water, lv_color_hex(0x66aaff), 0);
-    lv_obj_set_style_text_font(lbl_water, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_water, SF(22), 0);
     lv_obj_align(lbl_water, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-190) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_water, "Water -- m3");
@@ -335,16 +335,16 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * btn_dn_lbl = lv_label_create(btn_dn);
     lv_label_set_text(btn_dn_lbl, "-");
     lv_obj_set_style_text_font(btn_dn_lbl,
-                               (DISP_VER < 600 ? &lv_font_montserrat_28
-                                               : &lv_font_montserrat_48), 0);
+                               (DISP_VER < 600 ? SF(28)
+                                               : SF(48)), 0);
     lv_obj_center(btn_dn_lbl);
 
     lbl_setpoint = lv_label_create(sp_row);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xffffff), 0);
     /* font_48 is too wide for the narrowed row on Toon 1 — drop to 34 there. */
     lv_obj_set_style_text_font(lbl_setpoint,
-                               (DISP_VER < 600 ? &lv_font_montserrat_28
-                                               : &lv_font_montserrat_48), 0);
+                               (DISP_VER < 600 ? SF(28)
+                                               : SF(48)), 0);
     lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, -8);
     lv_label_set_text(lbl_setpoint, "Setpoint: --");
 
@@ -356,8 +356,8 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * btn_up_lbl = lv_label_create(btn_up);
     lv_label_set_text(btn_up_lbl, "+");
     lv_obj_set_style_text_font(btn_up_lbl,
-                               (DISP_VER < 600 ? &lv_font_montserrat_28
-                                               : &lv_font_montserrat_48), 0);
+                               (DISP_VER < 600 ? SF(28)
+                                               : SF(48)), 0);
     lv_obj_center(btn_up_lbl);
 
     /* Boiler state — icons + text. Icons live at left; text label sits
@@ -391,7 +391,7 @@ lv_obj_t * screen_thermostat_create(void) {
      * its own clean strip. */
     lbl_burner = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_burner, SF(22), 0);
     lv_obj_align(lbl_burner, LV_ALIGN_TOP_LEFT, 180, SY(130));
     lv_label_set_text(lbl_burner, "Boiler idle");
 
@@ -400,21 +400,21 @@ lv_obj_t * screen_thermostat_create(void) {
        inlet  = return temp (CurrentBoilerReturnTemperature). */
     lbl_ch_hdr = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_ch_hdr, lv_color_hex(0x6688aa), 0);
-    lv_obj_set_style_text_font(lbl_ch_hdr, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(lbl_ch_hdr, SF(18), 0);
     lv_obj_align(lbl_ch_hdr, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-250) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_ch_hdr, "CH water");
 
     lbl_flow = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_flow, lv_color_hex(0xff8866), 0);
-    lv_obj_set_style_text_font(lbl_flow, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_flow, SF(22), 0);
     lv_obj_align(lbl_flow, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-220) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_flow, "Flow  -- C");
 
     lbl_return = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_return, lv_color_hex(0x66aaff), 0);
-    lv_obj_set_style_text_font(lbl_return, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_return, SF(22), 0);
     lv_obj_align(lbl_return, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-192) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_return, "Return  -- C");
@@ -427,7 +427,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_add_event_cb(adv, on_open_advanced, LV_EVENT_CLICKED, NULL);
     lv_obj_t * advl = lv_label_create(adv);
     lv_obj_set_style_text_color(advl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(advl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(advl, SF(18), 0);
     lv_label_set_text(advl, "Advanced");
     lv_obj_center(advl);
 
