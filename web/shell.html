@@ -24,9 +24,11 @@
         /* Centre the canvas and display it at its native 1024x600 AT MOST,
            scaling DOWN (aspect-preserving) to fit smaller screens — phone,
            tablet, or a Toon 1 browser. Never upscale past native, so a large
-           desktop monitor shows it crisp and letterboxed instead of stretched
-           full-screen. width/height each clamp to viewport, native size, and
-           the other axis via the 1024:600 ratio, so both stay in lock-step. */
+           desktop monitor shows it crisp and letterboxed instead of stretched.
+           The width/height below are only a pre-JS fallback; fitCanvas() (in
+           the script) is the source of truth — it sizes against
+           window.visualViewport, which (unlike 100vw/100vh) reports the real
+           visible area on mobile, so landscape phones fit correctly too. */
         body { display: flex; align-items: center; justify-content: center; }
         #canvas { display: block; outline: none;
                   width:  min(100vw, 1024px, 100vh * 1024 / 600);
@@ -64,6 +66,31 @@
     const statusEl = document.getElementById('status');
     const setStatus = (s) => { statusEl.textContent = s; };
 
+    // ─── responsive canvas sizing ────────────────────────────────────────────
+    // The LVGL framebuffer is a fixed 1024x600; we only scale its DISPLAY size.
+    // We size against window.visualViewport (the real visible area) rather than
+    // CSS 100vw/100vh, because on mobile — especially landscape with the URL bar
+    // — those units overshoot the visible region and the canvas spilled off the
+    // bottom / mis-centred. Largest 1024:600 box that fits, never above native.
+    const AR = 1024 / 600;
+    function fitCanvas() {
+        const c = document.getElementById('canvas');
+        if (!c) return;
+        const vp = window.visualViewport;
+        const vw = Math.round(vp ? vp.width  : window.innerWidth);
+        const vh = Math.round(vp ? vp.height : window.innerHeight);
+        let w = Math.min(vw, 1024, vh * AR);   // fit width + native cap + height-bound via ratio
+        let h = w / AR;
+        if (h > vh) { h = Math.min(vh, 600); w = h * AR; }  // re-clamp if height was the limit
+        c.style.width  = Math.round(w) + 'px';
+        c.style.height = Math.round(h) + 'px';
+    }
+    window.addEventListener('resize', fitCanvas);
+    window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 120));
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+    document.addEventListener('DOMContentLoaded', fitCanvas);
+    fitCanvas();
+
     // ─── Emscripten Module ───────────────────────────────────────────────────
     // preRun: hold main() until we've fetched the master Toon's cached
     // Buienradar radar GIF into MEMFS at /tmp/toonui_radar.gif, so the
@@ -86,6 +113,7 @@
         }],
         onRuntimeInitialized: () => {
             setStatus('ui ready');
+            fitCanvas();                 /* SDL may have touched the canvas during init */
             startSlaveBridge();
             // Periodic radar refresh — overwrite the MEMFS file every 10 min so
             // the next forecast-screen open shows a fresh radar loop. (LVGL
