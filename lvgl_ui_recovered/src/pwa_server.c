@@ -1270,9 +1270,14 @@ static int handle_settings_post(int fd, const char * body) {
     /* WASM slave Settings posts these via settings_save() → fetch /api/settings;
      * accepting them here keeps the slave UI in sync with the master cfg. */
     if (extract_int(body, "pwa_login_enabled", &iv))  settings.pwa_login_enabled = !!iv;
-    if (extract_str(body, "pwa_login_user", sv, sizeof sv))
+    if (extract_str(body, "pwa_login_user", sv, sizeof sv) && sv[0])
         snprintf(settings.pwa_login_user, sizeof settings.pwa_login_user, "%s", sv);
-    if (extract_str(body, "pwa_login_pass", sv, sizeof sv))
+    /* Only accept a NON-EMPTY password here. The WASM slave always includes
+     * pwa_login_pass in its settings_save() blob (empty when it has none), so
+     * accepting "" would wipe a password just set via /set-password — which is
+     * exactly what made the login never stick. The password is set/cleared only
+     * through the dedicated /set-password flow, never a routine slave sync. */
+    if (extract_str(body, "pwa_login_pass", sv, sizeof sv) && sv[0])
         snprintf(settings.pwa_login_pass, sizeof settings.pwa_login_pass, "%s", sv);
     if (extract_int(body, "pin_enabled", &iv))        settings.pin_enabled = !!iv;
     if (extract_str(body, "pin_code", sv, sizeof sv))
