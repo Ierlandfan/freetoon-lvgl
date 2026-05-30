@@ -715,10 +715,13 @@ static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lb
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, lbl);
-    lv_obj_align(l, LV_ALIGN_TOP_LEFT, x, y);
+    /* Scale horizontally so fields fit the narrower 800px panel, but keep the
+     * vertical layout in design space — the modal panel scrolls, so preserving
+     * the proven row rhythm avoids labels/fields colliding on the short panel. */
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(x), y);
     lv_obj_t * ta = lv_textarea_create(p);
-    lv_obj_set_size(ta, w, SY(44));
-    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, x, y + SY(26));
+    lv_obj_set_size(ta, SX(w), 44);
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(x), y + 26);
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, val ? val : "");
     return ta;
