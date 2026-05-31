@@ -25,8 +25,9 @@ typedef struct {
     lv_obj_t * row;        /* the row container */
     lv_obj_t * lbl_name;   /* "Bank lamp" */
     lv_obj_t * lbl_state;  /* "on" / "off" / "offline" */
-    lv_obj_t * btn;        /* toggle button */
-    lv_obj_t * btn_lbl;    /* button label "Toggle" */
+    lv_obj_t * btn;        /* On/Off button */
+    lv_obj_t * btn_lbl;    /* button label "On"/"Off"/"Offline" */
+    lv_obj_t * slider;     /* brightness slider 0-100 */
 } light_row_t;
 
 static lv_obj_t   * scr_root = NULL;
@@ -61,6 +62,12 @@ static void on_light_toggle(lv_event_t * e) {
     if (id) ha_light_toggle_async(id);
 }
 
+static void on_brightness_slider(lv_event_t * e) {
+    lv_obj_t * slider = lv_event_get_target(e);
+    const char * id = (const char *)lv_event_get_user_data(e);
+    if (id) ha_light_set_brightness_async(id, lv_slider_get_value(slider));
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     /* HA integration off → don't bother painting N "offline" rows; show
@@ -81,6 +88,8 @@ static void refresh_cb(lv_timer_t * t) {
                                         lv_color_hex(COL_OFFLINE), 0);
             lv_obj_set_style_bg_color(rows[i].btn,
                                       lv_color_hex(COL_OFFLINE), 0);
+            lv_label_set_text(rows[i].btn_lbl, "Offline");
+            if (rows[i].slider) lv_obj_add_state(rows[i].slider, LV_STATE_DISABLED);
         } else if (ha_lights[i].on) {
             int b = ha_lights[i].brightness;
             if (b > 0) lv_label_set_text_fmt(rows[i].lbl_state,
@@ -90,12 +99,22 @@ static void refresh_cb(lv_timer_t * t) {
                                         lv_color_hex(COL_ON), 0);
             lv_obj_set_style_bg_color(rows[i].btn,
                                       lv_color_hex(COL_ON), 0);
+            lv_label_set_text(rows[i].btn_lbl, "On");
+            if (rows[i].slider) {
+                lv_obj_clear_state(rows[i].slider, LV_STATE_DISABLED);
+                if (b > 0) lv_slider_set_value(rows[i].slider, b * 100 / 255, LV_ANIM_OFF);
+            }
         } else {
             lv_label_set_text(rows[i].lbl_state, "off");
             lv_obj_set_style_text_color(rows[i].lbl_state,
                                         lv_color_hex(COL_TEXT_DIM), 0);
             lv_obj_set_style_bg_color(rows[i].btn,
                                       lv_color_hex(COL_OFF), 0);
+            lv_label_set_text(rows[i].btn_lbl, "Off");
+            if (rows[i].slider) {
+                lv_obj_clear_state(rows[i].slider, LV_STATE_DISABLED);
+                lv_slider_set_value(rows[i].slider, 0, LV_ANIM_OFF);
+            }
         }
     }
 }
@@ -104,9 +123,7 @@ static void refresh_cb(lv_timer_t * t) {
 static void build_light_row(lv_obj_t * parent, int i, int y) {
     light_row_t * R = &rows[i];
     R->row = lv_obj_create(parent);
-    /* Fill the card's inner width (card is narrower on Toon 1) so the
-     * RIGHT_MID Toggle button stays inside the card. */
-    lv_obj_set_size(R->row, lv_pct(100), 44);
+    lv_obj_set_size(R->row, lv_pct(100), 64);
     lv_obj_set_pos(R->row, 0, y);
     lv_obj_set_style_bg_opa(R->row, 0, 0);
     lv_obj_set_style_border_width(R->row, 0, 0);
@@ -117,20 +134,19 @@ static void build_light_row(lv_obj_t * parent, int i, int y) {
     lv_obj_set_style_text_color(R->lbl_name, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(R->lbl_name, SF(18), 0);
     lv_label_set_text(R->lbl_name, ha_lights[i].name);
-    lv_obj_align(R->lbl_name, LV_ALIGN_LEFT_MID, 0, -8);
+    lv_obj_align(R->lbl_name, LV_ALIGN_LEFT_MID, 0, -14);
 
     R->lbl_state = lv_label_create(R->row);
     lv_obj_set_style_text_color(R->lbl_state, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(R->lbl_state, SF(14), 0);
     lv_label_set_text(R->lbl_state, "--");
-    lv_obj_align(R->lbl_state, LV_ALIGN_LEFT_MID, 0, 12);
+    lv_obj_align(R->lbl_state, LV_ALIGN_LEFT_MID, 0, 4);
 
     R->btn = lv_btn_create(R->row);
-    lv_obj_set_size(R->btn, 90, 36);
-    lv_obj_align(R->btn, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_size(R->btn, 40, 36);
+    lv_obj_align(R->btn, LV_ALIGN_RIGHT_MID, 0, -12);
     lv_obj_set_style_bg_color(R->btn, lv_color_hex(COL_OFF), 0);
     lv_obj_set_style_radius(R->btn, 8, 0);
-    /* Soak up sloppy taps so finger-on-edge still hits the button. */
     lv_obj_set_ext_click_area(R->btn, 18);
     lv_obj_add_event_cb(R->btn, on_light_toggle, LV_EVENT_CLICKED,
                         (void *)ha_lights[i].entity_id);
@@ -138,8 +154,21 @@ static void build_light_row(lv_obj_t * parent, int i, int y) {
     R->btn_lbl = lv_label_create(R->btn);
     lv_obj_set_style_text_color(R->btn_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(R->btn_lbl, SF(14), 0);
-    lv_label_set_text(R->btn_lbl, "Toggle");
+    lv_label_set_text(R->btn_lbl, "Off");
     lv_obj_center(R->btn_lbl);
+
+    /* Brightness slider — full width below state label, fire on release. */
+    R->slider = lv_slider_create(R->row);
+    lv_obj_set_size(R->slider, lv_pct(90), 20);
+    lv_obj_align(R->slider, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_slider_set_range(R->slider, 0, 100);
+    lv_slider_set_value(R->slider, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(R->slider, lv_color_hex(0x223344), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(R->slider, lv_color_hex(COL_ON), LV_PART_INDICATOR);
+    lv_obj_remove_style(R->slider, NULL, LV_PART_KNOB);
+    lv_obj_add_event_cb(R->slider, on_brightness_slider, LV_EVENT_RELEASED,
+                        (void *)ha_lights[i].entity_id);
+    if (!ha_lights[i].available) lv_obj_add_state(R->slider, LV_STATE_DISABLED);
 }
 
 /* Build a card per area; cards are arranged in 3 columns. */
@@ -147,7 +176,7 @@ static void build_area_card(int col, const char * area_name) {
     /* Three cards across: derive width from the panel so the row fits both
      * Toon 2 (1024 → 320px cards) and Toon 1 (800 → ~245px cards). */
     int card_w = (DISP_HOR - 16 * 2 - 12 * 2) / 3;
-    int card_h = SY(380);
+    int card_h = SY(440);
     int x = 16 + col * (card_w + 12);
     int y = SY(130);
     lv_obj_t * card = lv_obj_create(scr_root);
@@ -169,7 +198,7 @@ static void build_area_card(int col, const char * area_name) {
     for (int i = 0; i < ha_light_count; i++) {
         if (strcmp(ha_lights[i].area, area_name) != 0) continue;
         build_light_row(card, i, y_row);
-        y_row += 50;
+        y_row += 70;
     }
 }
 

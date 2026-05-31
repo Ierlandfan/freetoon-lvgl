@@ -881,9 +881,33 @@ static void on_vent_mode(lv_event_t * e) {
 static lv_obj_t * lbl_curtain_state = NULL;
 static lv_obj_t * curt_spinner      = NULL;
 static lv_obj_t * curt_bar          = NULL;
+/* Blinds tile — second cover strip below curtains. Same shape as curtain
+ * widgets. Hidden when settings.blinds_entity is empty. */
+static lv_obj_t * tile_blinds       = NULL;
+static lv_obj_t * lbl_blinds_state  = NULL;
+static lv_obj_t * blinds_spinner    = NULL;
+static lv_obj_t * blinds_bar        = NULL;
 static void on_curt_open (lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("open");  else ha_curtain_open_async();  }
 static void on_curt_close(lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("close"); else ha_curtain_close_async(); }
 static void on_curt_stop (lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("stop");  else ha_curtain_stop_async();  }
+
+static void on_curtain_pos_change(lv_event_t * e) {
+    lv_obj_t * slider = lv_event_get_target(e);
+    const char * entity_id = (const char *)lv_event_get_user_data(e);
+    int val = lv_slider_get_value(slider);
+    if (settings.client_mode) client_link_curtain("position");  /* TODO: client_link pos */
+    else ha_cover_set_position_async(entity_id, val);
+}
+
+static void on_blinds_open (lv_event_t * e) { (void)e; ha_cover_set_position_async(settings.blinds_entity, 100); }
+static void on_blinds_close(lv_event_t * e) { (void)e; ha_cover_set_position_async(settings.blinds_entity, 0); }
+static void on_blinds_stop (lv_event_t * e) { (void)e; ha_cover_stop_async(settings.blinds_entity); }
+
+static void on_blinds_pos_change(lv_event_t * e) {
+    lv_obj_t * slider = lv_event_get_target(e);
+    int val = lv_slider_get_value(slider);
+    ha_cover_set_position_async(settings.blinds_entity, val);
+}
 
 /* Timer button cycles 10 → 20 → 30 → off and updates its own label.
  * "off" maps to vremotecmd=auto (the most natural resting state). */
@@ -1017,6 +1041,7 @@ static void apply_offline_tile_visibility(void) {
         { tile_vent,     vent_live,   LT_VENT   },
         { tile_family,   family_live, LT_FAMILY },
         { tile_curtains, family_live, LT_NONE   },   /* curtains share the HA gate */
+        { tile_blinds,   family_live, LT_NONE   },   /* blinds share the HA gate */
     };
     for (size_t i = 0; i < sizeof(v)/sizeof(v[0]); i++) {
         if (!v[i].tile) continue;
@@ -1670,7 +1695,7 @@ static void refresh_cb(lv_timer_t * t) {
                                   pretty,
                                   ha_state.curtain_pos,
                                   ha_state.curtain_battery);
-            if (curt_bar) lv_bar_set_value(curt_bar, ha_state.curtain_pos,
+            if (curt_bar) lv_slider_set_value(curt_bar, ha_state.curtain_pos,
                                            LV_ANIM_ON);
             if (curt_spinner) {
                 int moving = (!strcmp(s, "opening") || !strcmp(s, "closing"));
@@ -1680,6 +1705,33 @@ static void refresh_cb(lv_timer_t * t) {
         } else {
             lv_label_set_text(lbl_curtain_state, "Gordijnen  (HA offline)");
             if (curt_spinner) lv_obj_add_flag(curt_spinner, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    /* Blinds tile — mirrors the curtain refresh. */
+    if (lbl_blinds_state && settings.blinds_entity[0]) {
+        if (ha_state.connected) {
+            const char * s = ha_state.blinds_state[0]
+                             ? ha_state.blinds_state : "?";
+            char pretty[32] = {0};
+            snprintf(pretty, sizeof(pretty), "%c%s",
+                     (s[0] >= 'a' && s[0] <= 'z') ? s[0] - 'a' + 'A' : s[0],
+                     s + 1);
+            lv_label_set_text_fmt(lbl_blinds_state,
+                                  "Jaloezieen %s %d%%  bat %d%%",
+                                  pretty,
+                                  ha_state.blinds_pos,
+                                  ha_state.blinds_battery);
+            if (blinds_bar) lv_slider_set_value(blinds_bar, ha_state.blinds_pos,
+                                                LV_ANIM_ON);
+            if (blinds_spinner) {
+                int moving = (!strcmp(s, "opening") || !strcmp(s, "closing"));
+                if (moving) lv_obj_clear_flag(blinds_spinner, LV_OBJ_FLAG_HIDDEN);
+                else        lv_obj_add_flag(blinds_spinner, LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            lv_label_set_text(lbl_blinds_state, "Jaloezieen  (HA offline)");
+            if (blinds_spinner) lv_obj_add_flag(blinds_spinner, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -2172,11 +2224,21 @@ static lv_obj_t * lights_handle_lbl = NULL;
 
 static void lights_handle_set(bool open) {
     if (!lights_handle) return;
-    lv_obj_set_size(lights_handle, open ? 132 : 22, open ? 56 : 64);
-    lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 2 : -10, 0);
+    lv_obj_set_size(lights_handle, open ? 160 : 56, open ? 56 : 80);
+    lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -4, 0);
     lv_obj_set_style_radius(lights_handle, open ? 16 : LV_RADIUS_CIRCLE, 0);
-    if (open) lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-    else      lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+    if (lights_handle_lbl) {
+        if (open) {
+            lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE " Lights");
+            lv_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
+        } else {
+            /* Always show a small hint icon so the user can find it */
+            lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
+            lv_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
+            lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 static void on_lights_handle(lv_event_t * e) {
     switch (lv_event_get_code(e)) {
@@ -3377,16 +3439,20 @@ lv_obj_t * screen_home_create(void) {
     lv_label_set_text(lbl_curtain_state, "Gordijnen  --");
     lv_obj_align(lbl_curtain_state, LV_ALIGN_TOP_LEFT, 8, 2);
 
-    /* Position bar 0..100 sits underneath the label so the user can see
-       at a glance how open the curtain is. Same teal as the existing
-       curtain-related elements. */
-    curt_bar = lv_bar_create(curt_tile);
+    /* Position slider 0..100 — tap/drag to set curtain position. Same teal
+     * as the existing curtain-related elements. Flat (no knob) for a clean
+     * look matching the old read-only bar. Fire on RELEASED so we only
+     * issue one HTTP call per drag. */
+    curt_bar = lv_slider_create(curt_tile);
     lv_obj_set_size(curt_bar, 240, 6);
     lv_obj_align(curt_bar, LV_ALIGN_BOTTOM_LEFT, 8, -4);
-    lv_bar_set_range(curt_bar, 0, 100);
-    lv_bar_set_value(curt_bar, 0, LV_ANIM_OFF);
+    lv_slider_set_range(curt_bar, 0, 100);
+    lv_slider_set_value(curt_bar, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(curt_bar, lv_color_hex(0x223344), LV_PART_MAIN);
     lv_obj_set_style_bg_color(curt_bar, lv_color_hex(0x44aaff), LV_PART_INDICATOR);
+    lv_obj_remove_style(curt_bar, NULL, LV_PART_KNOB);
+    lv_obj_add_event_cb(curt_bar, on_curtain_pos_change, LV_EVENT_RELEASED,
+                        (void *)settings.curtain_entity);
 
     /* Tiny spinner overlay — visible only while the curtain is mid-move.
        lv_spinner is the same widget the water tile uses; it's an arc
@@ -3421,6 +3487,64 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_style_text_font(bl, SF(14), 0);
         lv_label_set_text(bl, cbtn[i].txt);
         lv_obj_center(bl);
+    }
+
+    /* --- Blinds tile — second cover strip below curtains. Same pattern. --- */
+    {
+        lv_obj_t * blnd_tile = lv_obj_create(scr_root);
+        tile_blinds = blnd_tile;
+        lv_obj_set_size(blnd_tile, 520, 44);
+        lv_obj_set_pos(blnd_tile, 20, 436);
+        lv_obj_set_style_bg_color(blnd_tile, lv_color_hex(COL_TILE_BG), 0);
+        lv_obj_set_style_border_width(blnd_tile, 0, 0);
+        lv_obj_set_style_radius(blnd_tile, 12, 0);
+        lv_obj_set_style_pad_all(blnd_tile, 6, 0);
+        lv_obj_clear_flag(blnd_tile, LV_OBJ_FLAG_SCROLLABLE);
+        if (!settings.blinds_entity[0]) lv_obj_add_flag(blnd_tile, LV_OBJ_FLAG_HIDDEN);
+
+        lbl_blinds_state = lv_label_create(blnd_tile);
+        lv_obj_set_style_text_color(lbl_blinds_state, lv_color_hex(COL_TEXT_HI), 0);
+        lv_obj_set_style_text_font(lbl_blinds_state, SF(14), 0);
+        lv_label_set_text(lbl_blinds_state, "Jaloezieen  --");
+        lv_obj_align(lbl_blinds_state, LV_ALIGN_TOP_LEFT, 8, 2);
+
+        blinds_bar = lv_slider_create(blnd_tile);
+        lv_obj_set_size(blinds_bar, 240, 6);
+        lv_obj_align(blinds_bar, LV_ALIGN_BOTTOM_LEFT, 8, -4);
+        lv_slider_set_range(blinds_bar, 0, 100);
+        lv_slider_set_value(blinds_bar, 0, LV_ANIM_OFF);
+        lv_obj_set_style_bg_color(blinds_bar, lv_color_hex(0x223344), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(blinds_bar, lv_color_hex(0x44aaff), LV_PART_INDICATOR);
+        lv_obj_remove_style(blinds_bar, NULL, LV_PART_KNOB);
+        lv_obj_add_event_cb(blinds_bar, on_blinds_pos_change, LV_EVENT_RELEASED, NULL);
+
+        blinds_spinner = lv_spinner_create(blnd_tile, 1200, 80);
+        lv_obj_set_size(blinds_spinner, 28, 28);
+        lv_obj_align(blinds_spinner, LV_ALIGN_LEFT_MID, 254, 0);
+        lv_obj_set_style_arc_color(blinds_spinner, lv_color_hex(0x223344), LV_PART_MAIN);
+        lv_obj_set_style_arc_color(blinds_spinner, lv_color_hex(0x44aaff), LV_PART_INDICATOR);
+        lv_obj_set_style_arc_width(blinds_spinner, 4, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(blinds_spinner, 4, LV_PART_INDICATOR);
+        lv_obj_add_flag(blinds_spinner, LV_OBJ_FLAG_HIDDEN);
+
+        struct { const char * txt; uint32_t col; lv_event_cb_t cb; int x; } bbtn[] = {
+            { "Open",  0x2e6e3a, on_blinds_open,  -156 },
+            { "Stop",  0x6a5424, on_blinds_stop,   -82 },
+            { "Close", 0x6e3a3a, on_blinds_close,   -8 },
+        };
+        for (size_t i = 0; i < sizeof(bbtn)/sizeof(bbtn[0]); i++) {
+            lv_obj_t * b = lv_btn_create(blnd_tile);
+            lv_obj_set_size(b, 70, 32);
+            lv_obj_align(b, LV_ALIGN_RIGHT_MID, bbtn[i].x, 0);
+            lv_obj_set_style_bg_color(b, lv_color_hex(bbtn[i].col), 0);
+            lv_obj_set_style_radius(b, 8, 0);
+            lv_obj_add_event_cb(b, bbtn[i].cb, LV_EVENT_CLICKED, NULL);
+            lv_obj_t * bl = lv_label_create(b);
+            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_font(bl, SF(14), 0);
+            lv_label_set_text(bl, bbtn[i].txt);
+            lv_obj_center(bl);
+        }
     }
 
     /* City header above the forecast — labels the strip and shows the
@@ -3684,24 +3808,23 @@ lv_obj_t * screen_home_create(void) {
      * Same target as the swipe-right gesture, but discoverable. */
     {
         lights_handle = lv_btn_create(scr_root);
-        lv_obj_set_size(lights_handle, 22, 64);
-        lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -10, 0);
+        lv_obj_set_size(lights_handle, 56, 80);
+        lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -4, 0);
         lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x2a4060), 0);
         lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x3a5688), LV_STATE_PRESSED);
         lv_obj_set_style_bg_opa(lights_handle, LV_OPA_70, 0);
         lv_obj_set_style_radius(lights_handle, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_pad_all(lights_handle, 0, 0);
-        lv_obj_set_ext_click_area(lights_handle, 18);   /* easy to grab while slim */
+        lv_obj_set_ext_click_area(lights_handle, 24);   /* generous touch target */
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESSED,    NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_RELEASED,   NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESS_LOST, NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_CLICKED,    NULL);
         lights_handle_lbl = lv_label_create(lights_handle);
         lv_obj_set_style_text_color(lights_handle_lbl, lv_color_hex(0xffe08a), 0);
-        lv_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
-        lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE " Lights");
+        lv_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
+        lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
         lv_obj_center(lights_handle_lbl);
-        lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);   /* shown only while expanded */
     }
 
     /* Gear in the very top-right corner of the screen. */

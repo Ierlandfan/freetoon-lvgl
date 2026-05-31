@@ -1749,6 +1749,8 @@ static void on_int_energy_src(lv_event_t * e) {
     settings_save();
 }
 
+static void open_ha_entities_modal(lv_event_t * e);
+
 static void open_integrations_modal(lv_event_t * e) {
     (void)e;
     /* Five panel_rows × 84 + 92 + 100 (hint label) ≈ 612. Bump the modal
@@ -1791,6 +1793,223 @@ static void open_integrations_modal(lv_event_t * e) {
         "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
         "Toggle a switch then restart toonui.");
     lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+
+    /* Button to open the HA entity configuration modal. */
+    lv_obj_t * b_ha = lv_btn_create(p);
+    lv_obj_set_size(b_ha, SX(420), SY(50));
+    lv_obj_align(b_ha, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
+    lv_obj_set_style_bg_color(b_ha, lv_color_hex(0x335577), 0);
+    lv_obj_add_event_cb(b_ha, open_ha_entities_modal, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bhl = lv_label_create(b_ha);
+    lv_obj_set_style_text_color(bhl, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(bhl, "Configure HA entities...");
+    lv_obj_center(bhl);
+}
+
+/* ============== HA entity configuration modal ============== */
+static lv_obj_t * ta_ha_host            = NULL;
+static lv_obj_t * ta_curtain_entity     = NULL;
+static lv_obj_t * ta_curtain_bat_a      = NULL;
+static lv_obj_t * ta_curtain_bat_b      = NULL;
+static lv_obj_t * ta_blinds_entity      = NULL;
+static lv_obj_t * ta_blinds_bat_a       = NULL;
+static lv_obj_t * ta_blinds_bat_b       = NULL;
+static lv_obj_t * ta_doorbell_entity    = NULL;
+static lv_obj_t * ta_doorbell_camera    = NULL;
+static lv_obj_t * ta_doorbell_seconds   = NULL;
+static lv_obj_t * ta_doorbell_stream    = NULL;
+static lv_obj_t * ta_life360_a_entity   = NULL;
+static lv_obj_t * ta_life360_a_name     = NULL;
+static lv_obj_t * ta_life360_b_entity   = NULL;
+static lv_obj_t * ta_life360_b_name     = NULL;
+static lv_obj_t * ta_calendar_ha_entity = NULL;
+
+/* Browse-button context — heap-allocated, freed in the callback. */
+struct ha_browse_ctx {
+    lv_obj_t * ta;
+    char       domain[32];
+};
+
+static void on_ha_browse(lv_event_t * e) {
+    struct ha_browse_ctx * ctx = lv_event_get_user_data(e);
+    screen_ha_picker_open(ctx->domain, ctx->ta);
+    free(ctx);
+}
+
+/* Helper: add a labelled textarea row to the modal panel. Returns the
+ * y position for the next row. If `domain` is non-NULL a small [🔍]
+ * browse button is placed next to the textarea — tapping it opens the
+ * HA entity picker filtered to that domain. */
+static int ha_field_row(lv_obj_t * p, int y, const char * label,
+                        const char * value, const char * placeholder,
+                        int width, lv_obj_t ** ta_out,
+                        const char * domain) {
+    lv_obj_t * lb = lv_label_create(p);
+    lv_obj_set_style_text_color(lb, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lb, SF(18), 0);
+    lv_label_set_text(lb, label);
+    lv_obj_align(lb, LV_ALIGN_TOP_LEFT, SX(4), y + 4);
+
+    lv_obj_t * ta = lv_textarea_create(p);
+    lv_obj_set_size(ta, width, SY(36));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(260), y);
+    lv_textarea_set_one_line(ta, true);
+    if (placeholder) lv_textarea_set_placeholder_text(ta, placeholder);
+    if (value && value[0]) lv_textarea_set_text(ta, value);
+    *ta_out = ta;
+
+    /* Browse button for entity fields */
+    if (domain) {
+        struct ha_browse_ctx * ctx = malloc(sizeof(*ctx));
+        if (ctx) {
+            ctx->ta = ta;
+            snprintf(ctx->domain, sizeof(ctx->domain), "%s", domain);
+            lv_obj_t * b = lv_btn_create(p);
+            lv_obj_set_size(b, SY(36), SY(36));
+            lv_obj_align(b, LV_ALIGN_TOP_LEFT,
+                         SX(260) + width + SX(6), y);
+            lv_obj_set_style_radius(b, 6, 0);
+            lv_obj_t * bl = lv_label_create(b);
+            lv_label_set_text(bl, "...");
+            lv_obj_center(bl);
+            lv_obj_add_event_cb(b, on_ha_browse, LV_EVENT_CLICKED, ctx);
+        }
+    }
+    return y + 44;
+}
+
+static void on_ha_entities_save(lv_event_t * e) {
+    (void)e;
+    if (ta_ha_host) {
+        const char * v = lv_textarea_get_text(ta_ha_host);
+        snprintf(settings.ha_host, sizeof settings.ha_host, "%s", v ? v : "");
+    }
+    #define SAVE_TA(ta, field) do { \
+        if (ta) { const char * v = lv_textarea_get_text(ta); \
+                  snprintf(field, sizeof field, "%s", v ? v : ""); } \
+    } while(0)
+    SAVE_TA(ta_curtain_entity,     settings.curtain_entity);
+    SAVE_TA(ta_curtain_bat_a,      settings.curtain_bat_a);
+    SAVE_TA(ta_curtain_bat_b,      settings.curtain_bat_b);
+    SAVE_TA(ta_blinds_entity,      settings.blinds_entity);
+    SAVE_TA(ta_blinds_bat_a,       settings.blinds_bat_a);
+    SAVE_TA(ta_blinds_bat_b,       settings.blinds_bat_b);
+    SAVE_TA(ta_doorbell_entity,    settings.doorbell_entity);
+    SAVE_TA(ta_doorbell_camera,    settings.doorbell_camera);
+    SAVE_TA(ta_doorbell_stream,    settings.doorbell_stream_url);
+    SAVE_TA(ta_life360_a_entity,   settings.life360_a_entity);
+    SAVE_TA(ta_life360_a_name,     settings.life360_a_name);
+    SAVE_TA(ta_life360_b_entity,   settings.life360_b_entity);
+    SAVE_TA(ta_life360_b_name,     settings.life360_b_name);
+    SAVE_TA(ta_calendar_ha_entity, settings.calendar_ha_entity);
+    if (ta_doorbell_seconds) {
+        const char * v = lv_textarea_get_text(ta_doorbell_seconds);
+        int iv = v ? atoi(v) : 30;
+        if (iv < 3) iv = 3;
+        if (iv > 300) iv = 300;
+        settings.doorbell_seconds = iv;
+    }
+    #undef SAVE_TA
+    settings_save();
+    modal_close(NULL);
+}
+
+static void open_ha_entities_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("HA entities", 720);
+    int y = 70;
+    const int tw = SX(480);
+
+    /* HA host */
+    lv_obj_t * lh = lv_label_create(p);
+    lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lh, SF(22), 0);
+    lv_label_set_text(lh, "HA host (ip:port):");
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
+    ta_ha_host = lv_textarea_create(p);
+    lv_obj_set_size(ta_ha_host, tw, SY(44));
+    lv_obj_align(ta_ha_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_textarea_set_one_line(ta_ha_host, true);
+    lv_textarea_set_placeholder_text(ta_ha_host, "192.168.1.10:8123");
+    lv_textarea_set_text(ta_ha_host, settings.ha_host);
+    y += 56;
+
+    /* ── Curtains ── */
+    lv_obj_t * lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Curtains \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Cover entity:", settings.curtain_entity, "cover.woonkamer_gordijnen", tw, &ta_curtain_entity, "cover");
+    y = ha_field_row(p, y, "Battery sensor A:", settings.curtain_bat_a, "sensor.gordijn_links_battery", tw, &ta_curtain_bat_a, "sensor");
+    y = ha_field_row(p, y, "Battery sensor B:", settings.curtain_bat_b, "sensor.gordijn_rechts_battery", tw, &ta_curtain_bat_b, "sensor");
+    y += 8;
+
+    /* ── Blinds ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Blinds \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Cover entity:", settings.blinds_entity, "cover.jaloezieen_woonkamer", tw, &ta_blinds_entity, "cover");
+    y = ha_field_row(p, y, "Battery sensor A:", settings.blinds_bat_a, "sensor.jaloezie_links_battery", tw, &ta_blinds_bat_a, "sensor");
+    y = ha_field_row(p, y, "Battery sensor B:", settings.blinds_bat_b, "sensor.jaloezie_rechts_battery", tw, &ta_blinds_bat_b, "sensor");
+    y += 8;
+
+    /* ── Doorbell ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Doorbell \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Trigger entity:", settings.doorbell_entity, "binary_sensor.deurbel", tw, &ta_doorbell_entity, "binary_sensor");
+    y = ha_field_row(p, y, "Camera entity:", settings.doorbell_camera, "camera.voordeur", tw, &ta_doorbell_camera, "camera");
+    y = ha_field_row(p, y, "Show seconds (3-300):", NULL, "30", SX(120), &ta_doorbell_seconds, NULL);
+    if (ta_doorbell_seconds) {
+        char sec_str[8];
+        snprintf(sec_str, sizeof(sec_str), "%d", settings.doorbell_seconds);
+        lv_textarea_set_text(ta_doorbell_seconds, sec_str);
+    }
+    y = ha_field_row(p, y, "MJPEG stream URL:", settings.doorbell_stream_url, "http://.../stream.mjpeg", tw, &ta_doorbell_stream, NULL);
+    y += 8;
+
+    /* ── Family / Life360 ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Family \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Person A entity:", settings.life360_a_entity, "device_tracker.life360_alice", tw, &ta_life360_a_entity, "device_tracker");
+    y = ha_field_row(p, y, "Person A name:", settings.life360_a_name, "Alice", tw, &ta_life360_a_name, NULL);
+    y = ha_field_row(p, y, "Person B entity:", settings.life360_b_entity, "device_tracker.life360_bob", tw, &ta_life360_b_entity, "device_tracker");
+    y = ha_field_row(p, y, "Person B name:", settings.life360_b_name, "Bob", tw, &ta_life360_b_name, NULL);
+    y += 8;
+
+    /* ── Calendar ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Calendar \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "HA calendar entity:", settings.calendar_ha_entity, "calendar.gezin", tw, &ta_calendar_ha_entity, "calendar");
+    y += 16;
+
+    /* Save button */
+    lv_obj_t * b_save = lv_btn_create(p);
+    lv_obj_set_size(b_save, SX(240), SY(50));
+    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_radius(b_save, 8, 0);
+    lv_obj_add_event_cb(b_save, on_ha_entities_save, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bsl = lv_label_create(b_save);
+    lv_obj_set_style_text_color(bsl, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(bsl, "Save & close");
+    lv_obj_center(bsl);
 }
 
 /* ==================== Tile slots modal ====================

@@ -86,6 +86,9 @@ settings_t settings = {
     .curtain_entity      = "",
     .curtain_bat_a       = "",
     .curtain_bat_b       = "",
+    .blinds_entity       = "",
+    .blinds_bat_a        = "",
+    .blinds_bat_b        = "",
     .doorbell_entity     = "",
     .doorbell_camera     = "",
     .doorbell_seconds    = 30,
@@ -286,6 +289,9 @@ void settings_load(void) {
         else if (strcmp(k, "curtain_entity")   == 0) snprintf(settings.curtain_entity, sizeof settings.curtain_entity, "%s", v);
         else if (strcmp(k, "curtain_bat_a")    == 0) snprintf(settings.curtain_bat_a, sizeof settings.curtain_bat_a, "%s", v);
         else if (strcmp(k, "curtain_bat_b")    == 0) snprintf(settings.curtain_bat_b, sizeof settings.curtain_bat_b, "%s", v);
+        else if (strcmp(k, "blinds_entity")    == 0) snprintf(settings.blinds_entity, sizeof settings.blinds_entity, "%s", v);
+        else if (strcmp(k, "blinds_bat_a")     == 0) snprintf(settings.blinds_bat_a, sizeof settings.blinds_bat_a, "%s", v);
+        else if (strcmp(k, "blinds_bat_b")     == 0) snprintf(settings.blinds_bat_b, sizeof settings.blinds_bat_b, "%s", v);
         else if (strcmp(k, "doorbell_entity")  == 0) snprintf(settings.doorbell_entity, sizeof settings.doorbell_entity, "%s", v);
         else if (strcmp(k, "doorbell_camera")  == 0) snprintf(settings.doorbell_camera, sizeof settings.doorbell_camera, "%s", v);
         else if (strcmp(k, "doorbell_seconds") == 0) settings.doorbell_seconds = (iv < 3 || iv > 300) ? 30 : iv;
@@ -431,7 +437,8 @@ static void sanitize_all_strings(void) {
         settings.mqtt_pass, settings.domoticz_host, settings.master_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
         settings.calendar_ics_url, settings.ha_host, settings.curtain_entity,
-        settings.curtain_bat_a, settings.curtain_bat_b, settings.doorbell_entity,
+        settings.curtain_bat_a, settings.curtain_bat_b, settings.blinds_entity,
+        settings.blinds_bat_a, settings.blinds_bat_b, settings.doorbell_entity,
         settings.doorbell_camera, settings.doorbell_stream_url, settings.vent_host,
         settings.opnsense_host, settings.domoticz_user, settings.domoticz_pass,
         settings.tile_slot_energy, settings.tile_slot_family, settings.tile_slot_vent,
@@ -595,6 +602,9 @@ void settings_save(void) {
     fprintf(f, "curtain_entity=%s\n", settings.curtain_entity);
     fprintf(f, "curtain_bat_a=%s\n", settings.curtain_bat_a);
     fprintf(f, "curtain_bat_b=%s\n", settings.curtain_bat_b);
+    fprintf(f, "blinds_entity=%s\n", settings.blinds_entity);
+    fprintf(f, "blinds_bat_a=%s\n",  settings.blinds_bat_a);
+    fprintf(f, "blinds_bat_b=%s\n",  settings.blinds_bat_b);
     fprintf(f, "doorbell_entity=%s\n", settings.doorbell_entity);
     fprintf(f, "doorbell_camera=%s\n", settings.doorbell_camera);
     fprintf(f, "doorbell_seconds=%d\n", settings.doorbell_seconds);
