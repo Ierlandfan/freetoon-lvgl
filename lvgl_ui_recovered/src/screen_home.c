@@ -2221,19 +2221,27 @@ static void on_home_gesture_to_lights(lv_event_t * e) {
  * opens the lights backend on release. */
 static lv_obj_t * lights_handle     = NULL;
 static lv_obj_t * lights_handle_lbl = NULL;
+static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
 
 static void lights_handle_set(bool open) {
     if (!lights_handle) return;
     lv_obj_set_size(lights_handle, open ? 160 : 56, open ? 56 : 80);
     lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -4, 0);
     lv_obj_set_style_radius(lights_handle, open ? 16 : LV_RADIUS_CIRCLE, 0);
-    if (lights_handle_lbl) {
-        if (open) {
-            lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE " Lights");
+    if (open) {
+        /* Expanded: word label, hide the logo. */
+        if (lights_handle_img) lv_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+        if (lights_handle_lbl) {
+            lv_label_set_text(lights_handle_lbl, "Devices");
             lv_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
-        } else {
-            /* Always show a small hint icon so the user can find it */
+            lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else {
+        /* Collapsed: the backend logo if we have one, else the charge glyph. */
+        if (lights_handle_img) {
+            lv_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+            if (lights_handle_lbl) lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else if (lights_handle_lbl) {
             lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
             lv_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
             lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
@@ -3825,6 +3833,20 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
         lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
         lv_obj_center(lights_handle_lbl);
+
+        /* Collapsed handle shows the active backend's logo: Domoticz if that's
+         * configured (matches open_lights_backend's priority), else HA. The
+         * charge glyph stays as the fallback when neither is enabled. */
+        const lv_img_dsc_t * logo = settings.enable_domoticz ? &icon_domoticz
+                                  : settings.enable_ha       ? &icon_ha
+                                  : NULL;
+        if (logo) {
+            lights_handle_img = lv_img_create(lights_handle);
+            lv_img_set_src(lights_handle_img, logo);
+            lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
+            lv_obj_center(lights_handle_img);
+            lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     /* Gear in the very top-right corner of the screen. */
