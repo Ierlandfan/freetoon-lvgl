@@ -11,40 +11,40 @@
  * clean); SIGUSR2 returns it to hidden.
  *
  * Lifecycle:
- *   - camera_init()  [once, at toonui startup]:
+ *   - video_init()  [once, at toonui startup]:
  *       fork+exec /root/vpu/vpu_stream --warm --rect X Y W H 5000
- *       or --rtp PORT when camera_rtp is configured
+ *       or --rtp PORT when video_rtp is configured
  *       (X,Y,W,H from settings, computed once and remembered so we can
  *       detect settings edits later)
- *   - camera_open()  [tile tap or HA trigger]:
- *       if rect changed since spawn -> kill + camera_init() again
+ *   - video_open()  [tile tap or HA trigger]:
+ *       if rect changed since spawn -> kill + video_init() again
  *       SIGUSR1  -> vpu_stream starts blitting at next I-VOP
  *       fbdev_set_cutout()  -> LVGL stops drawing the video rect
  *       create transparent click target -> tap closes
- *   - camera_close()  [overlay tap or HA "hide" trigger]:
+ *   - video_close()  [overlay tap or HA "hide" trigger]:
  *       SIGUSR2  -> vpu_stream stops blitting (decoder stays warm)
  *       fbdev_clear_cutout()
  *       delete overlay + invalidate so LVGL repaints over the last frame
- *   - camera_shutdown()  [toonui exit]:
+ *   - video_shutdown()  [toonui exit]:
  *       SIGTERM the child so it doesn't outlive us
  */
-#include "camera.h"
+#include "video.h"
 
 /* Toon 1 only — the live video pipeline depends on the i.MX27 VPU/eMMA
  * PrP and the /root/vpu/vpu_stream helper, neither of which exists on
  * Toon 2. On non-TOON1 targets we just compile empty stubs so screen_home
- * can call camera_install_button unconditionally. */
+ * can call video_install_button unconditionally. */
 #ifndef TOON1
-void camera_init(void)     {}
-void camera_shutdown(void) {}
-void camera_open(void)     {}
-void camera_close(void)    {}
-void camera_install_button(lv_obj_t * parent) { (void)parent; }
+void video_init(void)     {}
+void video_shutdown(void) {}
+void video_open(void)     {}
+void video_close(void)    {}
+void video_install_button(lv_obj_t * parent) { (void)parent; }
 #else
 
 #include "display.h"
 #include "settings.h"
-#include "fbdev.h"
+#include "lv_drivers/display/fbdev.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,18 +72,18 @@ static int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; 
 
 /* Resolve the rect from settings: size is a % of the configured source
  * dimensions. PP can now upscale, so 125% is allowed for 640x360 -> 800x450.
- * camera_src_w/h should match what the OPi side is sending so the aspect ratio
+ * video_src_w/h should match what the OPi side is sending so the aspect ratio
  * is preserved. Pos -1 on either axis = centre on that axis. */
 static void resolve_rect(void)
 {
-    int pct = clamp(settings.camera_size_pct ? settings.camera_size_pct : 100, 25, 125);
-    int sw  = settings.camera_src_w ? settings.camera_src_w : 640;
-    int sh  = settings.camera_src_h ? settings.camera_src_h : 480;
+    int pct = clamp(settings.video_size_pct ? settings.video_size_pct : 100, 25, 125);
+    int sw  = settings.video_src_w ? settings.video_src_w : 640;
+    int sh  = settings.video_src_h ? settings.video_src_h : 480;
     s_w = sw * pct / 100;
     s_h = sh * pct / 100;
 
-    s_x = (settings.camera_x < 0) ? (DISP_HOR - s_w) / 2 : settings.camera_x;
-    s_y = (settings.camera_y < 0) ? (DISP_VER - s_h) / 2 : settings.camera_y;
+    s_x = (settings.video_x < 0) ? (DISP_HOR - s_w) / 2 : settings.video_x;
+    s_y = (settings.video_y < 0) ? (DISP_VER - s_h) / 2 : settings.video_y;
 
     /* Clamp inside panel */
     if (s_x < 0) s_x = 0;
@@ -101,7 +101,7 @@ static int spawn_warm(void)
     snprintf(ys, sizeof ys, "%d", s_y);
     snprintf(ws, sizeof ws, "%d", s_w);
     snprintf(hs, sizeof hs, "%d", s_h);
-    snprintf(port, sizeof port, "%d", settings.camera_rtp);
+    snprintf(port, sizeof port, "%d", settings.video_rtp);
 
     pid_t p = fork();
     if (p == 0) {
@@ -114,27 +114,27 @@ static int spawn_warm(void)
         setpgid(0, 0);
         av[n++] = "vpu_stream";
         av[n++] = "--warm";
-        if (settings.camera_overlay) av[n++] = "--overlay";
+        if (settings.video_overlay) av[n++] = "--overlay";
         av[n++] = "--rect"; av[n++] = xs; av[n++] = ys; av[n++] = ws; av[n++] = hs;
-        if (settings.camera_rtp > 0) { av[n++] = "--rtp"; av[n++] = port; }
+        if (settings.video_rtp > 0) { av[n++] = "--rtp"; av[n++] = port; }
         else                         { av[n++] = DEFAULT_PORT_STR; }
         av[n] = NULL;
         execv(VPU_STREAM_BIN, av);
         _exit(127);
     } else if (p < 0) {
-        fprintf(stderr, "[camera] fork failed: %s\n", strerror(errno));
+        fprintf(stderr, "[video] fork failed: %s\n", strerror(errno));
         return -1;
     }
     s_pid = p;
     s_spawn_x = s_x; s_spawn_y = s_y;
     s_spawn_w = s_w; s_spawn_h = s_h;
-    s_spawn_rtp = settings.camera_rtp;
-    s_spawn_overlay = settings.camera_overlay;
-    printf("[camera] warm-spawned vpu_stream pid=%d rect=(%d,%d)+%dx%d %s=%d%s\n",
+    s_spawn_rtp = settings.video_rtp;
+    s_spawn_overlay = settings.video_overlay;
+    printf("[video] warm-spawned vpu_stream pid=%d rect=(%d,%d)+%dx%d %s=%d%s\n",
            s_pid, s_x, s_y, s_w, s_h,
-           settings.camera_rtp > 0 ? "rtp" : "tcp",
-           settings.camera_rtp > 0 ? settings.camera_rtp : atoi(DEFAULT_PORT_STR),
-           settings.camera_overlay ? " overlay" : "");
+           settings.video_rtp > 0 ? "rtp" : "tcp",
+           settings.video_rtp > 0 ? settings.video_rtp : atoi(DEFAULT_PORT_STR),
+           settings.video_overlay ? " overlay" : "");
     return 0;
 }
 
@@ -146,7 +146,7 @@ static void reap_if_gone(void)
     int status;
     pid_t r = waitpid(s_pid, &status, WNOHANG);
     if (r == s_pid) {
-        fprintf(stderr, "[camera] warm vpu_stream pid=%d exited (status=0x%x); will respawn\n",
+        fprintf(stderr, "[video] warm vpu_stream pid=%d exited (status=0x%x); will respawn\n",
                 s_pid, status);
         s_pid = -1;
     }
@@ -156,7 +156,7 @@ static void reap_if_gone(void)
  * appears, then respawns it whenever it exits. 2 s tick = at most
  * 2 s reconnect latency, cheap (one waitpid + one access() syscall
  * per tick when idle). */
-static void camera_init_poll_cb(lv_timer_t * t)
+static void video_init_poll_cb(lv_timer_t * t)
 {
     (void)t;
     reap_if_gone();
@@ -165,7 +165,7 @@ static void camera_init_poll_cb(lv_timer_t * t)
         return;
     resolve_rect();
     if (spawn_warm() < 0) {
-        fprintf(stderr, "[camera] warm-spawn failed; will retry next tick\n");
+        fprintf(stderr, "[video] warm-spawn failed; will retry next tick\n");
         return;
     }
     /* If the user had the overlay up when the child died, re-arm the
@@ -173,18 +173,18 @@ static void camera_init_poll_cb(lv_timer_t * t)
      * the very top of main() so the old fork+exec race window is gone. */
     if (s_overlay != NULL && s_pid > 0) {
         if (kill(s_pid, SIGUSR1) == 0)
-            printf("[camera] post-respawn: re-armed show on pid=%d\n", s_pid);
+            printf("[video] post-respawn: re-armed show on pid=%d\n", s_pid);
     }
 }
-void camera_init(void)
+void video_init(void)
 {
-    if (!settings.camera_enabled) return;
+    if (!settings.video_enabled) return;
     /* Lifecycle timer -- spawns the initial warm child once
      * /dev/mxc_vpu appears, then respawns it whenever it exits. */
-    lv_timer_create(camera_init_poll_cb, 2000, NULL);
+    lv_timer_create(video_init_poll_cb, 2000, NULL);
 }
 
-void camera_shutdown(void)
+void video_shutdown(void)
 {
     if (s_pid > 0) {
         kill(s_pid, SIGTERM);
@@ -193,11 +193,11 @@ void camera_shutdown(void)
     }
 }
 
-static void on_overlay_tap(lv_event_t * e) { (void)e; camera_close(); }
+static void on_overlay_tap(lv_event_t * e) { (void)e; video_close(); }
 
-void camera_open(void)
+void video_open(void)
 {
-    if (!settings.camera_enabled) return;
+    if (!settings.video_enabled) return;
 
     resolve_rect();
     reap_if_gone();
@@ -206,11 +206,11 @@ void camera_open(void)
      * vpu_stream takes --rect on argv, no runtime change channel. */
     if (s_pid > 0 && (s_x != s_spawn_x || s_y != s_spawn_y ||
                       s_w != s_spawn_w || s_h != s_spawn_h ||
-                      settings.camera_rtp != s_spawn_rtp ||
-                      settings.camera_overlay != s_spawn_overlay)) {
-        printf("[camera] settings changed (%d,%d)+%dx%d rtp=%d ov=%d -> (%d,%d)+%dx%d rtp=%d ov=%d; respawning warm child\n",
+                      settings.video_rtp != s_spawn_rtp ||
+                      settings.video_overlay != s_spawn_overlay)) {
+        printf("[video] settings changed (%d,%d)+%dx%d rtp=%d ov=%d -> (%d,%d)+%dx%d rtp=%d ov=%d; respawning warm child\n",
                s_spawn_x, s_spawn_y, s_spawn_w, s_spawn_h, s_spawn_rtp, s_spawn_overlay,
-               s_x, s_y, s_w, s_h, settings.camera_rtp, settings.camera_overlay);
+               s_x, s_y, s_w, s_h, settings.video_rtp, settings.video_overlay);
         kill(s_pid, SIGTERM);
         waitpid(s_pid, NULL, 0);
         s_pid = -1;
@@ -220,7 +220,7 @@ void camera_open(void)
 
     /* Tell the warm child to start blitting at the next I-VOP. */
     if (kill(s_pid, SIGUSR1) < 0) {
-        fprintf(stderr, "[camera] SIGUSR1 to pid=%d failed: %s\n", s_pid, strerror(errno));
+        fprintf(stderr, "[video] SIGUSR1 to pid=%d failed: %s\n", s_pid, strerror(errno));
         return;
     }
 
@@ -228,7 +228,7 @@ void camera_open(void)
      * enables the LCDC graphic window itself, so the UI is NOT clobbered --
      * no fbdev cutout needed. Direct-to-fb0 mode still needs the cutout so
      * LVGL stops repainting the video rect. */
-    if (!settings.camera_overlay)
+    if (!settings.video_overlay)
         fbdev_set_cutout(s_x, s_y, s_x + s_w - 1, s_y + s_h - 1);
 
     s_overlay = lv_obj_create(lv_scr_act());
@@ -241,41 +241,41 @@ void camera_open(void)
 
     lv_obj_invalidate(lv_scr_act());
 
-    printf("[camera] show rect=(%d,%d)+%dx%d (warm pid=%d, awaiting I-VOP)\n",
+    printf("[video] show rect=(%d,%d)+%dx%d (warm pid=%d, awaiting I-VOP)\n",
            s_x, s_y, s_w, s_h, s_pid);
 }
 
-void camera_close(void)
+void video_close(void)
 {
     /* Don't kill the child -- just tell it to stop blitting. The decoder
      * stays warm so the next open() shows video in well under a second. */
     if (s_pid > 0) {
         if (kill(s_pid, SIGUSR2) < 0)
-            fprintf(stderr, "[camera] SIGUSR2 to pid=%d failed: %s\n", s_pid, strerror(errno));
+            fprintf(stderr, "[video] SIGUSR2 to pid=%d failed: %s\n", s_pid, strerror(errno));
     }
     /* Overlay mode never set a cutout (the FG plane composites in hardware);
      * SIGUSR2 makes vpu_stream disable the graphic window so the UI shows
      * fully again. Only the direct-to-fb0 path needs the cutout cleared. */
-    if (!settings.camera_overlay)
+    if (!settings.video_overlay)
         fbdev_clear_cutout();
     if (s_overlay) {
         lv_obj_del(s_overlay);
         s_overlay = NULL;
     }
     lv_obj_invalidate(lv_scr_act());
-    printf("[camera] hidden (vpu_stream still warm)\n");
+    printf("[video] hidden (vpu_stream still warm)\n");
 }
 
-static void on_tile_tap(lv_event_t * e) { (void)e; camera_open(); }
+static void on_tile_tap(lv_event_t * e) { (void)e; video_open(); }
 
-/* Camera home tile — installed only when settings.camera_enabled is on.
+/* Camera home tile — installed only when settings.video_enabled is on.
  * Sized to roughly match the existing right-column tiles (Energy/Family/
  * Water style) and slotted in below them, but in the bottom-LEFT where
  * the v1 button used to sit (clear of the thermostat panel and the
  * weather row). Adjusts to the panel via SX/SY. */
-void camera_install_button(lv_obj_t * parent)
+void video_install_button(lv_obj_t * parent)
 {
-    if (!settings.camera_enabled) return;
+    if (!settings.video_enabled) return;
 
     lv_obj_t * tile = lv_btn_create(parent);
     lv_obj_set_size(tile, SX(120), SY(100));

@@ -7,31 +7,31 @@
  * blitting at the next I-frame; closing signals SIGUSR2 to stop. This
  * gets us sub-second show latency from a cold "Camera" tap.
  *
- * The rect is read from settings (camera_x/y/w/h, all in panel pixels),
+ * The rect is read from settings (video_x/y/w/h, all in panel pixels),
  * with sensible defaults so it works out of the box. If those settings
- * change while the warm child is running, the next camera_open() kills
+ * change while the warm child is running, the next video_open() kills
  * and respawns it with the new rect (vpu_stream takes --rect on argv).
  */
-#ifndef CAMERA_H
-#define CAMERA_H
+#ifndef VIDEO_H
+#define VIDEO_H
 
 #include "lvgl/lvgl.h"
 
 /* Add a "Camera" button at LV_ALIGN_BOTTOM_LEFT on the given parent.
  * Tap opens the video; the close placeholder is created on top of the
  * stream on first open. */
-void camera_install_button(lv_obj_t * parent);
+void video_install_button(lv_obj_t * parent);
 
 /* Lifecycle.
- *   camera_init()     -- called once during toonui startup, spawns the
+ *   video_init()     -- called once during toonui startup, spawns the
  *                        warm vpu_stream child. No-op if camera disabled.
- *   camera_shutdown() -- called on clean toonui exit, SIGTERMs the child.
- *   camera_open()     -- tile tap / HA trigger, show video.
- *   camera_close()    -- overlay tap / HA hide, stop blitting (child stays warm).
+ *   video_shutdown() -- called on clean toonui exit, SIGTERMs the child.
+ *   video_open()     -- tile tap / HA trigger, show video.
+ *   video_close()    -- overlay tap / HA hide, stop blitting (child stays warm).
  */
-void camera_init(void);
-void camera_shutdown(void);
-void camera_open(void);
-void camera_close(void);
+void video_init(void);
+void video_shutdown(void);
+void video_open(void);
+void video_close(void);
 
 #endif

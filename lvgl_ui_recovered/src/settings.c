@@ -89,6 +89,14 @@ settings_t settings = {
     .doorbell_camera     = "",
     .doorbell_seconds    = 30,
     .doorbell_stream_url = "",
+    .video_enabled       = 1,
+    .video_size_pct      = 50,
+    .video_src_w         = 640,
+    .video_src_h         = 480,
+    .video_x             = -1,
+    .video_y             = -1,
+    .video_rtp           = 0,
+    .video_overlay       = 0,
     .p1_elec_host        = "",
     .p1_water_host       = "",
     .vent_host           = "",
@@ -279,6 +287,14 @@ void settings_load(void) {
         else if (strcmp(k, "doorbell_entity")  == 0) snprintf(settings.doorbell_entity, sizeof settings.doorbell_entity, "%s", v);
         else if (strcmp(k, "doorbell_camera")  == 0) snprintf(settings.doorbell_camera, sizeof settings.doorbell_camera, "%s", v);
         else if (strcmp(k, "doorbell_seconds") == 0) settings.doorbell_seconds = (iv < 3 || iv > 300) ? 30 : iv;
+        else if (strcmp(k, "video_enabled")    == 0 || strcmp(k, "camera_enabled")  == 0) settings.video_enabled = (iv ? 1 : 0);
+        else if (strcmp(k, "video_size_pct")   == 0 || strcmp(k, "camera_size_pct") == 0) settings.video_size_pct = (iv < 25 || iv > 125) ? 100 : iv;
+        else if (strcmp(k, "video_src_w")      == 0 || strcmp(k, "camera_src_w")    == 0) settings.video_src_w = (iv < 64 || iv > 1920) ? 640 : iv;
+        else if (strcmp(k, "video_src_h")      == 0 || strcmp(k, "camera_src_h")    == 0) settings.video_src_h = (iv < 64 || iv > 1080) ? 480 : iv;
+        else if (strcmp(k, "video_x")          == 0 || strcmp(k, "camera_x")        == 0) settings.video_x = iv;
+        else if (strcmp(k, "video_y")          == 0 || strcmp(k, "camera_y")        == 0) settings.video_y = iv;
+        else if (strcmp(k, "video_rtp")        == 0 || strcmp(k, "camera_rtp")      == 0) settings.video_rtp = (iv < 0 || iv > 65535) ? 0 : iv;
+        else if (strcmp(k, "video_overlay")    == 0 || strcmp(k, "camera_overlay")  == 0) settings.video_overlay = (iv ? 1 : 0);
         else if (strcmp(k, "doorbell_stream_url") == 0) snprintf(settings.doorbell_stream_url, sizeof settings.doorbell_stream_url, "%s", v);
         else if (strcmp(k, "p1_elec_host")     == 0) snprintf(settings.p1_elec_host, sizeof settings.p1_elec_host, "%s", v);
         else if (strcmp(k, "p1_water_host")    == 0) snprintf(settings.p1_water_host, sizeof settings.p1_water_host, "%s", v);
@@ -579,6 +595,14 @@ void settings_save(void) {
     fprintf(f, "doorbell_entity=%s\n", settings.doorbell_entity);
     fprintf(f, "doorbell_camera=%s\n", settings.doorbell_camera);
     fprintf(f, "doorbell_seconds=%d\n", settings.doorbell_seconds);
+    fprintf(f, "video_enabled=%d\n",   settings.video_enabled);
+    fprintf(f, "video_size_pct=%d\n",  settings.video_size_pct);
+    fprintf(f, "video_src_w=%d\n",     settings.video_src_w);
+    fprintf(f, "video_src_h=%d\n",     settings.video_src_h);
+    fprintf(f, "video_x=%d\n",         settings.video_x);
+    fprintf(f, "video_y=%d\n",         settings.video_y);
+    fprintf(f, "video_rtp=%d\n",       settings.video_rtp);
+    fprintf(f, "video_overlay=%d\n",   settings.video_overlay);
     fprintf(f, "doorbell_stream_url=%s\n", settings.doorbell_stream_url);
     fprintf(f, "p1_elec_host=%s\n", settings.p1_elec_host);
     fprintf(f, "p1_water_host=%s\n", settings.p1_water_host);

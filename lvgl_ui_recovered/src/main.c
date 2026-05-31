@@ -21,6 +21,8 @@
 #include "ventilation.h"
 #include "homeassistant.h"
 #include "doorbell.h"
+#include "video.h"
+#include "ui_cmd.h"
 #include "healthcheck.h"
 #include "pwa_server.h"
 #include "packages.h"
@@ -142,6 +144,13 @@ int main(int argc, char** argv) {
     backlight_als_start();  /* poll the ambient sensor off the UI thread (auto-brightness) */
 
     ui_init();
+
+    /* Live video pipeline (Toon 1): warm-start vpu_stream so the Video tile
+     * opens in well under a second, and the UNIX-socket command channel for
+     * HA-style /show /hide triggers (doorbell_daemon -> /tmp/toonui.cmd).
+     * No-ops on non-TOON1 builds and when video_enabled=0. */
+    video_init();
+    ui_cmd_start();
 
     /* Doorbell snapshot overlay — watches ha_state.doorbell_seq and shows the
      * camera snapshot fullscreen over any screen. No-op unless configured. */

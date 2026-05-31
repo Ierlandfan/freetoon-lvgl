@@ -4,7 +4,7 @@
  * Threading: a background pthread accept()s on the UNIX socket and reads
  * one line per connection. It does NOT touch LVGL directly -- instead it
  * sets bits in a volatile sig_atomic_t that an LVGL timer (running on the
- * UI thread) drains every 100 ms and turns into camera_open/close calls.
+ * UI thread) drains every 100 ms and turns into video_open/close calls.
  * That keeps all LVGL state under the UI thread without a mutex.
  *
  * Built only on TOON1 -- the doorbell pipeline doesn't exist on Toon 2.
@@ -15,7 +15,7 @@
 void ui_cmd_start(void) {}
 #else
 
-#include "camera.h"
+#include "video.h"
 #include "lvgl/lvgl.h"
 
 #include <stdio.h>
@@ -48,8 +48,8 @@ static void drain_cb(lv_timer_t * t)
      * later wins -- that's intentional, otherwise a fast tap-tap from
      * HA would settle in the wrong state. We treat the bits as a set
      * and apply hide last so an unbalanced pair ends hidden. */
-    if (p & CMD_SHOW) camera_open();
-    if (p & CMD_HIDE) camera_close();
+    if (p & CMD_SHOW) video_open();
+    if (p & CMD_HIDE) video_close();
 }
 
 static void * listener(void * unused)

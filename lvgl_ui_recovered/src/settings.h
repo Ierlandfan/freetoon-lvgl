@@ -185,6 +185,20 @@ typedef struct {
      * frame-by-frame instead of a single snapshot. Empty = still snapshot. */
     char doorbell_stream_url[256];
 
+    /* Live video tile (Toon 1 only): hardware MPEG-4/H.264 decode on the
+     * i.MX27 VPU via /root/vpu/vpu_stream, shown either direct-to-fb0 (with
+     * an LVGL cutout) or as an fb1 graphic-window hardware overlay. Distinct
+     * from the doorbell_* snapshot feature above. Cfg keys are video_* with
+     * camera_* accepted as aliases (older configs). */
+    int  video_enabled;        /* 0/1 — install the Video tile + warm pipeline */
+    int  video_size_pct;       /* 25..125 % of video_src_w x video_src_h */
+    int  video_src_w;          /* what the sender pushes (default 640) */
+    int  video_src_h;          /* (default 480) */
+    int  video_x;              /* panel px, or -1 to centre */
+    int  video_y;              /* panel px, or -1 to centre */
+    int  video_rtp;            /* UDP RTP port for vpu_stream; 0 = legacy TCP 5000 */
+    int  video_overlay;        /* 0 = fb0 + cutout; 1 = fb1 FG hardware overlay */
+
     /* LAN hosts for the optional integrations + healthcheck probes. All
      * empty by default so no personal network topology ships in the binary;
      * a probe/poller is simply skipped when its host is empty. "ip" or
