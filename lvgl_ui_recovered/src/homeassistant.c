@@ -1181,7 +1181,7 @@ int ha_discover_entities(const char * domain_prefix,
         char fn[64] = "";
         const char * fnp = strstr(pos, "\"friendly_name\":\"");
         if (fnp) {
-            fnp += 18;   /* skip "friendly_name":" */
+            fnp += 17;   /* skip "friendly_name":" */
             size_t fni = 0;
             while (*fnp && *fnp != '"' && fni < sizeof(fn) - 1)
                 fn[fni++] = *fnp++;
