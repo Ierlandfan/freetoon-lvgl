@@ -369,10 +369,13 @@ void ha_devices_load(void) {
     ha_lights_load();
     for (int i = 0; i < ha_light_count; i++)
         devices_add(HADEV_LIGHT, ha_lights[i].entity_id, ha_lights[i].name, 0);
+    /* pin=0: devices are opt-in for the home quick-tiles (toggle "Home" per
+     * device in Settings -> Devices). Keeps the default home uncluttered; the
+     * full list is always one tap away on the Devices screen. */
     if (settings.curtain_entity[0])
-        devices_add(HADEV_COVER, settings.curtain_entity, "Gordijnen",   1);
+        devices_add(HADEV_COVER, settings.curtain_entity, "Gordijnen",  0);
     if (settings.blinds_entity[0])
-        devices_add(HADEV_COVER, settings.blinds_entity,  "Jaloezieen", 1);
+        devices_add(HADEV_COVER, settings.blinds_entity,  "Jaloezieen", 0);
     if (ha_device_count > 0) ha_devices_save();
     fprintf(stderr, "[ha] migrated %d devices to " HA_DEVICES_CONF "\n", ha_device_count);
 }

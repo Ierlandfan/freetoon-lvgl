@@ -144,7 +144,7 @@ static void mock_state(void) {
     settings.enable_ha = 1;
     ha_state.connected = 1;
     struct { int type; const char * ent; const char * name; int on; int bri; int pos; int pin; } d[] = {
-        { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 1 },
+        { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 0 },
         { HADEV_LIGHT,  "light.keuken",      "Keuken",      0,  -1, -1, 0 },
         { HADEV_COVER,  "cover.gordijnen",   "Gordijnen",   0,  -1, 60, 1 },
         { HADEV_SWITCH, "switch.tuinpomp",   "Tuinpomp",    1,  -1, -1, 0 },
