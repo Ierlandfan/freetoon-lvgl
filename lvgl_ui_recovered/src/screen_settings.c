@@ -25,6 +25,7 @@
 #include "icons.h"
 #include "tile_slots.h"
 #include "news.h"
+#include "wastecollection.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -704,6 +705,9 @@ static void on_waste_apply(lv_event_t * e) {
     if (ta_waste_city)  snprintf(settings.waste_city,    sizeof settings.waste_city,    "%s", lv_textarea_get_text(ta_waste_city));
     if (ta_waste_ics)   snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url, "%s", lv_textarea_get_text(ta_waste_ics));
     settings_save();
+    waste_state.wake_fetch = 1;   /* wake the background fetcher so the
+                                     "refreshes within a few seconds" status
+                                     below is actually true (else up to 4h). */
     if (lbl_waste_status)
         lv_label_set_text(lbl_waste_status,
             "Saved - the calendar refreshes within a few seconds.");
