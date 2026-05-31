@@ -175,6 +175,11 @@ typedef struct {
     char curtain_entity[64];
     char curtain_bat_a[64];
     char curtain_bat_b[64];
+    /* Blinds — second HA cover entity with optional battery sensors. Same
+     * shape as the curtain fields above. Empty = blinds tile hidden. */
+    char blinds_entity[64];
+    char blinds_bat_a[64];
+    char blinds_bat_b[64];
     /* Doorbell snapshot — when the HA trigger entity (binary_sensor / input_
      * boolean / event) goes "on", fetch a snapshot of doorbell_camera and show
      * it fullscreen on the Toon for doorbell_seconds. All empty/0 = disabled. */

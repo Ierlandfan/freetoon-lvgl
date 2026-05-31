@@ -35,6 +35,12 @@ typedef struct {
     volatile int   doorbell_seq;
     volatile int   doorbell_frame;
     volatile int   doorbell_live;
+    /* Blinds — second cover entity (settings.blinds_entity). Same shape as
+     * the curtain fields above. */
+    volatile int   blinds_pos;        /* 0..100 */
+    volatile int   blinds_is_closed;  /* 0/1 */
+    volatile int   blinds_battery;    /* % — min of the two child sensors */
+    char           blinds_state[16];  /* "open" / "closed" / "opening" / "closing" / "unknown" */
 } ha_state_t;
 
 /* Where poll_doorbell() writes the fetched JPEG (LVGL stdio drive 'S'). */
@@ -74,10 +80,28 @@ void ha_curtain_stop_async(void);
 void ha_light_toggle_async(const char * entity_id);
 void ha_lights_all_on_async(void);
 void ha_lights_all_off_async(void);
+void ha_light_set_brightness_async(const char * entity_id, int brightness_pct);
+
+/* Cover position setter (generic — works for curtains and blinds). */
+void ha_cover_set_position_async(const char * entity_id, int position_pct);
+void ha_cover_stop_async(const char * entity_id);
 
 /* GET /api/calendars/<entity>?start=&end= (Bearer auth) → HA event-array JSON
  * into `out`. Returns 0 on success. Used by calendar.c. */
 int ha_fetch_calendar(const char * entity, const char * start_iso,
                       const char * end_iso, char * out, size_t out_max);
+
+/* Entity discovery — GET /api/states and return all entities whose entity_id
+ * starts with `domain_prefix` (e.g. "cover", "light", "sensor"). Fills out[]
+ * up to max entries. *count is set to the number written. Returns 0 on success,
+ * -1 on failure (HA unreachable, no token, etc.). */
+#define HA_DISCOVERED_MAX 128
+typedef struct {
+    char entity_id[64];
+    char friendly_name[64];
+} ha_discovered_t;
+
+int ha_discover_entities(const char * domain_prefix,
+                          ha_discovered_t * out, int * count, int max);
 
 #endif
