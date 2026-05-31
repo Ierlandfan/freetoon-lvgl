@@ -15,6 +15,7 @@
 #include "display.h"
 #include "screens.h"
 #include "settings.h"
+#include "homeassistant.h"
 #include "layout.h"
 #include "boxtalk.h"
 #include "weather.h"
@@ -137,6 +138,29 @@ static void mock_state(void) {
     for (int i = 0; i < WASTE_TYPES; i++) {
         snprintf(waste_state.items[i].label, sizeof waste_state.items[i].label, "%s", w[i].lbl);
         snprintf(waste_state.items[i].date,  sizeof waste_state.items[i].date,  "%s", w[i].date);
+    }
+
+    /* HA devices so the Devices screen renders populated (one of each type). */
+    settings.enable_ha = 1;
+    ha_state.connected = 1;
+    struct { int type; const char * ent; const char * name; int on; int bri; int pos; int pin; } d[] = {
+        { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 1 },
+        { HADEV_LIGHT,  "light.keuken",      "Keuken",      0,  -1, -1, 0 },
+        { HADEV_COVER,  "cover.gordijnen",   "Gordijnen",   0,  -1, 60, 1 },
+        { HADEV_SWITCH, "switch.tuinpomp",   "Tuinpomp",    1,  -1, -1, 0 },
+        { HADEV_SCRIPT, "script.avondmodus", "Avondmodus",  0,  -1, -1, 0 },
+        { HADEV_SCENE,  "scene.film",        "Filmavond",   0,  -1, -1, 0 },
+    };
+    ha_device_count = (int)(sizeof(d)/sizeof(d[0]));
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        memset((void *)D, 0, sizeof *D);
+        D->type = d[i].type;
+        snprintf(D->entity_id, sizeof D->entity_id, "%s", d[i].ent);
+        snprintf(D->name, sizeof D->name, "%s", d[i].name);
+        D->available = 1; D->on = d[i].on; D->brightness = d[i].bri;
+        D->position = d[i].pos; D->pin_home = d[i].pin;
+        if (d[i].type == HADEV_COVER) snprintf(D->state, sizeof D->state, "%s", d[i].pos > 0 ? "open" : "closed");
     }
 }
 

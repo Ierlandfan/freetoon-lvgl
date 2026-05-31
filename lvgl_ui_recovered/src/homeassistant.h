@@ -67,6 +67,49 @@ typedef struct {
 extern ha_light_t ha_lights[HA_LIGHT_COUNT];
 extern int        ha_light_count;
 
+/* ---- Unified dynamic device list ---------------------------------------
+ * A single user-managed list of HA entities of mixed kinds, loaded from
+ * /mnt/data/ha_devices.conf ("type|entity_id|Name|pin" per line). Replaces
+ * the old fixed cover slots: covers, lights, switches, scripts and scenes
+ * all live here. State for light/cover/switch is polled in ha_thread;
+ * script/scene are stateless (a Run button). The Devices screen renders the
+ * list; pin==1 devices also appear as quick-tiles on the home screen. */
+enum { HADEV_LIGHT = 0, HADEV_COVER, HADEV_SWITCH, HADEV_SCRIPT, HADEV_SCENE };
+
+typedef struct {
+    int          type;           /* HADEV_* */
+    char         entity_id[64];  /* "light.bank_lamp" / "cover.blind" / … */
+    char         name[32];       /* display name */
+    int          pin_home;       /* 0/1 — also show as a home quick-tile */
+    /* live state (light/switch use on+brightness; cover uses position+state) */
+    volatile int available;      /* 0 if HA says unavailable / unreachable */
+    volatile int on;             /* 0/1 (light/switch) */
+    volatile int brightness;     /* 0..255, -1 if not reported (light) */
+    volatile int position;       /* 0..100 (cover) */
+    char         state[16];      /* raw HA state ("open"/"closing"/…) (cover) */
+} ha_device_t;
+
+#define HA_DEVICE_MAX 32
+extern ha_device_t ha_devices[HA_DEVICE_MAX];
+extern int         ha_device_count;
+
+/* "light"/"cover"/"switch"/"script"/"scene" <-> HADEV_*. */
+const char * hadev_type_str(int type);
+int          hadev_type_from_str(const char * s);
+
+/* (Re)load the device list from ha_devices.conf (migrating the legacy
+ * ha_lights.conf + curtain/blinds slots on first run). Safe to call from the
+ * settings UI after an edit; the poller picks up the new list on its next
+ * pass. */
+void ha_devices_load(void);
+/* Persist the current ha_devices[] back to ha_devices.conf. */
+void ha_devices_save(void);
+
+/* Device control (async, fire-and-forget). `type` selects the HA domain. */
+void ha_device_toggle_async(int type, const char * entity_id);      /* light/switch */
+void ha_device_cover_async(const char * entity_id, const char * cmd); /* "open"/"stop"/"close" */
+void ha_device_run_async(int type, const char * entity_id);          /* script/scene */
+
 /* Start the poller (background thread, ~10s loop). Returns 0 on success. */
 int ha_start(void);
 

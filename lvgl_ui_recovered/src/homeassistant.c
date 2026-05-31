@@ -286,6 +286,161 @@ void ha_light_toggle_async(const char * entity_id) {
 void ha_lights_all_on_async(void)  { fire_light_action("turn_on",  "light.all_lights"); }
 void ha_lights_all_off_async(void) { fire_light_action("turn_off", "light.all_lights"); }
 
+/* ======================= Unified dynamic device list =======================
+ * One user-managed list (lights, covers, switches, scripts, scenes) loaded
+ * from /mnt/data/ha_devices.conf. Replaces the old fixed cover slots; the
+ * Devices screen + home pinned-tiles render it. Control routes through the
+ * generic ha_call_service(), state through ha_get_state(). */
+#define HA_DEVICES_CONF "/mnt/data/ha_devices.conf"
+
+ha_device_t ha_devices[HA_DEVICE_MAX];
+int         ha_device_count = 0;
+
+const char * hadev_type_str(int type) {
+    switch (type) {
+        case HADEV_COVER:  return "cover";
+        case HADEV_SWITCH: return "switch";
+        case HADEV_SCRIPT: return "script";
+        case HADEV_SCENE:  return "scene";
+        default:           return "light";
+    }
+}
+int hadev_type_from_str(const char * s) {
+    if (!s)                    return HADEV_LIGHT;
+    if (!strcmp(s, "cover"))   return HADEV_COVER;
+    if (!strcmp(s, "switch"))  return HADEV_SWITCH;
+    if (!strcmp(s, "script"))  return HADEV_SCRIPT;
+    if (!strcmp(s, "scene"))   return HADEV_SCENE;
+    return HADEV_LIGHT;
+}
+
+void ha_devices_save(void) {
+    FILE * f = fopen(HA_DEVICES_CONF, "w");
+    if (!f) return;
+    fprintf(f, "# type|entity_id|Name|pin   (type = light|cover|switch|script|scene)\n");
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        fprintf(f, "%s|%s|%s|%d\n", hadev_type_str(D->type),
+                D->entity_id, D->name, D->pin_home ? 1 : 0);
+    }
+    fclose(f);
+}
+
+static void devices_add(int type, const char * entity, const char * name, int pin) {
+    if (ha_device_count >= HA_DEVICE_MAX || !entity || !entity[0]) return;
+    if (!ha_id_safe(entity)) return;
+    ha_device_t * D = &ha_devices[ha_device_count++];
+    memset((void *)D, 0, sizeof *D);
+    D->type = type;
+    snprintf(D->entity_id, sizeof D->entity_id, "%s", entity);
+    snprintf(D->name, sizeof D->name, "%s", (name && name[0]) ? name : entity);
+    D->pin_home   = pin ? 1 : 0;
+    D->brightness = -1;
+    D->position   = -1;
+}
+
+void ha_devices_load(void) {
+    ha_device_count = 0;
+    FILE * f = fopen(HA_DEVICES_CONF, "r");
+    if (f) {
+        char line[200];
+        while (fgets(line, sizeof line, f) && ha_device_count < HA_DEVICE_MAX) {
+            char * nl = strchr(line, '\n'); if (nl) *nl = 0;
+            char * cr = strchr(line, '\r'); if (cr) *cr = 0;
+            if (!line[0] || line[0] == '#') continue;
+            /* type | entity_id | name | pin */
+            char * p_ent = strchr(line, '|'); if (!p_ent) continue; *p_ent++ = 0;
+            const char * name = ""; int pin = 0;
+            char * p_name = strchr(p_ent, '|');
+            if (p_name) {
+                *p_name++ = 0;
+                char * p_pin = strchr(p_name, '|');
+                if (p_pin) { *p_pin++ = 0; pin = atoi(p_pin); }
+                name = p_name;
+            }
+            devices_add(hadev_type_from_str(line), p_ent, name, pin);
+        }
+        fclose(f);
+        fprintf(stderr, "[ha] loaded %d devices from " HA_DEVICES_CONF "\n", ha_device_count);
+        return;
+    }
+    /* No ha_devices.conf yet — migrate from the legacy ha_lights.conf and the
+     * old fixed curtain/blinds cover slots, then persist so future edits stick. */
+    ha_lights_load();
+    for (int i = 0; i < ha_light_count; i++)
+        devices_add(HADEV_LIGHT, ha_lights[i].entity_id, ha_lights[i].name, 0);
+    if (settings.curtain_entity[0])
+        devices_add(HADEV_COVER, settings.curtain_entity, "Gordijnen",   1);
+    if (settings.blinds_entity[0])
+        devices_add(HADEV_COVER, settings.blinds_entity,  "Jaloezieen", 1);
+    if (ha_device_count > 0) ha_devices_save();
+    fprintf(stderr, "[ha] migrated %d devices to " HA_DEVICES_CONF "\n", ha_device_count);
+}
+
+/* Parse a state object into one device (by type). */
+static void apply_device(ha_device_t * D, const char * body) {
+    char st[24] = {0};
+    extract_str(body, "state", st, sizeof st);
+    if (D->type == HADEV_COVER) {
+        D->available = (st[0] && strcmp(st, "unavailable") && strcmp(st, "unknown"));
+        snprintf(D->state, sizeof D->state, "%s", st);
+        int v;
+        if (extract_int(body, "current_position", &v)) D->position = v;
+    } else {                          /* light / switch */
+        if (!strcmp(st, "on"))        { D->available = 1; D->on = 1; }
+        else if (!strcmp(st, "off"))  { D->available = 1; D->on = 0; }
+        else                          { D->available = 0; D->on = 0; }
+        int v;
+        if (extract_int(body, "brightness", &v)) D->brightness = v;
+    }
+}
+
+/* Refresh every stateful device — one /api/states call each. Scripts/scenes
+ * are stateless and skipped. */
+static void poll_devices(void) {
+    char body[768];
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        if (D->type == HADEV_SCRIPT || D->type == HADEV_SCENE) continue;
+        if (ha_get_state(D->entity_id, body, sizeof body) != 0) { D->available = 0; continue; }
+        apply_device(D, body);
+    }
+}
+
+/* Generic fire-and-forget service call + a quick re-poll so the screen
+ * reflects the result within a second instead of waiting for the next pass. */
+struct ha_svc_arg { char domain[12]; char service[24]; char entity[64]; };
+static void * ha_svc_thread(void * arg) {
+    struct ha_svc_arg * a = (struct ha_svc_arg *)arg;
+    ha_call_service(a->domain, a->service, a->entity, NULL);
+    poll_devices();
+    free(a);
+    return NULL;
+}
+static void ha_service_async(const char * domain, const char * service, const char * entity) {
+    struct ha_svc_arg * a = malloc(sizeof *a);
+    if (!a) return;
+    snprintf(a->domain,  sizeof a->domain,  "%s", domain);
+    snprintf(a->service, sizeof a->service, "%s", service);
+    snprintf(a->entity,  sizeof a->entity,  "%s", entity);
+    pthread_t t;
+    if (pthread_create(&t, NULL, ha_svc_thread, a) != 0) { free(a); return; }
+    pthread_detach(t);
+}
+
+void ha_device_toggle_async(int type, const char * entity_id) {
+    ha_service_async(type == HADEV_SWITCH ? "switch" : "light", "toggle", entity_id);
+}
+void ha_device_cover_async(const char * entity_id, const char * cmd) {
+    const char * svc = !strcmp(cmd, "open")  ? "open_cover"
+                     : !strcmp(cmd, "close") ? "close_cover"
+                                             : "stop_cover";
+    ha_service_async("cover", svc, entity_id);
+}
+void ha_device_run_async(int type, const char * entity_id) {
+    ha_service_async(type == HADEV_SCENE ? "scene" : "script", "turn_on", entity_id);
+}
+
 /* Strip leading/trailing whitespace in place. Returns the input pointer
  * (possibly advanced) so callers can chain. */
 static char * trim(char * s) {
@@ -770,6 +925,7 @@ static void seed_all(void) {
     poll_once();        /* curtain group + battery */
     poll_blinds();      /* blinds cover + battery */
     poll_lights();
+    poll_devices();     /* unified device list */
     poll_life360();
     poll_doorbell();    /* arms the trigger edge-detector */
 }
@@ -782,19 +938,28 @@ static void dispatch_event(const char * msg) {
     if (!ent[0]) return;
     const char * ns = strstr(msg, "\"new_state\"");
     if (!ns) return;
-    if (CURTAIN_GROUP[0] && !strcmp(ent, CURTAIN_GROUP)) { apply_curtain(ns); return; }
-    if (CURTAIN_LEFT[0]  && !strcmp(ent, CURTAIN_LEFT))  { apply_curtain_bat(ns, 0); return; }
-    if (CURTAIN_RIGHT[0] && !strcmp(ent, CURTAIN_RIGHT)) { apply_curtain_bat(ns, 1); return; }
-    if (settings.blinds_entity[0] && !strcmp(ent, settings.blinds_entity)) { apply_blinds(ns); return; }
-    if (settings.blinds_bat_a[0]  && !strcmp(ent, settings.blinds_bat_a))  { apply_blinds_bat(ns, 0); return; }
-    if (settings.blinds_bat_b[0]  && !strcmp(ent, settings.blinds_bat_b))  { apply_blinds_bat(ns, 1); return; }
-    if (settings.life360_a_entity[0] && !strcmp(ent, settings.life360_a_entity)) {
-        apply_life360(ns, ha_state.loc_a, sizeof ha_state.loc_a, &ha_state.lat_a, &ha_state.lon_a, 0); return; }
-    if (settings.life360_b_entity[0] && !strcmp(ent, settings.life360_b_entity)) {
-        apply_life360(ns, ha_state.loc_b, sizeof ha_state.loc_b, &ha_state.lat_b, &ha_state.lon_b, 1); return; }
-    if (settings.doorbell_entity[0] && !strcmp(ent, settings.doorbell_entity)) { apply_doorbell(ns); return; }
+    /* Legacy fixed slots (curtain/blinds state+battery, life360, doorbell).
+     * else-if: these are mutually exclusive by entity. No early return — the
+     * device loops below still run so a curtain that's also a pinned cover
+     * device updates both its tile and its Devices-screen row. */
+    if      (CURTAIN_GROUP[0] && !strcmp(ent, CURTAIN_GROUP)) apply_curtain(ns);
+    else if (CURTAIN_LEFT[0]  && !strcmp(ent, CURTAIN_LEFT))  apply_curtain_bat(ns, 0);
+    else if (CURTAIN_RIGHT[0] && !strcmp(ent, CURTAIN_RIGHT)) apply_curtain_bat(ns, 1);
+    else if (settings.blinds_entity[0] && !strcmp(ent, settings.blinds_entity)) apply_blinds(ns);
+    else if (settings.blinds_bat_a[0]  && !strcmp(ent, settings.blinds_bat_a))  apply_blinds_bat(ns, 0);
+    else if (settings.blinds_bat_b[0]  && !strcmp(ent, settings.blinds_bat_b))  apply_blinds_bat(ns, 1);
+    else if (settings.life360_a_entity[0] && !strcmp(ent, settings.life360_a_entity))
+        apply_life360(ns, ha_state.loc_a, sizeof ha_state.loc_a, &ha_state.lat_a, &ha_state.lon_a, 0);
+    else if (settings.life360_b_entity[0] && !strcmp(ent, settings.life360_b_entity))
+        apply_life360(ns, ha_state.loc_b, sizeof ha_state.loc_b, &ha_state.lat_b, &ha_state.lon_b, 1);
+    else if (settings.doorbell_entity[0] && !strcmp(ent, settings.doorbell_entity))
+        apply_doorbell(ns);
+    /* Unified device list (light/cover/switch). */
+    for (int i = 0; i < ha_device_count; i++)
+        if (!strcmp(ent, ha_devices[i].entity_id)) { apply_device(&ha_devices[i], ns); break; }
+    /* Legacy ha_lights array (old Lights screen — kept until migrated). */
     for (int i = 0; i < ha_light_count; i++)
-        if (!strcmp(ent, ha_lights[i].entity_id)) { apply_light(&ha_lights[i], ns); return; }
+        if (!strcmp(ent, ha_lights[i].entity_id)) { apply_light(&ha_lights[i], ns); break; }
 }
 
 /* Doorbell live footage runs on its own thread so it never blocks the event
@@ -1026,6 +1191,7 @@ int ha_start(void) {
     }
     load_token();
     ha_lights_load();
+    ha_devices_load();
     if (!g_token[0]) {
         fprintf(stderr, "[ha] no token at " HA_TOKEN_PATH " — HA tile will stay disconnected\n");
     }
