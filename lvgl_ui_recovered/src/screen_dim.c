@@ -250,21 +250,28 @@ static void refresh_cb(lv_timer_t * t) {
            stays stable. AQ label is appended only when we actually have
            air-quality data to classify. */
         char buf[200];
+        char bar[24]  = "CV --";
+        if (toon_state.water_pressure > 0.1f)
+            snprintf(bar,  sizeof bar,  "CV %.1f bar", toon_state.water_pressure);
+#ifndef TOON1
+        /* TVOC / eCO2 ppm / air-quality badge come from the eCO2/TVOC air
+           sensor that only Toon 2 has -- on Toon 1 the row collapses to just
+           the CH water-pressure reading. */
         char tvoc[24] = "TVOC --";
         char co2[24]  = "CO2 --";
-        char bar[24]  = "CV --";
         if (toon_state.tvoc)
             snprintf(tvoc, sizeof tvoc, "TVOC %d ppb", toon_state.tvoc);
         if (toon_state.eco2)
             snprintf(co2,  sizeof co2,  "CO2 %d ppm", toon_state.eco2);
-        if (toon_state.water_pressure > 0.1f)
-            snprintf(bar,  sizeof bar,  "CV %.1f bar", toon_state.water_pressure);
         const char * aql = air_quality_label(toon_state.eco2, toon_state.tvoc);
         if (*aql)
             snprintf(buf, sizeof buf, "%s    %s    %s    Air: %s",
                      tvoc, co2, bar, aql);
         else
             snprintf(buf, sizeof buf, "%s    %s    %s", tvoc, co2, bar);
+#else
+        snprintf(buf, sizeof buf, "%s", bar);
+#endif
         lv_label_set_text(lbl_metrics, buf);
     }
 

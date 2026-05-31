@@ -183,7 +183,7 @@ $(BUILDDIR)/quickjs/%.o: quickjs/%.c
 	$(CC) $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -w -DCONFIG_VERSION='"2024-01-13"' -D_GNU_SOURCE -Iquickjs -c $< -o $@
 $(BUILDDIR)/wastefetch: wastefetch.c $(QJS_OBJ)
 	@mkdir -p $(dir $@)
-	$(CC) $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Iquickjs -o $@ wastefetch.c $(QJS_OBJ) -lm -lpthread
+	$(CC) $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Iquickjs -o $@ wastefetch.c $(QJS_OBJ) -lm -lpthread -latomic
 	@$(WF_POST)
 
 # Pull in header-dep files (.d) emitted by -MMD so changes to .h trigger rebuild.
