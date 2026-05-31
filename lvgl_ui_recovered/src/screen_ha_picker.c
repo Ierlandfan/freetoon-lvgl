@@ -17,23 +17,35 @@ static lv_obj_t * lbl_title;
 static lv_obj_t * lst_results;
 static lv_obj_t * spinner;
 
-/* Set by screen_ha_picker_open() before the screen is created. */
+/* Set by screen_ha_picker_open*() before the screen is created.
+ * g_add_type >= 0 => "add device" mode: the picked entity is appended to the
+ * device list as that HADEV_* type. Otherwise the picked entity_id is written
+ * into g_target_ta. */
 static char          g_domain[32];
 static lv_obj_t    * g_target_ta;
+static int           g_add_type = -1;
+
+/* Heap-stashed on each result button so on_pick can read back both fields. */
+struct pick_item { char entity[64]; char fname[64]; };
 
 static void on_back(lv_event_t * e) {
     (void)e;
     g_target_ta = NULL;
+    g_add_type  = -1;
     ui_pop();
 }
 
 static void on_pick(lv_event_t * e) {
     lv_obj_t   * btn = lv_event_get_target(e);
-    const char * entity_id = (const char *)lv_obj_get_user_data(btn);
-    if (entity_id && entity_id[0] && g_target_ta) {
-        lv_textarea_set_text(g_target_ta, entity_id);
+    struct pick_item * it = (struct pick_item *)lv_obj_get_user_data(btn);
+    if (it && it->entity[0]) {
+        if (g_add_type >= 0)
+            ha_device_add(g_add_type, it->entity, it->fname, 0);
+        else if (g_target_ta)
+            lv_textarea_set_text(g_target_ta, it->entity);
     }
     g_target_ta = NULL;
+    g_add_type  = -1;
     ui_pop();
 }
 
@@ -63,9 +75,13 @@ static void load_entities(void) {
 
         lv_obj_t * btn = lv_list_add_btn(lst_results, NULL, label);
 
-        /* Stash the entity_id so on_pick can read it back. */
-        char * id_copy = strdup(ents[i].entity_id);
-        lv_obj_set_user_data(btn, id_copy);
+        /* Stash entity_id + friendly_name so on_pick can read them back. */
+        struct pick_item * it = malloc(sizeof *it);
+        if (it) {
+            snprintf(it->entity, sizeof it->entity, "%s", ents[i].entity_id);
+            snprintf(it->fname,  sizeof it->fname,  "%s", ents[i].friendly_name);
+        }
+        lv_obj_set_user_data(btn, it);
 
         lv_obj_add_event_cb(btn, on_pick, LV_EVENT_CLICKED, NULL);
 
@@ -136,5 +152,17 @@ lv_obj_t * screen_ha_picker_create(void) {
 void screen_ha_picker_open(const char * domain, lv_obj_t * target_ta) {
     snprintf(g_domain, sizeof(g_domain), "%s", domain ? domain : "");
     g_target_ta = target_ta;
+    g_add_type  = -1;
+    ui_push(screen_ha_picker_create());
+}
+
+/* "Add device" mode — the picked entity is appended to the device list as
+ * `dev_type` (HADEV_*) instead of being written into a textarea. The caller
+ * (the device-manager screen) rebuilds its list on SCREEN_LOADED when this
+ * screen pops, so the new device appears immediately. */
+void screen_ha_picker_open_add(const char * domain, int dev_type) {
+    snprintf(g_domain, sizeof(g_domain), "%s", domain ? domain : "");
+    g_target_ta = NULL;
+    g_add_type  = dev_type;
     ui_push(screen_ha_picker_create());
 }

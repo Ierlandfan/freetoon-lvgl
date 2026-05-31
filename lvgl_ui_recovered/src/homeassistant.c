@@ -441,6 +441,26 @@ void ha_device_run_async(int type, const char * entity_id) {
     ha_service_async(type == HADEV_SCENE ? "scene" : "script", "turn_on", entity_id);
 }
 
+/* ---- list editing (settings device manager) ---- */
+int ha_device_add(int type, const char * entity_id, const char * name, int pin) {
+    int before = ha_device_count;
+    devices_add(type, entity_id, name, pin);
+    if (ha_device_count == before) return -1;   /* rejected: full / unsafe id */
+    ha_devices_save();
+    return ha_device_count - 1;
+}
+void ha_device_remove(int idx) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    for (int i = idx; i < ha_device_count - 1; i++) ha_devices[i] = ha_devices[i + 1];
+    ha_device_count--;
+    ha_devices_save();
+}
+void ha_device_set_pin(int idx, int pin) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_devices[idx].pin_home = pin ? 1 : 0;
+    ha_devices_save();
+}
+
 /* Strip leading/trailing whitespace in place. Returns the input pointer
  * (possibly advanced) so callers can chain. */
 static char * trim(char * s) {

@@ -1914,6 +1914,14 @@ static void on_ha_entities_save(lv_event_t * e) {
     modal_close(NULL);
 }
 
+/* Push the dynamic device manager (add/remove/pin lights, covers, switches,
+ * scripts, scenes). The HA-entities modal stays open underneath, so the user
+ * returns to it when they pop back. */
+static void on_manage_devices(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_ha_devices_create());
+}
+
 static void open_ha_entities_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("HA entities", 720);
@@ -1934,29 +1942,34 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_textarea_set_text(ta_ha_host, settings.ha_host);
     y += 56;
 
-    /* ── Curtains ── */
+    /* ── Devices ── (dynamic list: lights, covers, switches, scripts, scenes) */
     lv_obj_t * lsec = lv_label_create(p);
     lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
-    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Curtains \xE2\x94\x80\xE2\x94\x80");
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Devices \xE2\x94\x80\xE2\x94\x80");
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
-    y = ha_field_row(p, y, "Cover entity:", settings.curtain_entity, "cover.woonkamer_gordijnen", tw, &ta_curtain_entity, "cover");
-    y = ha_field_row(p, y, "Battery sensor A:", settings.curtain_bat_a, "sensor.gordijn_links_battery", tw, &ta_curtain_bat_a, "sensor");
-    y = ha_field_row(p, y, "Battery sensor B:", settings.curtain_bat_b, "sensor.gordijn_rechts_battery", tw, &ta_curtain_bat_b, "sensor");
-    y += 8;
-
-    /* ── Blinds ── */
-    lsec = lv_label_create(p);
-    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
-    lv_obj_set_style_text_font(lsec, SF(22), 0);
-    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Blinds \xE2\x94\x80\xE2\x94\x80");
-    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
-    y += 36;
-    y = ha_field_row(p, y, "Cover entity:", settings.blinds_entity, "cover.jaloezieen_woonkamer", tw, &ta_blinds_entity, "cover");
-    y = ha_field_row(p, y, "Battery sensor A:", settings.blinds_bat_a, "sensor.jaloezie_links_battery", tw, &ta_blinds_bat_a, "sensor");
-    y = ha_field_row(p, y, "Battery sensor B:", settings.blinds_bat_b, "sensor.jaloezie_rechts_battery", tw, &ta_blinds_bat_b, "sensor");
-    y += 8;
+    {
+        lv_obj_t * hint = lv_label_create(p);
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(hint, SF(18), 0);
+        lv_label_set_text(hint, "Lights, covers, switches, scripts and scenes —\n"
+                                "shown behind the home Devices button.");
+        lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+        y += 52;
+        lv_obj_t * bm = lv_btn_create(p);
+        lv_obj_set_size(bm, SX(300), SY(48));
+        lv_obj_align(bm, LV_ALIGN_TOP_LEFT, SX(4), y);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(0x2e5e8a), 0);
+        lv_obj_set_style_radius(bm, 8, 0);
+        lv_obj_add_event_cb(bm, on_manage_devices, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * bml = lv_label_create(bm);
+        lv_obj_set_style_text_color(bml, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(bml, SF(20), 0);
+        lv_label_set_text(bml, "Manage devices...");
+        lv_obj_center(bml);
+        y += 60;
+    }
 
     /* ── Doorbell ── */
     lsec = lv_label_create(p);

@@ -110,6 +110,13 @@ void ha_device_toggle_async(int type, const char * entity_id);      /* light/swi
 void ha_device_cover_async(const char * entity_id, const char * cmd); /* "open"/"stop"/"close" */
 void ha_device_run_async(int type, const char * entity_id);          /* script/scene */
 
+/* List editing for the settings device manager (each persists ha_devices.conf).
+ * ha_device_add returns the new index, or -1 if rejected (list full / unsafe
+ * entity id). */
+int  ha_device_add(int type, const char * entity_id, const char * name, int pin);
+void ha_device_remove(int idx);
+void ha_device_set_pin(int idx, int pin);
+
 /* Start the poller (background thread, ~10s loop). Returns 0 on success. */
 int ha_start(void);
 
