@@ -2915,7 +2915,11 @@ lv_obj_t * screen_home_create(void) {
     /* Bottom strip: humidity | eCO2 | TVOC | water-pressure on one row.
        Font 18 keeps the 4 values from running into each other on a
        520-wide tile. y offset 0 pins them flush with the tile bottom
-       so the mode-toggle and preset rows above have more breathing room. */
+       so the mode-toggle and preset rows above have more breathing room.
+       humidity/eCO2/TVOC come from the eCO2/TVOC air sensor that only
+       Toon 2 has -- omit them on Toon 1 (the update sites null-check, so
+       leaving these NULL just hides them; water-pressure stays). */
+#ifndef TOON1
     lbl_t_humidity = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_humidity, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_t_humidity, SF(18), 0);
@@ -2933,6 +2937,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(lbl_t_tvoc, SF(18), 0);
     lv_label_set_text(lbl_t_tvoc, "TVOC --");
     lv_obj_align(lbl_t_tvoc, LV_ALIGN_BOTTOM_LEFT, 280, 8);
+#endif
 
     lbl_t_pressure = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_pressure, lv_color_hex(COL_TEXT_DIM), 0);
