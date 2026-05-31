@@ -1910,8 +1910,11 @@ static void on_ha_entities_save(lv_event_t * e) {
         settings.doorbell_seconds = iv;
     }
     #undef SAVE_TA
-    settings_save();
-    modal_close(NULL);
+    /* Don't call modal_close(NULL) here — it sets cur_modal=NULL before the
+     * click event naturally bubbles up to cur_modal's own modal_close handler,
+     * which then sees NULL and does nothing, leaving the modal stuck open.
+     * Instead just save; the bubbling event reaches cur_modal and closes it
+     * (which also calls settings_save again, but that's harmless). */
 }
 
 /* Push the dynamic device manager (add/remove/pin lights, covers, switches,
