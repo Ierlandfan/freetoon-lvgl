@@ -39,7 +39,7 @@ void video_init(void)     {}
 void video_shutdown(void) {}
 void video_open(void)     {}
 void video_close(void)    {}
-void video_install_button(lv_obj_t * parent) { (void)parent; }
+void video_install_button(lv_obj_t * parent, lv_obj_t * anchor) { (void)parent; (void)anchor; }
 #else
 
 #include "display.h"
@@ -273,36 +273,28 @@ static void on_tile_tap(lv_event_t * e) { (void)e; video_open(); }
  * Water style) and slotted in below them, but in the bottom-LEFT where
  * the v1 button used to sit (clear of the thermostat panel and the
  * weather row). Adjusts to the panel via SX/SY. */
-void video_install_button(lv_obj_t * parent)
+void video_install_button(lv_obj_t * parent, lv_obj_t * anchor)
 {
+    /* Only present when video is enabled. */
     if (!settings.video_enabled) return;
 
-    lv_obj_t * tile = lv_btn_create(parent);
-    lv_obj_set_size(tile, SX(120), SY(100));
-    lv_obj_align(tile, LV_ALIGN_TOP_LEFT, SX(390), SY(20));
-    lv_obj_set_style_bg_color(tile, lv_color_hex(0x2a3b55), 0);
-    lv_obj_set_style_radius(tile, SUNI(16), 0);
-    lv_obj_set_style_border_width(tile, 0, 0);
-    lv_obj_set_style_pad_all(tile, SUNI(10), 0);
-    lv_obj_add_event_cb(tile, on_tile_tap, LV_EVENT_CLICKED, NULL);
+    /* Icon-only camera button, styled like the +/- setpoint buttons and
+       stacked directly above the "+" (anchor). No title/subtitle text. */
+    lv_obj_t * btn = lv_btn_create(parent);
+    lv_obj_set_size(btn, 84, 56);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x335577), 0);   /* COL_TILE_ACCENT */
+    lv_obj_set_style_radius(btn, 12, 0);
+    lv_obj_set_style_border_width(btn, 0, 0);
+    lv_obj_set_style_pad_all(btn, 0, 0);
+    lv_obj_set_ext_click_area(btn, 12);
+    lv_obj_add_event_cb(btn, on_tile_tap, LV_EVENT_CLICKED, NULL);
+    /* OUT_TOP_MID + a small gap so it sits just above the "+" button. */
+    if (anchor) lv_obj_align_to(btn, anchor, LV_ALIGN_OUT_TOP_MID, 0, -8);
 
-    lv_obj_t * t_title = lv_label_create(tile);
-    lv_label_set_text(t_title, "Camera");
-    lv_obj_set_style_text_color(t_title, lv_color_hex(0xcdd9e6), 0);
-    lv_obj_set_style_text_font(t_title, &lv_font_montserrat_18, 0);
-    lv_obj_align(t_title, LV_ALIGN_TOP_LEFT, 0, 0);
-
-    lv_obj_t * t_main = lv_label_create(tile);
-    lv_label_set_text(t_main, LV_SYMBOL_VIDEO);
-    lv_obj_set_style_text_color(t_main, lv_color_hex(0xffffff), 0);
-    /* lv_conf.h only ships 12/14/18/20/22/28/48 (others are =0). */
-    lv_obj_set_style_text_font(t_main, &lv_font_montserrat_48, 0);
-    lv_obj_center(t_main);
-
-    lv_obj_t * t_sub = lv_label_create(tile);
-    lv_label_set_text(t_sub, "Tap to view");
-    lv_obj_set_style_text_color(t_sub, lv_color_hex(0x8aa1bd), 0);
-    lv_obj_set_style_text_font(t_sub, &lv_font_montserrat_14, 0);
-    lv_obj_align(t_sub, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_t * glyph = lv_label_create(btn);
+    lv_label_set_text(glyph, LV_SYMBOL_VIDEO);
+    lv_obj_set_style_text_color(glyph, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(glyph, &lv_font_montserrat_28, 0);
+    lv_obj_center(glyph);
 }
 #endif  /*TOON1*/

@@ -17,10 +17,10 @@
 
 #include "lvgl/lvgl.h"
 
-/* Add a "Camera" button at LV_ALIGN_BOTTOM_LEFT on the given parent.
- * Tap opens the video; the close placeholder is created on top of the
- * stream on first open. */
-void video_install_button(lv_obj_t * parent);
+/* Add an icon-only camera button to `parent`, stacked directly above
+ * `anchor` (the home-screen "+" setpoint button). Created only when video
+ * is enabled (no-op otherwise). Tap opens the video overlay. */
+void video_install_button(lv_obj_t * parent, lv_obj_t * anchor);
 
 /* Lifecycle.
  *   video_init()     -- called once during toonui startup, spawns the

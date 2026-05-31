@@ -7,6 +7,7 @@
  */
 #include "screens.h"
 #include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
+#include "video.h"
 #include "inbox.h"
 #include "boxtalk.h"
 #ifdef WASM_BUILD
@@ -2826,6 +2827,10 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(btn_up_lbl, SF(48), 0);
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_up_lbl);
+
+    /* Camera button — icon-only, stacked above the "+". Self-gated: only
+     * appears when video is enabled (no-op on Toon 2 / when disabled). */
+    video_install_button(th, btn_up);
 
     /* Mode toggle row — Manual | Program, both tappable. Active mode gets
      * a white outline. Buttons are compact (110 + 140) — the active preset
