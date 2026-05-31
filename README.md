@@ -272,6 +272,26 @@ Use this if you want to modify the UI or the bridges.
 Edit `lvgl_ui_recovered/src/settings.c` defaults or `/mnt/data/toonui.cfg`
 on-device to point at your own IPs.
 
+### Run `freetoon-lvgl` with SDL2 simulator in macOS and Linux
+**Prerequisites**
+
+macOS: `brew install sdl2`
+
+Linux: `sudo apt install libsdl2-dev`
+
+**Build**
+```bash
+cd lvgl_ui_recovered/src
+make TARGET=sim clean
+make TARGET=sim all
+```
+
+**Run**
+```bash
+cd lvgl_ui_recovered/build-sim
+./toonui-sim
+```
+
 ## Status
 
 The thermostat path is **the** path on this install — `happ_thermstat` →

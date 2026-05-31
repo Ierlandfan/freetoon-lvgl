@@ -14,6 +14,7 @@
 # swap in sim.c (offscreen framebuffer → PPM) and drop the hardware drivers.
 ENTRY      := main.c
 LVDRV_SRC  := lv_drivers/display/fbdev.c lv_drivers/indev/evdev.c
+LDFLAGS    := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm
 EXTRA      :=
 # (EXTRA is set per-target in the branches below; it needs BUILDDIR.)
 
@@ -86,7 +87,20 @@ CFLAGS  := $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -
            -DBUILD_VERSION=\"$(BUILD_VERSION)\" \
            -I. -Ilvgl -Ilv_drivers -pthread \
            -MMD -MP
-LDFLAGS := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm -lrt
+
+ifeq ($(filter sim sim1,$(TARGET)),)
+  LVDRV_SRC := lv_drivers/display/fbdev.c lv_drivers/indev/evdev.c
+  LDFLAGS += -lrt
+else
+  LVDRV_SRC := $(wildcard lv_drivers/sdl/*.c)
+
+  CFLAGS += -DLV_DRV_NO_CONF=1 -include SDL.h
+  CFLAGS += -DUSE_SDL=1 -DSDL_ZOOM=1 -DSDL_HOR_RES=1024 -DSDL_VER_RES=600
+  CFLAGS += -DSDL_INCLUDE_PATH='"SDL.h"'
+  CFLAGS += $(shell sdl2-config --cflags)
+
+  LDFLAGS += $(shell sdl2-config --libs)
+endif
 
 # Sources
 LVGL_SRC      := $(shell find lvgl/src -name '*.c')
