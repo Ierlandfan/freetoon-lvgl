@@ -49,6 +49,16 @@ exec_qtgui() {
 # inode, so a rename would orphan the fd and never free the space. Runs as a
 # detached child that survives the `exec` below.
 LOG_MAX=2097152          # 2 MB per file
+LOGROT_PIDFILE=/var/volatile/tmp/ui_logrot.pid
+
+# Kill any stale log-rotator from a previous launcher run, otherwise after
+# a UI restart (toonui _exit → init respawns ui_launcher.sh) the old
+# backgrounded subshell outlives the exec and a second one accumulates.
+if [ -f "$LOGROT_PIDFILE" ]; then
+    read old_pid < "$LOGROT_PIDFILE" 2>/dev/null || true
+    [ -n "${old_pid:-}" ] && kill "$old_pid" 2>/dev/null || true
+fi
+
 TOONLOG=/var/volatile/tmp/toonui.log
 VNCLOG=/var/volatile/tmp/x11vnc.log
 (
@@ -65,6 +75,7 @@ VNCLOG=/var/volatile/tmp/x11vnc.log
         sleep 120
     done
 ) >/dev/null 2>&1 &
+    echo $! > "$LOGROT_PIDFILE"
 
 # Expose the PWA (pwa_server :10081) and VNC (x11vnc :5900) on the LAN. The
 # stock Toon firewall's HCB-INPUT chain drops all inbound TCP except 22/80, so
