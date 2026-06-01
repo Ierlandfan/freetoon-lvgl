@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
@@ -160,7 +161,6 @@ void fbdev_init(void)
     // This is important for applications that only draw to a subsection of the full framebuffer.
 
     LV_LOG_INFO("The framebuffer device was mapped to memory successfully");
-
 }
 
 void fbdev_exit(void)
@@ -254,11 +254,22 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
     else if(vinfo.bits_per_pixel == 16) {
         uint16_t * fbp16 = (uint16_t *)fbp;
         int32_t y;
-        for(y = act_y1; y <= act_y2; y++) {
-            location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length / 2;
-            fbflush_row((uint8_t *)&fbp16[location], (const uint8_t *)color_p,
-                        act_x1, act_x2 - act_x1 + 1, y, 2);
-            color_p += w;
+        /* Fast path: a full-width area with no padding (line stride == width)
+         * and no cutout overlapping these rows is one contiguous block in both
+         * src and dst — copy it in a single memcpy instead of one per row.
+         * This is the common scroll / full-refresh case. */
+        if(act_x1 == 0 && act_x2 == (int32_t)vinfo.xres - 1 && vinfo.xoffset == 0 &&
+           finfo.line_length == vinfo.xres * 2u &&
+           (!g_fbcut.active || act_y2 < g_fbcut.y1 || act_y1 > g_fbcut.y2)) {
+            location = (act_y1 + vinfo.yoffset) * (finfo.line_length / 2);
+            memcpy(&fbp16[location], color_p, (size_t)w * (act_y2 - act_y1 + 1) * 2);
+        } else {
+            for(y = act_y1; y <= act_y2; y++) {
+                location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length / 2;
+                fbflush_row((uint8_t *)&fbp16[location], (const uint8_t *)color_p,
+                            act_x1, act_x2 - act_x1 + 1, y, 2);
+                color_p += w;
+            }
         }
     }
     /*8 bit per pixel*/
