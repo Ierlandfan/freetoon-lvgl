@@ -287,7 +287,7 @@ static void ta_kb_event(lv_event_t * e) {
             lv_obj_set_size(g_kb, LV_HOR_RES, SY(240));
             lv_obj_align(g_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
             lv_obj_add_event_cb(g_kb, kb_event, LV_EVENT_ALL, NULL);
-            lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, kb_num_map, kb_num_ctrl);
+            lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, (const char **)kb_num_map, kb_num_ctrl);
         }
         lv_keyboard_set_textarea(g_kb, ta);
         lv_keyboard_set_mode(g_kb, lv_obj_get_user_data(ta) == KB_NUMERIC
@@ -2244,7 +2244,7 @@ static lv_obj_t * lbl_apply_warning;
 /* Latest async-test results (set by background thread, read by ui timer). */
 static char       g_test_result_buf[200]  = "";
 static char       g_check_result_buf[200] = "";
-static char       g_ket_result_buf[256]   = "";
+static char       g_ket_result_buf[512]   = "";  /* fits the longest FAIL msg + detail */
 static volatile int g_test_pending  = 0;
 static volatile int g_check_pending = 0;
 static volatile int g_ket_pending   = 0;
@@ -3166,7 +3166,7 @@ static void rebuild_topic_checkboxes(void) {
     /* Snapshot to a local array so we hold the mutex briefly. */
     char snap[16][96];
     for (int i = 0; i < n; i++)
-        snprintf(snap[i], sizeof(snap[0]), "%s", g_disc_topics[i]);
+        snprintf(snap[i], sizeof(snap[0]), "%.*s", (int)sizeof(snap[0]) - 1, g_disc_topics[i]);
     pthread_mutex_unlock(&g_disc_mtx);
 
     int y = 0;

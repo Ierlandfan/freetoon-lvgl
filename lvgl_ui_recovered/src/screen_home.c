@@ -526,7 +526,7 @@ static void upd_prog_tick(lv_timer_t * t) {
         if (sscanf(line, "@@STEP %d/", &n) == 1) { if (n > cur) cur = n; }
         else if (strncmp(line, "@@FAIL ", 7) == 0) {
             failed = cur > 0 ? cur : 1;
-            snprintf(failmsg, sizeof failmsg, "%s", line + 7);
+            snprintf(failmsg, sizeof failmsg, "%.*s", (int)sizeof(failmsg) - 1, line + 7);
             size_t L = strlen(failmsg);
             while (L && (failmsg[L-1] == '\n' || failmsg[L-1] == '\r')) failmsg[--L] = 0;
         }
@@ -2512,7 +2512,8 @@ static void * map_fetch_thread(void * arg) {
         for (int col = 0; col < 2; col++) {
             int tx = left + col, ty = top + row;
             tx = ((tx % n) + n) % n;
-            if (ty < 0) ty = 0; if (ty >= n) ty = n - 1;
+            if (ty < 0) ty = 0;
+            if (ty >= n) ty = n - 1;
             char cmd[400];
             snprintf(cmd, sizeof cmd,
                 "curl -fsSL -m 12 -A 'freetoon-map/1.0' -o /tmp/map_%d.png "
