@@ -41,7 +41,8 @@
 static lv_obj_t * scr_root = NULL;
 
 /* ---- modal state ---- */
-static lv_obj_t *   cur_modal     = NULL;   /* backdrop of the open category modal */
+static lv_obj_t *   cur_modal     = NULL;   /* backdrop of the topmost open modal */
+static lv_obj_t *   parent_modal  = NULL;   /* backdrop underneath cur_modal when nested */
 static lv_obj_t *   confirm_box   = NULL;   /* boiler-type confirm dialog (child of cur_modal) */
 static lv_timer_t * modal_timer   = NULL;   /* live refresh for Heating/About modals */
 static void       (*modal_tick_fn)(void) = NULL;
@@ -325,9 +326,12 @@ static void modal_close(lv_event_t * e) {
     modal_tick_fn = NULL;
     if (cur_modal) {
         lv_obj_t * m = cur_modal;
-        cur_modal = NULL;
+        cur_modal = parent_modal;     /* restore the modal underneath, if any */
+        parent_modal = NULL;
         lv_obj_del_async(m);          /* async: we're inside a descendant's event */
     }
+    if (e) lv_event_stop_bubbling(e); /* prevent the click from bubbling to the
+                                         backdrop and firing modal_close twice */
     settings_save();                  /* persist whatever the modal changed */
 }
 
@@ -336,6 +340,7 @@ static void modal_close(lv_event_t * e) {
 static lv_obj_t * modal_open(const char * title, int panel_h) {
     /* Parent on the currently-active screen, not the settings screen's root —
      * the tile-slots picker can be opened from the home screen too. */
+    if (cur_modal) parent_modal = cur_modal;  /* nesting: save the modal underneath */
     cur_modal = lv_obj_create(lv_scr_act());
     lv_obj_remove_style_all(cur_modal);
     lv_obj_set_size(cur_modal, LV_HOR_RES, LV_VER_RES);
@@ -1910,11 +1915,7 @@ static void on_ha_entities_save(lv_event_t * e) {
         settings.doorbell_seconds = iv;
     }
     #undef SAVE_TA
-    /* Don't call modal_close(NULL) here — it sets cur_modal=NULL before the
-     * click event naturally bubbles up to cur_modal's own modal_close handler,
-     * which then sees NULL and does nothing, leaving the modal stuck open.
-     * Instead just save; the bubbling event reaches cur_modal and closes it
-     * (which also calls settings_save again, but that's harmless). */
+    modal_close(e);                       /* persists settings, closes sub-modal, restores parent */
 }
 
 /* Push the dynamic device manager (add/remove/pin lights, covers, switches,
