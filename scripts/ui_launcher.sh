@@ -24,8 +24,22 @@ LOG=/var/volatile/tmp/ui_launcher.log
 # — a layout-editor Save/preset/reset or Settings "Restart UI". Tells the
 # crash-loop guard below this relaunch is deliberate, not a crash.
 RESTART_MARK=/var/volatile/tmp/toonui_restart
+TOONCFG=/mnt/data/toonui.cfg
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+
+# Read a key from toonui.cfg (key=value, one per line). Echoes the trimmed
+# value, or nothing when the file/key is absent. Keeps the launcher in sync
+# with whatever the UI saved without duplicating defaults.
+cfg_get() {
+    [ -r "$TOONCFG" ] || return 0
+    sed -n "s/^$1=//p" "$TOONCFG" 2>/dev/null | tr -d '[:space:]' | head -n 1
+}
+
+# Toon 1 (i.MX27) vs Toon 2 (i.MX6 "nxt"): arch.conf carries "nxt" only on
+# Toon 2 — same probe default_ui() uses. The hardware video pipeline (VPU +
+# fb1 overlay) is Toon-1-only, so its prep is gated on this.
+is_toon1() { ! grep -q nxt /etc/opkg/arch.conf 2>/dev/null; }
 
 # True if the stock UI can be launched (via startqt or qt-gui directly).
 have_qtgui() { [ -x "$STARTQT" ] || [ -x "$QTGUI" ]; }
@@ -36,6 +50,12 @@ have_qtgui() { [ -x "$STARTQT" ] || [ -x "$QTGUI" ]; }
 # /qmf/sbin/qt-gui directly there gives a blank screen / no touch. So prefer
 # startqt when present, else source qt-env.sh (Toon 2 eglfs) and exec qt-gui.
 exec_qtgui() {
+    # qt-gui renders 32bpp, but the Toon 1 video prep forces fb0 to 16bpp for
+    # the LVGL UI/picker. Restore 32bpp before handing off so qt-gui isn't
+    # stuck at the wrong depth. No-op on Toon 2 (prep never ran).
+    if is_toon1 && command -v fbset >/dev/null 2>&1; then
+        fbset -fb /dev/fb0 -depth 32 2>/dev/null || true
+    fi
     if [ -x "$STARTQT" ]; then
         log "exec startqt"
         exec "$STARTQT"
@@ -43,6 +63,50 @@ exec_qtgui() {
     [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
     log "exec qt-gui"
     exec "$QTGUI"
+}
+
+# Toon 1 hardware-video prep, run once before the UI starts. No-op on Toon 2
+# (i.MX6 has no VPU/overlay path) and never touches qt-gui's own setup.
+#   - Force both framebuffers to 16bpp: the LVGL UI draws RGB565, and the
+#     hardware overlay plane (fb1) must match so the decoder's stride lines up.
+#   - Create the i.MX27 VPU char node (no udev). Major comes from
+#     /proc/devices when the driver is loaded; 251 is the historical fallback.
+#   - Open the inbound video UDP port iff one is configured (video_rtp>0 in
+#     toonui.cfg). vpu_stream listens for the RTP/UDP stream there. Skipped
+#     when video isn't set up, so nothing is exposed on a plain install.
+toon1_video_prep() {
+    is_toon1 || return 0
+    if command -v fbset >/dev/null 2>&1; then
+        fbset -fb /dev/fb0 -depth 16 2>/dev/null || true
+        [ -e /dev/fb1 ] && { fbset -fb /dev/fb1 -depth 16 2>/dev/null || true; }
+    fi
+    if [ ! -e /dev/mxc_vpu ]; then
+        vpu_maj=$(awk '$2 == "mxc_vpu" { print $1 }' /proc/devices 2>/dev/null)
+        mknod /dev/mxc_vpu c "${vpu_maj:-251}" 0 2>/dev/null || true
+    fi
+    vp=$(cfg_get video_rtp)
+    if [ -n "${vp:-}" ] && [ "$vp" -gt 0 ] 2>/dev/null && [ -x /usr/sbin/iptables ]; then
+        /usr/sbin/iptables -C INPUT -p udp --dport "$vp" -j ACCEPT 2>/dev/null \
+            || /usr/sbin/iptables -I INPUT 1 -p udp --dport "$vp" -j ACCEPT 2>/dev/null \
+            || true
+        log "Toon 1 video prep: firewall open for UDP $vp"
+    else
+        log "Toon 1 video prep: fb/VPU ready (no video port configured)"
+    fi
+}
+
+# Launch the freetoon UI. When the boot picker is disabled the UI comes up
+# immediately — possibly before happ_thermstat is serving the room temperature,
+# leaving it blank — so add a short settle delay. With the picker enabled its
+# 10 s screen already covers the gap, so skip the extra wait then. (The Toon 1
+# fb/VPU prep already ran earlier, before the picker.)
+launch_toonui() {
+    if [ "$(cfg_get boot_picker_enabled)" = "0" ]; then
+        log "picker disabled — 5s backend settle before toonui"
+        sleep 5
+    fi
+    log "exec toonui"
+    exec "$TOONUI"
 }
 
 # --- log rotation watchdog -------------------------------------------------
@@ -95,6 +159,11 @@ if [ -x /usr/sbin/iptables ]; then
     done
     log "ensured firewall open for PWA 10081 + VNC 5900"
 fi
+
+# Toon 1 framebuffer + VPU + video-port prep — runs before the picker so the
+# picker (and the main UI) draw at the right depth. No-op on Toon 2 / qt-gui.
+# `|| true` so a prep hiccup never aborts the launcher under `set -e`.
+toon1_video_prep || true
 
 # Default UI when no explicit choice exists: freetoon on Toon 2 (i.MX6 "nxt"),
 # but qt-gui on Toon 1 — its 800x480 freetoon layout isn't finished, so the
@@ -184,11 +253,10 @@ case "$rc" in
             exec_qtgui
         fi
         log "qt-gui binary missing — falling back to toonui"
-        exec "$TOONUI"
+        launch_toonui
         ;;
     0)
-        log "exec toonui"
-        exec "$TOONUI"
+        launch_toonui
         ;;
     *)
         # Any unexpected exit (bootpick crashed, segfault, etc.) — pick by
@@ -197,6 +265,6 @@ case "$rc" in
         if [ "$CHOICE" = "qt-gui" ] && have_qtgui; then
             exec_qtgui
         fi
-        exec "$TOONUI"
+        launch_toonui
         ;;
 esac
