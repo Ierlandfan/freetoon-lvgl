@@ -338,10 +338,15 @@ static void modal_close(lv_event_t * e) {
 /* Build a dimmed full-screen backdrop + centred panel. Returns the panel;
    caller positions its content below y≈64 (title + close button live there). */
 static lv_obj_t * modal_open(const char * title, int panel_h) {
-    /* Parent on the currently-active screen, not the settings screen's root —
-     * the tile-slots picker can be opened from the home screen too. */
+    /* Parent on the TOP LAYER, not lv_scr_act(): the Settings grid scrolls, and
+     * a backdrop parented to the scrolled screen sits at content-(0,0) — i.e.
+     * above the viewport once you've scrolled down to a low tile (e.g. Agenda),
+     * so the centered panel's top runs off-screen ("scroll the whole screen up
+     * to see it"). The top layer is a fixed full-screen overlay that's never
+     * scrolled, so the panel always centers on the real screen — and it still
+     * works when a modal is opened from the home screen too. */
     if (cur_modal) parent_modal = cur_modal;  /* nesting: save the modal underneath */
-    cur_modal = lv_obj_create(lv_scr_act());
+    cur_modal = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(cur_modal);
     lv_obj_set_size(cur_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(cur_modal, 0, 0);

@@ -39,7 +39,13 @@ static void evdev_read_with_activity(lv_indev_drv_t * drv, lv_indev_data_t * dat
     if (data->state == LV_INDEV_STATE_PR) ui_mark_activity();
 }
 
-/* DISP_HOR / DISP_VER come from display.h (per-target geometry). */
+/* DISP_HOR / DISP_VER come from display.h (per-target geometry).
+ *
+ * 100-line partial draw buffer. A bigger (third-screen) buffer was tried to cut
+ * the per-scroll-frame render-pass count on the object-dense Settings/list
+ * screens — measured zero difference, confirming scrolling is pixel-bound
+ * (every visible pixel recomputed each frame as the list moves) against the
+ * ARM926 + uncached framebuffer, not pass overhead. Reverted to keep RAM low. */
 #define DRAW_BUF_LINES 100
 
 static lv_color_t buf1[DISP_HOR * DRAW_BUF_LINES];
