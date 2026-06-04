@@ -344,6 +344,16 @@ static void modal_close(lv_event_t * e) {
     settings_save();                  /* persist whatever the modal changed */
 }
 
+/* Tear down the whole open settings-modal stack. These modals live on the top
+ * layer (lv_layer_top), which renders above EVERY screen — so anything that
+ * changes the screen underneath (navigating to a full screen, or the idle
+ * auto-home / auto-dim) must dismiss them, or they stay stuck in front of home
+ * / the dim clock. Public so ui_stack can call it on idle. (modal_close pops
+ * one level and is NULL-event safe.) */
+void settings_close_all_modals(void) {
+    while (cur_modal) modal_close(NULL);
+}
+
 /* Build a dimmed full-screen backdrop + centred panel. Returns the panel;
    caller positions its content below y≈64 (title + close button live there). */
 static lv_obj_t * modal_open(const char * title, int panel_h) {
@@ -2058,11 +2068,15 @@ static void on_ha_entities_save(lv_event_t * e) {
     modal_close(e);                       /* persists settings, closes sub-modal, restores parent */
 }
 
-/* Push the dynamic device manager (add/remove/pin lights, covers, switches,
- * scripts, scenes). The HA-entities modal stays open underneath, so the user
- * returns to it when they pop back. */
+/* Open the dynamic device manager (add/remove/pin lights, covers, switches,
+ * scripts, scenes). It's a full SCREEN, which renders under the top-layer
+ * Settings modals — so dismiss the "HA entities" + "Integrations" modals first,
+ * or the manager opens hidden behind them. Closing them also makes popping back
+ * land cleanly on Settings (no stale modals), and the manager is a destination,
+ * not a sub-dialog you bounce out of. */
 static void on_manage_devices(lv_event_t * e) {
     (void)e;
+    settings_close_all_modals();
     ui_push(screen_ha_devices_create());
 }
 

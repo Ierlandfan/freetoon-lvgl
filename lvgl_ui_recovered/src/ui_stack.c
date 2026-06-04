@@ -120,6 +120,9 @@ void ui_idle_tick(void) {
     if (settings.auto_home_enabled) {
         uint32_t home_threshold = (uint32_t)settings.auto_home_seconds * 1000u;
         if (elapsed_ms >= home_threshold) {
+            /* Settings modals sit on lv_layer_top (above every screen); dismiss
+             * them so returning home is actually visible. No-op if none open. */
+            settings_close_all_modals();
             int on_subscreen = is_dimmed ? (sp > 2) : (sp > 1);
             if (on_subscreen) {
                 fprintf(stderr, "[ui] auto-home after %u ms idle\n", elapsed_ms);
@@ -143,6 +146,9 @@ void ui_idle_tick(void) {
     uint32_t threshold = (uint32_t)settings.auto_dim_seconds * 1000u;
     if (!is_dimmed && elapsed_ms >= threshold) {
         fprintf(stderr, "[ui] dimming after %u ms idle\n", elapsed_ms);
+        /* Dismiss any open settings modal (top layer) so it doesn't stay stuck
+         * in front of the dim clock. */
+        settings_close_all_modals();
         backlight_set(settings.dim_brightness);
         ui_push(screen_dim_create());
         is_dimmed = 1;

@@ -55,6 +55,10 @@ lv_obj_t * screen_domoticz_create(void);
 /* Open the Tile-slots picker modal — used both by the Settings → Tiles
  * tile and the long-press handler on the four right-column home tiles. */
 void screen_settings_open_tile_slots_modal(void);
+/* Dismiss any open settings modals (they live on lv_layer_top, above all
+ * screens). Called on idle auto-home/auto-dim so they don't stay stuck in
+ * front of home / the dim screen. */
+void settings_close_all_modals(void);
 
 /* Called once at boot. Loads home as root. */
 void ui_init(void);
