@@ -1392,9 +1392,8 @@ static void refresh_cb(lv_timer_t * t) {
      * the highlighted button on the preset row below — no need to also
      * carry it inside the mode-toggle label. */
     int preset;
-    if (toon_state.active_state >= 0 &&
-        toon_state.program_state >= 0 && toon_state.program_state <= 3) {
-        preset = toon_state.program_state;
+    if (toon_state.active_state >= 0 && toon_state.active_state <= 3) {
+        preset = toon_state.active_state;   /* activeState IS the live preset */
     } else {
         preset = temp_origin;
     }

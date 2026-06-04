@@ -75,8 +75,8 @@ static void mock_state(void) {
     toon_state.boiler_type   = 0;
     toon_state.burner_on     = 1;
     toon_state.dhw_on        = 0;
-    toon_state.program_state = 1;   /* Home */
-    toon_state.active_state  = -1;  /* manual override */
+    toon_state.program_state = 2;   /* scheme mode = TEMPOVERRIDE */
+    toon_state.active_state  = 1;   /* live comfort preset = Home */
 
     weather_state.connected   = 1;
     weather_state.current_temp = 22.6f;
