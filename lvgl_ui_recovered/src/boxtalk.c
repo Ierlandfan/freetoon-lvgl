@@ -1073,31 +1073,55 @@ int boxtalk_set_state_value(int state, int centi) {
     return rc;
 }
 
-int boxtalk_set_program(int state) {
-    if (state < 0 || state > 3) return -1;
+/* happ_thermstat scheme MODES — the `state=` parameter of changeSchemeState.
+ * Reverse-engineered from Eneco's own stock UI (/qmf/www/mobile/javascript/
+ * mobile.js, setProgramState/changeSchemeState). This is the scheme MODE, NOT
+ * the comfort preset: changeSchemeState takes BOTH `state=<mode>` AND
+ * `temperatureState=<preset 0..3>`. Verified live on a Toon 2: only with both
+ * params does the preset's setpoint actually apply (Comfort 1950 / Home 1850 /
+ * Sleep 1750 / Away 1600). The old code sent only `state=<presetIndex>`, which
+ * jammed the preset into the mode field — so presets 2/3 silently no-op'd and
+ * the setpoint never followed. */
+#define PROG_MANUAL        0   /* manual hold, no schedule */
+#define PROG_BASE          1   /* follow the weekly program */
+#define PROG_TEMPOVERRIDE  2   /* override to a preset until the next switch */
+#define PROG_LOCKEDBASE    8   /* override held indefinitely (2nd tap of preset) */
+
+int boxtalk_set_program(int preset) {
+    if (preset < 0 || preset > 3) return -1;   /* preset = comfort level 0..3 */
 #ifdef WASM_BUILD
-    /* WASM client: POST /api/program via the JS fetch bridge. */
+    /* WASM client: POST the preset to the master, which runs the mode logic. */
     extern void wasm_push_event(const char *, const char *);
     char body[24];
-    snprintf(body, sizeof body, "{\"state\":%d}", state);
+    snprintf(body, sizeof body, "{\"state\":%d}", preset);
     wasm_push_event("/api/program", body);
-    toon_state.program_state = state; toon_state.active_state = state;
+    toon_state.active_state = preset;   /* activeState = the live comfort preset */
     return 0;
 #endif
-    if (settings.client_mode) {      /* slave: hand the program change to the master */
-        int rc = client_link_program(state);
-        if (rc == 0) { toon_state.program_state = state; toon_state.active_state = state; }
+    if (settings.client_mode) {      /* slave: hand the preset to the master */
+        int rc = client_link_program(preset);
+        if (rc == 0) toon_state.active_state = preset;
         return rc;
     }
-    char q[64];
-    snprintf(q, sizeof(q), "action=changeSchemeState&state=%d", state);
+    /* Pick the scheme MODE exactly as the stock UI's setProgramState() does:
+     * a locked override unlocks to a temp override; under manual stay manual;
+     * re-tapping the already-active preset locks it; otherwise temp-override.
+     * program_state holds happ's "programState" (the current PROG_* mode). */
+    int mode;
+    if      (toon_state.program_state == PROG_LOCKEDBASE) mode = PROG_TEMPOVERRIDE;
+    else if (toon_state.program_state == PROG_MANUAL)     mode = PROG_MANUAL;
+    else if (toon_state.active_state  == preset)          mode = PROG_LOCKEDBASE;
+    else                                                  mode = PROG_TEMPOVERRIDE;
+
+    char q[80];
+    snprintf(q, sizeof(q),
+             "action=changeSchemeState&state=%d&temperatureState=%d", mode, preset);
     int rc = http_get_thermstat(q);
-    fprintf(stderr, "[bxt] HTTP changeSchemeState=%d rc=%d\n", state, rc);
-    /* Optimistic: we'll see authoritative state on next poll. */
-    if (rc == 0) {
-        toon_state.program_state = state;
-        toon_state.active_state  = state;
-    }
+    fprintf(stderr, "[bxt] changeSchemeState mode=%d temperatureState=%d rc=%d\n",
+            mode, preset, rc);
+    /* Optimistic: activeState is the comfort preset; the mode (program_state)
+     * refreshes from happ on the next poll. */
+    if (rc == 0) toon_state.active_state = preset;
     return rc;
 }
 

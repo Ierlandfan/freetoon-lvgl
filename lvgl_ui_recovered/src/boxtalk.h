@@ -31,8 +31,11 @@ typedef struct {
     volatile int    burner_on;       /* 0/1 boiler firing for CH */
     volatile int    dhw_on;          /* 0/1 boiler firing for hot water */
     volatile int    msg_count;       /* total notify messages received */
-    volatile int    program_state;   /* 0=Comfort 1=Home 2=Sleep 3=Away, -1=unknown */
-    volatile int    active_state;    /* -1=manual override (no schedule), else == program_state */
+    volatile int    program_state;   /* happ "programState" = scheme MODE, NOT the
+                                        preset: 0=MANUAL 1=BASE(follow schedule)
+                                        2=TEMPOVERRIDE 8=LOCKEDBASE, -1=unknown */
+    volatile int    active_state;    /* happ "activeState" = the LIVE comfort preset:
+                                        0=Comfort 1=Home 2=Sleep 3=Away, -1=manual */
 } toon_state_t;
 
 /* Human-readable label for the effective current mode (handles manual override). */
