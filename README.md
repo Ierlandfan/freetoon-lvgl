@@ -65,12 +65,13 @@ lvgl_ui_recovered/      The LVGL replacement UI
     settings.c          Persistent /mnt/data/toonui.cfg
     gen_icons.py        Bitmap-icon generator (flame, drop, faucet, fan,
                           radiator, weather, waste) — runs at build time
-    pwa/                Built into the binary at /, served by pwa_server
+    pwa_server.c        :10081 — serves ONLY the WASM slave UI (/ui/) + /api/*
 
 quby_bridge/            Userspace bridge for keteladapter (replaces stock BA)
 p1bridge/               Pushes HWE-P1 readings into hcb_rrd
 ha_packages/            HA-side package-tracking automation (deploy.py)
-pwa_static/             PWA shell — index.html / app.js / sw.js
+web/                    WASM slave UI (shell.html + build.sh) — the only
+                        frontend pwa_server serves on :10081, at /ui/
 scripts/                Helpers (ot_mode_switch.sh: proxy/wireless/off)
 install.sh              One-shot deploy from a Linux host to a Toon
 toonshot.sh             Pull /dev/fb0 over SSH → PNG (debug helper)
@@ -103,11 +104,13 @@ water temps, modulation level, CH setpoint from the stooklijn, water
 pressure, eCO₂ / TVOC / humidity. The `Advanced` button opens a full dump
 of every OpenTherm DataId currently tracked by OTGW.
 
-### PWA
-Served at `http://<toon>:10081/` from the device itself. Same controls as the
-LVGL screen plus a packages list with manual entry and the weekly schedule
-editor. Add to Home Screen for a phone-app feel; works offline-first via a
-small service worker.
+### PWA (WASM slave UI)
+Served at `http://<toon>:10081/` from the device itself (bare `/` redirects to
+`/ui/`). This is the **full LVGL UI compiled to WebAssembly** — the exact same
+screens as the device, running in any LAN browser as a same-origin *slave* of
+the master Toon's `/api/state/stream`. It is the only frontend on `:10081`;
+there is no separate simple HTML app or settings page. Optionally gated behind
+the PWA login (`pwa_login_*` in `toonui.cfg`).
 
 ### Boot picker — escape hatch to stock qt-gui
 

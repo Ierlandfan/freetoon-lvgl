@@ -43,12 +43,15 @@ TOONVNC_SH="$(pick TOONVNC_SH       "$HERE/toonvnc.sh"         "$HERE/toonvnc.sh
 OT_MODE_SH="$(pick OT_MODE_SH       "$HERE/ot_mode_switch.sh"  "$HERE/scripts/ot_mode_switch.sh")"
 QUBY_BRIDGE_BIN="$(pick QUBY_BRIDGE_BIN "$HERE/quby_bridge"        "$HERE/quby_bridge/quby_bridge")"
 FBVNC_INPUT="$(pick FBVNC_INPUT     "$HERE/fbvnc_input"        "$HERE/../qt_rebuild/fbvnc_input")"
+# The only frontend on :10081 is the WASM slave UI. PWA_DIR points at the
+# built WASM bundle (index.html/index.js/index.wasm from web/build.sh); it is
+# deployed to /mnt/data/pwa/ui/.
 PWA_DIR="${PWA_DIR:-}"
 if [[ -z "$PWA_DIR" ]]; then
-    for d in "$HERE/pwa" "$HERE/pwa_static"; do
-        [[ -f "$d/index.html" ]] && PWA_DIR="$d" && break
+    for d in "$HERE/pwa/ui" "$HERE/web/build" "$HERE/build"; do
+        [[ -f "$d/index.wasm" ]] && PWA_DIR="$d" && break
     done
-    : "${PWA_DIR:=$HERE/pwa_static}"   # fallback for error message
+    : "${PWA_DIR:=$HERE/web/build}"   # fallback for error message
 fi
 
 SSH="sshpass -p $TOON_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $TOON_USER@$TOON_HOST"
@@ -87,8 +90,8 @@ check_artefacts() {
             missing=1
         fi
     done
-    if [[ ! -f "$PWA_DIR/index.html" ]]; then
-        echo "  missing PWA bundle: $PWA_DIR/index.html" >&2
+    if [[ ! -f "$PWA_DIR/index.wasm" ]]; then
+        echo "  missing WASM bundle: $PWA_DIR/index.wasm (run web/build.sh)" >&2
         missing=1
     fi
     (( missing )) && {
@@ -118,13 +121,13 @@ do_install() {
     push "$OT_MODE_SH"     /mnt/data/ot_mode_switch.sh
     [[ -x "$FBVNC_INPUT" ]] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
 
-    echo "[3/5] Pushing PWA static files..."
-    remote "mkdir -p /mnt/data/pwa"
-    for f in index.html app.js sw.js manifest.json icon-192.png; do
+    echo "[3/5] Pushing WASM slave UI bundle..."
+    remote "mkdir -p /mnt/data/pwa/ui"
+    for f in index.html index.js index.wasm; do
         [[ -f "$PWA_DIR/$f" ]] || continue
-        echo "  → /mnt/data/pwa/$f"
-        $SCP "$PWA_DIR/$f" "$TOON_USER@$TOON_HOST:/mnt/data/pwa/${f}.new"
-        remote "mv -f /mnt/data/pwa/${f}.new /mnt/data/pwa/${f}"
+        echo "  → /mnt/data/pwa/ui/$f"
+        $SCP "$PWA_DIR/$f" "$TOON_USER@$TOON_HOST:/mnt/data/pwa/ui/${f}.new"
+        remote "mv -f /mnt/data/pwa/ui/${f}.new /mnt/data/pwa/ui/${f}"
     done
 
     echo "[4/5] Seeding default config..."

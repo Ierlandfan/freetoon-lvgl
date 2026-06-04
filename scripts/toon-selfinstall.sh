@@ -134,24 +134,16 @@ if [ ! -x /usr/bin/x11vnc ] && ! which x11vnc >/dev/null 2>&1 \
     fi
 fi
 
-# 2d) PWA static assets — the phone web UI + settings page that pwa_server
-# serves on :10081. The API/settings endpoints work without these, but the
-# installable app at "/" 404s until index.html/app.js/etc. exist under
-# /mnt/data/pwa. Shipped as a tarball; always refresh so app updates land.
-if dl pwa.tgz "$TMP/pwa.tgz" \
-   && [ "$(wc -c < "$TMP/pwa.tgz" 2>/dev/null || echo 0)" -gt 1000 ]; then
-    mkdir -p "$DEST/pwa"
-    if tar xzf "$TMP/pwa.tgz" -C "$DEST/pwa" 2>/dev/null; then
-        say "installed PWA assets -> $DEST/pwa"
-    fi
-fi
+# 2d) (removed) — there is no separate simple-app / settings HTML page on
+# :10081 anymore. The sole frontend is the WASM slave UI installed under
+# /mnt/data/pwa/ui/ in step 2d2; pwa_server 302-redirects "/" to "/ui/".
 
-# 2d2) freetoon-WASM bundle — the full LVGL UI compiled to WebAssembly. When
-# present in the release, pwa_server serves it at http://<toon>:10081/ui/ as
-# a same-origin slave of the master Toon's /api/state/stream. Any browser on
-# the LAN (phone / tablet / laptop) opens the URL → full UI, no install.
-# Optional asset: a release without these three files leaves /ui/ a 404,
-# which is fine — the rest of the UI is unaffected.
+# 2d2) freetoon-WASM bundle — the full LVGL UI compiled to WebAssembly, and the
+# ONLY frontend pwa_server serves on :10081. Installed at /mnt/data/pwa/ui/ and
+# reached at http://<toon>:10081/ (302→/ui/) as a same-origin slave of the
+# master Toon's /api/state/stream. Any browser on the LAN (phone / tablet /
+# laptop) opens the URL → full UI, no install. If a release ships without these
+# three files, "/" → /ui/ → 404 until they are present.
 mkdir -p "$DEST/pwa/ui"
 for f in index.html index.wasm index.js; do
     if dl "$f" "$TMP/wasm_$f" 2>/dev/null \
