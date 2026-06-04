@@ -28,6 +28,10 @@ read_choice() {
         c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d '[:space:]')
         case "$c" in
             qt-gui|qtgui|stock) echo qt-gui; return ;;
+            # WASM-host mode runs stock qt-gui on the panel and the stock
+            # boiler/meter daemons own the hardware — our bridges must stay
+            # quiet there too, exactly as in plain qt-gui mode.
+            wasm|wasm-host|masterslave) echo qt-gui; return ;;
         esac
     fi
     echo freetoon

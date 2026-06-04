@@ -91,7 +91,7 @@ step 4 "Helpers + assets installeren"
 # re-run of the installer must update them rather than keep a stale copy.
 # integrations-install.sh is what the Marketplace screen runs (system()) to
 # install an integration — without it, "Install" silently does nothing.
-for s in ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
+for s in ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh toon_wasm_host.sh; do
     if dl "$s" "$TMP/$s" && [ -s "$TMP/$s" ]; then
         cp "$TMP/$s" "$DEST/$s" && chmod +x "$DEST/$s"
     fi
@@ -271,6 +271,43 @@ if [ "${FREETOON_USB_HOST:-0}" = "1" ]; then
         rmdir "$BP" 2>/dev/null || true
     else
         say "USB host: $DEV not found — skipping."
+    fi
+fi
+
+# 4d) OPTIONAL: WASM-host ("Master/Slave") mode — opt-in via FT_MODE=wasm.
+# The stock qt-gui runs on the PANEL while freetoon runs HEADLESS (no
+# framebuffer): just the data daemons + pwa_server, so this Toon stays reachable
+# on :10081 as the WASM slave UI for phones/browsers — as a MASTER (serves its
+# own state) or, with MASTER_HOST set, as a SLAVE mirroring another master.
+#   curl -fsSL .../toon-selfinstall.sh | FT_MODE=wasm sh
+#   curl -fsSL .../toon-selfinstall.sh | FT_MODE=wasm MASTER_HOST=192.168.x.y sh
+if [ "${FT_MODE:-}" = wasm ] || [ "${FT_MODE:-}" = wasm-host ]; then
+    # ui_choice is a plain file read by the shell launchers (not toonui), so
+    # this switch is clobber-safe. ui_launcher.sh → qt-gui on the panel;
+    # the tuih row below → headless toonui serving :10081.
+    echo wasm > "$DEST/ui_choice"
+    say "WASM-host mode: panel = stock qt-gui, freetoon headless on :10081"
+    # Headless toonui runs under its OWN respawn row so it survives the
+    # healthcheck daily restart independently of the on-screen qt-gui.
+    TUIH="tuih:345:respawn:$DEST/toon_wasm_host.sh >> /var/volatile/tmp/toon_wasm_host.log 2>&1"
+    if [ -x "$DEST/toon_wasm_host.sh" ] && ! grep -qF "$TUIH" /etc/inittab 2>/dev/null; then
+        grep -v '^tuih:' /etc/inittab > /etc/inittab.new \
+            && echo "$TUIH" >> /etc/inittab.new \
+            && mv -f /etc/inittab.new /etc/inittab
+        say "added headless WASM-host inittab row (tuih)"
+        telinit q 2>/dev/null || kill -HUP 1 2>/dev/null || true
+    fi
+    if [ -n "${MASTER_HOST:-}" ]; then
+        # SLAVE: mirror a remote master over its /api. Persist into toonui.cfg,
+        # preserving any existing keys. (Best-effort; if a live toonui clobbers
+        # it on exit, set Master IP via Settings → Client mode instead.)
+        touch "$DEST/toonui.cfg"
+        { grep -v -e '^client_mode=' -e '^master_host=' "$DEST/toonui.cfg" 2>/dev/null;
+          echo "client_mode=1"; echo "master_host=$MASTER_HOST"; } > "$DEST/toonui.cfg.new" \
+            && mv -f "$DEST/toonui.cfg.new" "$DEST/toonui.cfg"
+        say "configured as SLAVE → master $MASTER_HOST (client_mode=1)"
+    else
+        say "configured as MASTER (serves this Toon's own state; no MASTER_HOST set)"
     fi
 fi
 

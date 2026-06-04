@@ -96,6 +96,10 @@ read_choice() {
         case "$c" in
             qt-gui|qtgui|stock) echo qt-gui;     return ;;
             freetoon|toonui)    echo freetoon;   return ;;
+            # WASM-host mode: the PANEL runs stock qt-gui; freetoon runs
+            # headless (data + pwa_server on :10081) under the separate
+            # tuih / toon_wasm_host.sh row. So on-screen == qt-gui here.
+            wasm|wasm-host|masterslave) echo qt-gui; return ;;
             *)                  default_ui;      return ;;
         esac
     fi

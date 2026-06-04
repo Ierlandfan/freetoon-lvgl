@@ -42,22 +42,11 @@ static void evdev_read_with_activity(lv_indev_drv_t * drv, lv_indev_data_t * dat
 static lv_color_t buf1[DISP_HOR * DRAW_BUF_LINES];
 static lv_color_t buf2[DISP_HOR * DRAW_BUF_LINES];
 
-int main(int argc, char** argv) {
-    setvbuf(stdout, NULL, _IONBF, 0);
-    setvbuf(stderr, NULL, _IONBF, 0);
-
-    /* Boot-picker mode: ui_launcher.sh runs us with --bootpick at boot.
-     * We render only the picker screen and exit with rc 0 (freetoon)
-     * or 99 (qt-gui) so the launcher can dispatch to the chosen binary.
-     * No pollers, no full UI — keeps the picker snappy and avoids
-     * touching the BoxTalk client which would race with the real toonui
-     * we spawn right after. */
-    if (argc > 1 && strcmp(argv[1], "--bootpick") == 0) {
-        return bootpick_run();
-    }
-
-    fprintf(stderr, "[main] starting toonui\n");
-
+/* Framebuffer + LVGL + touch bring-up. Skipped entirely in headless WASM-host
+ * mode so the stock qt-gui can own the panel while we still run the data
+ * daemons + pwa_server. The disp/indev driver structs are static so LVGL's
+ * retained pointers stay valid after this returns. */
+static void init_display_and_input(void) {
     lv_init();
     fbdev_init();
 
@@ -76,9 +65,7 @@ int main(int argc, char** argv) {
     indev_drv.type    = LV_INDEV_TYPE_POINTER;
 #ifdef TOON1
     /* Toon 1's TSC2007 resistive panel needs a different device path AND
-     * linear scaling of raw ADC values to pixel coords — see toon1_touch.c.
-     * LVGL's stock evdev driver does neither, so freetoon rendered but the
-     * screen was completely unresponsive on a real Toon 1. */
+     * linear scaling of raw ADC values to pixel coords — see toon1_touch.c. */
     extern int  toon1_touch_init(void);
     extern void toon1_touch_read(lv_indev_drv_t *, lv_indev_data_t *);
     toon1_touch_init();
@@ -88,6 +75,34 @@ int main(int argc, char** argv) {
     indev_drv.read_cb = evdev_read_with_activity;
 #endif
     lv_indev_drv_register(&indev_drv);
+}
+
+int main(int argc, char** argv) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
+    /* Boot-picker mode: ui_launcher.sh runs us with --bootpick at boot.
+     * We render only the picker screen and exit with rc 0 (freetoon)
+     * or 99 (qt-gui) so the launcher can dispatch to the chosen binary.
+     * No pollers, no full UI — keeps the picker snappy and avoids
+     * touching the BoxTalk client which would race with the real toonui
+     * we spawn right after. */
+    if (argc > 1 && strcmp(argv[1], "--bootpick") == 0) {
+        return bootpick_run();
+    }
+
+    /* Headless WASM-host mode (the toon_wasm_host.sh gate runs us as
+     * `toonui --headless`): bring up the data daemons + pwa_server but NOT the
+     * framebuffer/LVGL/touch, so the stock qt-gui owns the panel while this
+     * Toon stays reachable on :10081 — as a master (serves its own state) or,
+     * with client_mode set, as a slave re-serving another master. */
+    int headless = (argc > 1 && strcmp(argv[1], "--headless") == 0);
+
+    fprintf(stderr, "[main] starting toonui%s\n",
+            headless ? " (headless WASM-host)" : "");
+
+    if (!headless)
+        init_display_and_input();
 
     settings_load();
     layout_load_named(settings.active_layout);   /* home-tile layout: active preset */
@@ -139,6 +154,17 @@ int main(int argc, char** argv) {
 
     extern void airhist_start(void);
     airhist_start();   /* record eCO2/TVOC history (RRD doesn't) for Stats graphs */
+    if (headless) {
+        /* No display: the daemons + pwa_server own their own threads, so just
+         * stay alive and let init NOT respawn us. We deliberately skip the
+         * ambient-light/backlight control (qt-gui owns the panel + brightness),
+         * ui_init, the doorbell overlay, and the LVGL loop. healthcheck's daily
+         * _exit restart is caught by the toon_wasm_host.sh respawn gate. */
+        fprintf(stderr, "[main] headless WASM-host up — qt-gui owns the panel, "
+                        "pwa_server serving :10081\n");
+        for (;;) pause();
+    }
+
     backlight_als_start();  /* poll the ambient sensor off the UI thread (auto-brightness) */
 
     ui_init();
