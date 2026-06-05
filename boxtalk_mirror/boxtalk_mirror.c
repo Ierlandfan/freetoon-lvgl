@@ -131,13 +131,9 @@ static void rewrite(const char *in, const char *from, const char *to,
 }
 
 /* What qt-gui consumes. thermostat-first = the first entry only. */
-static const struct { const char *svc; const char *devtype; } SERVICES[] = {
-    { "ThermostatInfo", "HappThermstat" },
-    { "BoilerInfo",     "HappBoiler"    },
-    { "TemperatureSensor", "TemperatureSensor" },
-    { "HumiditySensor", "HumiditySensor" },
-    { "vocSensor",      "vocSensor"     },
-    { "PowerUsage",     "HappPwrusage"  },
+static const char *SERVICES[] = {
+    "ThermostatInfo", "BoilerInfo", "TemperatureSensor",
+    "HumiditySensor", "vocSensor",  "PowerUsage",
 };
 #define NSVC ((int)(sizeof(SERVICES)/sizeof(SERVICES[0])))
 
@@ -157,27 +153,57 @@ static void upstream_subscribe(int fd) {
         snprintf(b, sizeof b,
             "<subscribe uuid=\"mirror-%d\" destuuid=\"\"><target uuid=\"\" "
             "serviceid=\"urn:hcb-hae-com:serviceId:%s\"></target></subscribe>",
-            pid, SERVICES[i].svc);
+            pid, SERVICES[i]);
         send_frame(fd, b);
     }
 }
 
-/* Downstream: register on the dev bus as the impersonated devices (dev UUIDs),
- * so the bus routes our injected notifies to qt-gui (quby_bridge pattern). */
-static void downstream_register(int fd) {
-    char b[2048]; int o; long now=(long)time(NULL); int pid=(int)getpid();
-    o = snprintf(b, sizeof b,
+/* Pull an attr value (uuid="..." / serviceid="...") out of a frame. */
+static int attr(const char *frame, const char *name, char *out, int outsz) {
+    char key[32]; snprintf(key, sizeof key, "%s=\"", name);
+    const char *p = strstr(frame, key);
+    if (!p) return -1;
+    p += strlen(key);
+    const char *e = strchr(p, '"');
+    if (!e) return -1;
+    int n = (int)(e - p);
+    if (n <= 0 || n >= outsz) return -1;
+    memcpy(out, p, n); out[n] = 0;
+    return 0;
+}
+
+/* Downstream: announce ourselves as a publisher node. The impersonated devices
+ * are declared LAZILY (ensure_registered) so their UUIDs match the actual
+ * rewritten frames exactly — no daemon-name guessing. */
+static void downstream_connect(int fd) {
+    char b[512]; long now=(long)time(NULL); int pid=(int)getpid();
+    snprintf(b, sizeof b,
+        "<discovery nts=\"ssdp:connect\" uuid=\"qb-%s:boxtalk_mirror\" "
+        "type=\"urn:schemas-hcb-hae-com:device:keteladapter\" version=\"v\" "
+        "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" sessionKey=\"%d-%ld\"></discovery>",
+        g_dev_base, pid, now);
+    send_frame(fd, b);
+}
+
+/* Declare a device (dev uuid = qb-<dev>:<daemon>, taken from the rewritten
+ * frame) the first time we forward data for it, so the bus accepts our notifies
+ * for that uuid/service. quby_bridge register-then-notify pattern. */
+#define MAXREG 32
+static char g_reg[MAXREG][96];
+static int  g_nreg = 0;
+static void ensure_registered(int fd, const char *devuuid, const char *svc) {
+    for (int i = 0; i < g_nreg; i++) if (strcmp(g_reg[i], devuuid) == 0) return;
+    if (g_nreg < MAXREG) snprintf(g_reg[g_nreg++], 96, "%s", devuuid);
+    char b[768];
+    snprintf(b, sizeof b,
         "<discovery nts=\"ssdp:alive\" uuid=\"qb-%s:boxtalk_mirror\" "
         "type=\"urn:schemas-hcb-hae-com:device:keteladapter\" version=\"v\" "
-        "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" sessionKey=\"%d-%ld\">",
-        g_dev_base, pid, now);
-    for (int i = 0; i < svc_count(); i++)
-        o += snprintf(b+o, sizeof(b)-o,
-            "<device uuid=\"qb-%s:%s\" type=\"urn:schemas-hcb-hae-com:device:%s\" "
-            "version=\"1\"><service type=\"%s\" version=\"(null)\"/></device>",
-            g_dev_base, SERVICES[i].svc, SERVICES[i].devtype, SERVICES[i].svc);
-    o += snprintf(b+o, sizeof(b)-o, "</discovery>");
+        "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
+        "<device uuid=\"%s\" type=\"urn:schemas-hcb-hae-com:device:HappBoiler\" version=\"1\">"
+        "<service type=\"%s\" version=\"(null)\"/></device></discovery>",
+        g_dev_base, devuuid, svc);
     send_frame(fd, b);
+    fprintf(stderr, "[mirror] registered %s (%s)\n", devuuid, svc);
 }
 
 /* Forward a data frame? thermostat-first keeps only ThermostatInfo frames. */
@@ -247,7 +273,8 @@ int main(int argc, char **argv) {
                 g_master_base, g_dev_base, g_filter);
 
         upstream_subscribe(up);
-        downstream_register(dn);
+        downstream_connect(dn);
+        g_nreg = 0;                              /* fresh registrations per connection */
 
         char mfrom[112], dto[112];
         snprintf(mfrom, sizeof mfrom, "qb-%s", g_master_base);
@@ -258,6 +285,14 @@ int main(int argc, char **argv) {
             if (n <= 0) { fprintf(stderr, "[mirror] upstream closed, reconnecting\n"); break; }
             if (!wanted(fr)) continue;
             rewrite(fr, mfrom, dto, out, sizeof out);
+            /* lazily declare the (rewritten) device before publishing its data */
+            char du[96], sid[96], svc[64];
+            if (attr(out, "uuid", du, sizeof du) == 0) {
+                const char *c = (attr(out, "serviceid", sid, sizeof sid) == 0)
+                                ? strrchr(sid, ':') : NULL;
+                snprintf(svc, sizeof svc, "%s", c ? c+1 : "ThermostatInfo");
+                ensure_registered(dn, du, svc);
+            }
             if (send_frame(dn, out) != 0) { fprintf(stderr, "[mirror] dev bus closed\n"); break; }
         }
         close(up); close(dn); sleep(3);
