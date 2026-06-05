@@ -109,6 +109,28 @@ read_choice() {
 CHOICE=$(read_choice)
 log "boot: ui_choice=$CHOICE  toonui=$([ -x $TOONUI ] && echo yes || echo no)  qtgui=$(have_qtgui && echo yes || echo no)  startqt=$([ -x $STARTQT ] && echo yes || echo no)"
 
+# WASM-host mode: the PANEL must always run stock qt-gui, while freetoon runs
+# headless (data + pwa_server on :10081) under the separate tuih /
+# toon_wasm_host.sh row. The boot picker (bootpick.c) only knows freetoon vs
+# qt-gui and resolves "wasm" to freetoon, so it CANNOT be used here — we must
+# bypass it and exec qt-gui directly. Without this, `toonui --bootpick` returns
+# rc=0 and the dispatcher below would start the freetoon GUI on the panel,
+# fighting the headless instance for the framebuffer + :10081.
+RAW_CHOICE=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d '[:space:]')
+case "$RAW_CHOICE" in
+    wasm|wasm-host|masterslave)
+        log "wasm-host mode → stock qt-gui on panel (freetoon headless via tuih)"
+        if have_qtgui; then
+            exec_qtgui
+        fi
+        # No qt-gui to show: do NOT fall back to the freetoon GUI (it would
+        # collide with the headless toonui on :10081). Idle so init retries.
+        log "wasm-host: qt-gui not launchable — idling 60s so init retries"
+        sleep 60
+        exit 1
+        ;;
+esac
+
 # If toonui isn't on disk, there's nothing to picker with — fall straight
 # through to qt-gui (safest fallback so we never leave the device UI-less).
 if [ ! -x "$TOONUI" ]; then
