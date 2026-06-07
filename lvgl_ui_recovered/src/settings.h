@@ -134,6 +134,11 @@ typedef struct {
     char energy_elec_prod_ha_entity[64];  /* HA sensor for solar production (W), optional */
     char energy_gas_ha_entity[64];        /* HA sensor for cumulative gas (m³) */
     char energy_water_ha_entity[64];      /* HA sensor for cumulative water (m³) */
+    /* Domoticz device idx per channel (ENERGY_SRC_DOMOTICZ). The elec device's
+     * Usage/UsageDeliv give power + return; gas/water use the Counter total. */
+    int  energy_elec_dz_idx;
+    int  energy_gas_dz_idx;
+    int  energy_water_dz_idx;
 
     /* Boot-picker — when 1, the launcher-spawned `toonui --bootpick`
      * shows a 10 s "freetoon vs stock qt-gui" picker before dispatching.
@@ -308,10 +313,12 @@ typedef struct {
 #define FORECAST_DAILY  2
 
 /* Per-resource energy/water source selectors. */
-#define ENERGY_SRC_OFF    0
-#define ENERGY_SRC_HA     1
-#define ENERGY_SRC_HW_P1  2
-#define ENERGY_SRC_ZWAVE  3
+#define ENERGY_SRC_OFF       0
+#define ENERGY_SRC_HA        1
+#define ENERGY_SRC_HW_P1     2
+#define ENERGY_SRC_ZWAVE     3
+#define ENERGY_SRC_DOMOTICZ  4
+#define ENERGY_SRC_MAX       4
 
 /* Display-side adjusted indoor temperature: raw + settings.temp_offset_centi/100 */
 float display_indoor_temp(float raw);

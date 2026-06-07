@@ -337,6 +337,8 @@ static void modal_close(lv_event_t * e) {
     if (confirm_box) { lv_obj_del_async(confirm_box); confirm_box = NULL; }
     if (modal_timer) { lv_timer_del(modal_timer); modal_timer = NULL; }
     modal_tick_fn = NULL;
+    energy_save_textareas();          /* flush WHILE the textareas are still valid —
+                                         must run before modal_cleanup_fn() NULLs them */
     if (cur_modal) {
         lv_obj_t * m = cur_modal;
         cur_modal = parent_modal;     /* restore the modal underneath, if any */
@@ -346,7 +348,6 @@ static void modal_close(lv_event_t * e) {
     }
     if (e) lv_event_stop_bubbling(e); /* prevent the click from bubbling to the
                                          backdrop and firing modal_close twice */
-    energy_save_textareas();          /* flush entity fields before saving */
     settings_save();                  /* persist whatever the modal changed */
 }
 
@@ -1885,6 +1886,9 @@ static lv_obj_t * row_gas_ha, * ta_gas_ha;
 static lv_obj_t * row_gas_hw_note;
 static lv_obj_t * row_water_ha, * ta_water_ha;
 static lv_obj_t * row_water_hw_host, * ta_water_hw_host;
+static lv_obj_t * row_elec_dz,  * ta_elec_dz_idx;   /* Domoticz device idx fields */
+static lv_obj_t * row_gas_dz,   * ta_gas_dz_idx;
+static lv_obj_t * row_water_dz, * ta_water_dz_idx;
 static lv_obj_t * lbl_gas_header;    /* "Gas source:" label — repositioned on elec change */
 static lv_obj_t * lbl_water_header;  /* "Water source:" label */
 static lv_obj_t * toggle_vent_row;   /* first toggle row after the energy section */
@@ -1892,9 +1896,11 @@ static lv_obj_t * toggle_ha_row;
 static lv_obj_t * toggle_hide_row;
 static lv_obj_t * btn_ha_entities;   /* "Configure HA entities..." button */
 
-static const char * elec_src_opts = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter";
-static const char * gas_src_opts  = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter";
-static const char * water_src_opts = "Off\nHome Assistant\nHomeWizard P1";
+/* Same order for all three so the dropdown index == ENERGY_SRC_* constant.
+ * (Z-Wave is inert for water — its dispatch falls through to "off".) */
+static const char * elec_src_opts  = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter\nDomoticz";
+static const char * gas_src_opts   = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter\nDomoticz";
+static const char * water_src_opts = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter\nDomoticz";
 
 static void integ_dirty_hint(void) {
     if (!lbl_integ_hint) return;
@@ -1925,26 +1931,31 @@ static const char * safe_ta_text(lv_obj_t * ta) {
     return lv_textarea_get_text(ta);
 }
 
-/* Flush textarea edits to settings — called before every settings_save in
- * the energy section. Uses safe_ta_text() so a modal-close after visiting
- * the Energy sources modal won't dereference a freed textarea. */
+/* Copy a textarea's text into a settings field, but ONLY when the textarea is
+ * still a live object. Critical: the energy-modal cleanup NULLs these pointers,
+ * and energy_save_textareas() also runs on *every* modal close — so writing ""
+ * for a NULL/dead textarea would wipe the saved entity/host on the next close. */
+static void ta_flush(lv_obj_t * ta, char * dst, size_t dsz) {
+    if (ta && lv_obj_is_valid(ta))
+        snprintf(dst, dsz, "%s", lv_textarea_get_text(ta));
+}
+static void ta_flush_int(lv_obj_t * ta, int * dst) {
+    if (ta && lv_obj_is_valid(ta))
+        *dst = atoi(lv_textarea_get_text(ta));
+}
+
+/* Flush the energy textareas to settings. Skips fields whose textarea isn't
+ * currently shown (NULL/freed), so it never clobbers a previously-saved value. */
 static void energy_save_textareas(void) {
-    snprintf(settings.energy_elec_ha_entity,
-             sizeof settings.energy_elec_ha_entity,
-             "%s", safe_ta_text(ta_elec_ha_cons));
-    snprintf(settings.energy_elec_prod_ha_entity,
-             sizeof settings.energy_elec_prod_ha_entity,
-             "%s", safe_ta_text(ta_elec_ha_prod));
-    snprintf(settings.p1_elec_host, sizeof settings.p1_elec_host,
-             "%s", safe_ta_text(ta_elec_hw_host));
-    snprintf(settings.energy_gas_ha_entity,
-             sizeof settings.energy_gas_ha_entity,
-             "%s", safe_ta_text(ta_gas_ha));
-    snprintf(settings.energy_water_ha_entity,
-             sizeof settings.energy_water_ha_entity,
-             "%s", safe_ta_text(ta_water_ha));
-    snprintf(settings.p1_water_host, sizeof settings.p1_water_host,
-             "%s", safe_ta_text(ta_water_hw_host));
+    ta_flush(ta_elec_ha_cons, settings.energy_elec_ha_entity,      sizeof settings.energy_elec_ha_entity);
+    ta_flush(ta_elec_ha_prod, settings.energy_elec_prod_ha_entity, sizeof settings.energy_elec_prod_ha_entity);
+    ta_flush(ta_elec_hw_host, settings.p1_elec_host,               sizeof settings.p1_elec_host);
+    ta_flush(ta_gas_ha,       settings.energy_gas_ha_entity,       sizeof settings.energy_gas_ha_entity);
+    ta_flush(ta_water_ha,     settings.energy_water_ha_entity,     sizeof settings.energy_water_ha_entity);
+    ta_flush(ta_water_hw_host, settings.p1_water_host,             sizeof settings.p1_water_host);
+    ta_flush_int(ta_elec_dz_idx,  &settings.energy_elec_dz_idx);
+    ta_flush_int(ta_gas_dz_idx,   &settings.energy_gas_dz_idx);
+    ta_flush_int(ta_water_dz_idx, &settings.energy_water_dz_idx);
 }
 
 /* Show/hide conditional rows for electricity based on dropdown selection. */
@@ -1964,6 +1975,10 @@ static void energy_elec_update_vis(void) {
         if (src == ENERGY_SRC_HW_P1) lv_obj_clear_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
     }
+    if (row_elec_dz) {
+        if (src == ENERGY_SRC_DOMOTICZ) lv_obj_clear_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+    }
     settings_save();
 }
 static void energy_gas_update_vis(void) {
@@ -1978,6 +1993,10 @@ static void energy_gas_update_vis(void) {
         if (src == ENERGY_SRC_HW_P1) lv_obj_clear_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
     }
+    if (row_gas_dz) {
+        if (src == ENERGY_SRC_DOMOTICZ) lv_obj_clear_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
+    }
     settings_save();
 }
 static void energy_water_update_vis(void) {
@@ -1987,6 +2006,10 @@ static void energy_water_update_vis(void) {
     if (row_water_ha) {
         if (src == ENERGY_SRC_HA) lv_obj_clear_flag(row_water_ha, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(row_water_ha, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_water_dz) {
+        if (src == ENERGY_SRC_DOMOTICZ) lv_obj_clear_flag(row_water_dz, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_water_dz, LV_OBJ_FLAG_HIDDEN);
     }
     if (row_water_hw_host) {
         if (src == ENERGY_SRC_HW_P1) lv_obj_clear_flag(row_water_hw_host, LV_OBJ_FLAG_HIDDEN);
@@ -2020,6 +2043,9 @@ static void energy_relayout(void) {
     } else if (src == ENERGY_SRC_HW_P1) {
         lv_obj_set_pos(row_elec_hw_host, SX(4), SY(row_y));
         y = row_y + ROW_H;
+    } else if (src == ENERGY_SRC_DOMOTICZ) {
+        lv_obj_set_pos(row_elec_dz, SX(4), SY(row_y));
+        y = row_y + ROW_H;
     } else {
         y = y + DD_OFF + DD_H;
     }
@@ -2036,6 +2062,9 @@ static void energy_relayout(void) {
     } else if (src == ENERGY_SRC_HW_P1) {
         lv_obj_set_pos(row_gas_hw_note, SX(4), SY(row_y));
         y = row_y + NOTE_H;
+    } else if (src == ENERGY_SRC_DOMOTICZ) {
+        lv_obj_set_pos(row_gas_dz, SX(4), SY(row_y));
+        y = row_y + ROW_H;
     } else {
         y = y + DD_OFF + DD_H;
     }
@@ -2051,6 +2080,9 @@ static void energy_relayout(void) {
         y = row_y + ROW_H;
     } else if (src == ENERGY_SRC_HW_P1) {
         lv_obj_set_pos(row_water_hw_host, SX(4), SY(row_y));
+        y = row_y + ROW_H;
+    } else if (src == ENERGY_SRC_DOMOTICZ) {
+        lv_obj_set_pos(row_water_dz, SX(4), SY(row_y));
         y = row_y + ROW_H;
     } else {
         y = y + DD_OFF + DD_H;
@@ -2119,6 +2151,23 @@ static lv_obj_t * energy_field(lv_obj_t * p, int x, int y, int w,
     return ta;
 }
 
+/* A Domoticz-device-idx row (numeric). Returns the row; *out_ta = its textarea.
+ * Position is set by energy_relayout(); the initial align is a placeholder. */
+static lv_obj_t * make_dz_row(lv_obj_t * p, const char * lbl, int idx, lv_obj_t ** out_ta) {
+    lv_obj_t * r = lv_obj_create(p);
+    lv_obj_set_size(r, SX(824), SY(66));
+    lv_obj_set_style_bg_color(r, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(r, 0, 0);
+    lv_obj_set_style_radius(r, 8, 0);
+    lv_obj_set_style_pad_all(r, 6, 0);
+    lv_obj_clear_flag(r, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(r, LV_ALIGN_TOP_LEFT, SX(4), SY(80));
+    char b[16]; if (idx > 0) snprintf(b, sizeof b, "%d", idx); else b[0] = 0;
+    *out_ta = energy_field(r, 4, -6, 760, lbl, b, 0, NULL);
+    ta_make_numeric(*out_ta);
+    return r;
+}
+
 static void open_ha_entities_modal(lv_event_t * e);
 
 /* =========================== Energy Sources modal ========================== *
@@ -2135,6 +2184,9 @@ static void energy_modal_cleanup(void) {
     row_gas_hw_note = NULL;
     row_water_ha = NULL; ta_water_ha = NULL;
     row_water_hw_host = NULL; ta_water_hw_host = NULL;
+    row_elec_dz = NULL; ta_elec_dz_idx = NULL;
+    row_gas_dz  = NULL; ta_gas_dz_idx  = NULL;
+    row_water_dz = NULL; ta_water_dz_idx = NULL;
     lbl_gas_header = NULL; lbl_water_header = NULL;
 }
 
@@ -2200,6 +2252,11 @@ static void open_energy_sources_modal(lv_event_t * e) {
     if (settings.energy_elec_source != ENERGY_SRC_HW_P1)
         lv_obj_add_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
 
+    row_elec_dz = make_dz_row(p, "Domoticz device idx (P1 electricity):",
+                              settings.energy_elec_dz_idx, &ta_elec_dz_idx);
+    if (settings.energy_elec_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+
     y += 214;
 
     /* ---- Gas ---- */
@@ -2244,6 +2301,11 @@ static void open_energy_sources_modal(lv_event_t * e) {
     if (settings.energy_gas_source != ENERGY_SRC_HW_P1)
         lv_obj_add_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
 
+    row_gas_dz = make_dz_row(p, "Domoticz device idx (gas meter):",
+                             settings.energy_gas_dz_idx, &ta_gas_dz_idx);
+    if (settings.energy_gas_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
+
     y += 138;
 
     /* ---- Water ---- */
@@ -2285,6 +2347,11 @@ static void open_energy_sources_modal(lv_event_t * e) {
     ta_make_numeric(ta_water_hw_host);
     if (settings.energy_water_source != ENERGY_SRC_HW_P1)
         lv_obj_add_flag(row_water_hw_host, LV_OBJ_FLAG_HIDDEN);
+
+    row_water_dz = make_dz_row(p, "Domoticz device idx (water meter):",
+                               settings.energy_water_dz_idx, &ta_water_dz_idx);
+    if (settings.energy_water_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_water_dz, LV_OBJ_FLAG_HIDDEN);
 
     energy_relayout();
 }
@@ -2355,6 +2422,11 @@ static void open_integrations_modal(lv_event_t * e) {
     if (settings.energy_elec_source != ENERGY_SRC_HW_P1)
         lv_obj_add_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
 
+    row_elec_dz = make_dz_row(p, "Domoticz device idx (P1 electricity):",
+                              settings.energy_elec_dz_idx, &ta_elec_dz_idx);
+    if (settings.energy_elec_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+
     y += 214;
 
     /* ---- Gas ---- */
@@ -2398,6 +2470,11 @@ static void open_integrations_modal(lv_event_t * e) {
     lv_obj_align(ghn, LV_ALIGN_TOP_LEFT, SX(4), SY(0));
     if (settings.energy_gas_source != ENERGY_SRC_HW_P1)
         lv_obj_add_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
+
+    row_gas_dz = make_dz_row(p, "Domoticz device idx (gas meter):",
+                             settings.energy_gas_dz_idx, &ta_gas_dz_idx);
+    if (settings.energy_gas_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
 
     y += 138;
 

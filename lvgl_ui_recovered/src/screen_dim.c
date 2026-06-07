@@ -8,6 +8,7 @@
 #include "boxtalk.h"
 #include "settings.h"
 #include "homewizard.h"
+#include "domoticz.h"
 #include "meteradapter.h"
 #include "homeassistant.h"
 #include "packages.h"
@@ -544,10 +545,11 @@ static void refresh_cb(lv_timer_t * t) {
         int   e_conn;
         float e;
         switch (settings.energy_elec_source) {
-        case ENERGY_SRC_ZWAVE: e_conn = meter_state.connected; e = meter_state.power_w; break;
-        case ENERGY_SRC_HW_P1: e_conn = hw_state.connected_p1; e = hw_state.power_w; break;
-        case ENERGY_SRC_HA:    e_conn = ha_energy.connected;   e = ha_energy.power_w; break;
-        default:               e_conn = 0; e = 0; break;
+        case ENERGY_SRC_ZWAVE:    e_conn = meter_state.connected; e = meter_state.power_w; break;
+        case ENERGY_SRC_HW_P1:    e_conn = hw_state.connected_p1; e = hw_state.power_w; break;
+        case ENERGY_SRC_HA:       e_conn = ha_energy.connected;   e = ha_energy.power_w; break;
+        case ENERGY_SRC_DOMOTICZ: e_conn = dz_energy.connected;   e = dz_energy.power_w; break;
+        default:                  e_conn = 0; e = 0; break;
         }
         if (e < 0) e = 0;
         float er = e / DIM_E_FULL_W;
@@ -559,10 +561,11 @@ static void refresh_cb(lv_timer_t * t) {
         int   g_conn;
         float g;
         switch (settings.energy_gas_source) {
-        case ENERGY_SRC_ZWAVE: g_conn = meter_state.gas_connected; g = meter_state.gas_hour_m3; break;
-        case ENERGY_SRC_HW_P1: g_conn = hw_state.connected_p1;     g = hw_state.gas_hour_m3; break;
-        case ENERGY_SRC_HA:    g_conn = ha_energy.connected;       g = ha_energy.gas_hour_m3; break;
-        default:               g_conn = 0; g = 0; break;
+        case ENERGY_SRC_ZWAVE:    g_conn = meter_state.gas_connected; g = meter_state.gas_hour_m3; break;
+        case ENERGY_SRC_HW_P1:    g_conn = hw_state.connected_p1;     g = hw_state.gas_hour_m3; break;
+        case ENERGY_SRC_HA:       g_conn = ha_energy.connected;       g = ha_energy.gas_hour_m3; break;
+        case ENERGY_SRC_DOMOTICZ: g_conn = dz_energy.connected;       g = dz_energy.gas_hour_m3; break;
+        default:                  g_conn = 0; g = 0; break;
         }
         if (g < 0) g = 0;
         float gr = g / DIM_G_FULL_M3H;

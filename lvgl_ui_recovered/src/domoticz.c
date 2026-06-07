@@ -429,27 +429,102 @@ static int dz_login(void) {
  * cookie jar — also the right path for an open (no-auth) instance; (2) on
  * failure, (re)login and retry once; (3) finally HTTP Basic embedded in the URL
  * for a Domoticz explicitly set to "Basic Authentication" mode. */
-static int http_getdevices(void) {
-    static const char QUERY[] =
-        "json.htm?type=command&param=getdevices&filter=light&used=true&order=Name";
+/* Run a json.htm query through the auth ladder (session cookie → re-login →
+ * HTTP Basic) into body. 0 on a reply that contains a "result". */
+static int dz_get(const char * query, char * body, size_t bsz) {
     char host[80], port[8];
     parse_host(host, sizeof host, port, sizeof port);
-    static char body[256 * 1024];   /* getdevices can be 200KB+ with many devices */
     char url[400];
-
     session_jar_path();
-    snprintf(url, sizeof url, "http://%s:%s/%s", host, port, QUERY);
-    if (http_fetch_cookies(url, g_jar, body, sizeof body) == 0 && strstr(body, "\"result\""))
-        return parse_devices(body);
-
+    snprintf(url, sizeof url, "http://%s:%s/%s", host, port, query);
+    if (http_fetch_cookies(url, g_jar, body, bsz) == 0 && strstr(body, "\"result\"")) return 0;
     if (settings.domoticz_user[0] && dz_login() &&
-        http_fetch_cookies(url, g_jar, body, sizeof body) == 0 && strstr(body, "\"result\""))
-        return parse_devices(body);
-
-    build_url(url, sizeof url, QUERY);              /* Basic-auth-mode fallback */
-    if (http_fetch(url, body, sizeof body) == 0 && strstr(body, "\"result\""))
-        return parse_devices(body);
+        http_fetch_cookies(url, g_jar, body, bsz) == 0 && strstr(body, "\"result\"")) return 0;
+    build_url(url, sizeof url, query);              /* Basic-auth-mode fallback */
+    if (http_fetch(url, body, bsz) == 0 && strstr(body, "\"result\"")) return 0;
     return -1;
+}
+
+static int http_getdevices(void) {
+    static char body[256 * 1024];   /* getdevices can be 200KB+ with many devices */
+    if (dz_get("json.htm?type=command&param=getdevices&filter=light&used=true&order=Name",
+               body, sizeof body) != 0) return -1;
+    return parse_devices(body);
+}
+
+/* ----------------------------------------------------------- energy read-out */
+domoticz_energy_t dz_energy = {0};
+
+/* First number in a device field, e.g. "Usage":"450 Watt" -> 450, or the gas
+ * "Counter":"1234.567 m3" -> 1234.567. -1 if the key is absent. */
+static float dz_val(const char * p, const char * end, const char * key) {
+    char buf[40];
+    if (!jstr(p, end, key, buf, sizeof buf)) return -1.0f;
+    return strtof(buf, NULL);
+}
+
+/* Trailing-hour gas use from the cumulative m³ counter (mirrors the HA path). */
+#define DZ_GAS_RING_N 64
+static struct { long t; float m3; } dz_gas_ring[DZ_GAS_RING_N];
+static int  dz_gas_head = 0, dz_gas_count = 0; static long dz_gas_last_t = 0;
+static void dz_gas_hour_update(float gas_now) {
+    if (gas_now <= 0) { dz_energy.gas_hour_m3 = 0; return; }
+    long now = time(NULL);
+    if (dz_gas_last_t == 0 || now - dz_gas_last_t >= 55) {
+        dz_gas_ring[dz_gas_head].t = now; dz_gas_ring[dz_gas_head].m3 = gas_now;
+        dz_gas_head = (dz_gas_head + 1) % DZ_GAS_RING_N;
+        if (dz_gas_count < DZ_GAS_RING_N) dz_gas_count++;
+        dz_gas_last_t = now;
+    }
+    if (dz_gas_count < 2) { dz_energy.gas_hour_m3 = 0; return; }
+    long midnight = now - (now % 86400), cutoff = now - 3600;
+    if (cutoff < midnight) cutoff = midnight;        /* daily reset at midnight */
+    int oldest = (dz_gas_head - dz_gas_count + DZ_GAS_RING_N) % DZ_GAS_RING_N, ref = oldest;
+    for (int k = 0; k < dz_gas_count; k++) {
+        int i = (oldest + k) % DZ_GAS_RING_N;
+        if (dz_gas_ring[i].t <= cutoff) ref = i; else break;
+    }
+    float d = gas_now - dz_gas_ring[ref].m3;
+    dz_energy.gas_hour_m3 = d < 0 ? 0 : d;
+}
+
+static int dz_fetch_device(int idx, char * body, size_t bsz) {
+    char q[80];
+    snprintf(q, sizeof q, "json.htm?type=command&param=getdevices&rid=%d", idx);
+    return dz_get(q, body, bsz);
+}
+
+void domoticz_poll_energy(void) {
+    if (!settings.enable_domoticz || !settings.domoticz_host[0]) { dz_energy.connected = 0; return; }
+    int uses_dz = settings.energy_elec_source  == ENERGY_SRC_DOMOTICZ ||
+                  settings.energy_gas_source   == ENERGY_SRC_DOMOTICZ ||
+                  settings.energy_water_source == ENERGY_SRC_DOMOTICZ;
+    if (!uses_dz) return;
+    static time_t last = 0; time_t now = time(NULL);
+    if (now - last < 8) return;                       /* rate-limit the HTTP polls */
+    last = now;
+    static char body[8192];
+    int any = 0;
+    if (settings.energy_elec_source == ENERGY_SRC_DOMOTICZ && settings.energy_elec_dz_idx > 0 &&
+        dz_fetch_device(settings.energy_elec_dz_idx, body, sizeof body) == 0) {
+        const char * end = body + strlen(body);
+        float u = dz_val(body, end, "Usage"), d = dz_val(body, end, "UsageDeliv");
+        if (u >= 0) { dz_energy.power_w = u; any = 1; }
+        if (d >= 0)   dz_energy.power_prod_w = d;
+    }
+    if (settings.energy_gas_source == ENERGY_SRC_DOMOTICZ && settings.energy_gas_dz_idx > 0 &&
+        dz_fetch_device(settings.energy_gas_dz_idx, body, sizeof body) == 0) {
+        const char * end = body + strlen(body);
+        float c = dz_val(body, end, "Counter");
+        if (c >= 0) { dz_energy.gas_m3 = c; dz_gas_hour_update(c); any = 1; }
+    }
+    if (settings.energy_water_source == ENERGY_SRC_DOMOTICZ && settings.energy_water_dz_idx > 0 &&
+        dz_fetch_device(settings.energy_water_dz_idx, body, sizeof body) == 0) {
+        const char * end = body + strlen(body);
+        float c = dz_val(body, end, "Counter");
+        if (c >= 0) { dz_energy.water_m3 = c; any = 1; }
+    }
+    dz_energy.connected = any;
 }
 
 /* Settings "test connection": run the auth ladder once and report a granular
@@ -498,6 +573,7 @@ static void * dz_thread(void * arg) {
         /* Seed the device list over HTTP — reliable, and shows devices even if
          * the WebSocket can't connect. */
         if (http_getdevices() == 0) domoticz_state.connected = 1;
+        domoticz_poll_energy();         /* energy meters: also works without WS */
 
         /* The WebSocket is purely a push channel: Domoticz broadcasts a frame to
          * all connected clients whenever a device changes. We don't request data
@@ -521,6 +597,7 @@ static void * dz_thread(void * arg) {
             if (s == 0) {                              /* idle → keepalive ping */
                 if (ws_send(fd, 0x9, NULL, 0) < 0) break;
                 last_ping = time(NULL);
+                domoticz_poll_energy();                /* periodic energy refresh */
                 continue;
             }
             int n = ws_recv_msg(fd, msg, sizeof msg);
@@ -529,6 +606,7 @@ static void * dz_thread(void * arg) {
              * once a second so a burst of pushes doesn't hammer the API). */
             if (time(NULL) - last_fetch >= 1) {
                 if (http_getdevices() == 0) domoticz_state.connected = 1;
+                domoticz_poll_energy();                /* energy meters change on push too */
                 last_fetch = time(NULL);
             }
             if (time(NULL) - last_ping > 45) {

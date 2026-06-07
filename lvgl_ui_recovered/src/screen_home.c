@@ -16,6 +16,7 @@
 #include "icons.h"
 #include "homewizard.h"
 #include "meteradapter.h"
+#include "domoticz.h"
 #include "settings.h"
 #include "weather.h"
 #include "wastecollection.h"
@@ -280,54 +281,62 @@ static lv_timer_t * refresh_timer = NULL;
  * P1 thread, HA energy polling in ha_thread), so switching is live. */
 static int energy_elec_connected(void) {
     switch (settings.energy_elec_source) {
-    case ENERGY_SRC_ZWAVE: return meter_state.connected;
-    case ENERGY_SRC_HW_P1: return hw_state.connected_p1;
-    case ENERGY_SRC_HA:    return ha_energy.connected;
-    default:               return 0;
+    case ENERGY_SRC_ZWAVE:    return meter_state.connected;
+    case ENERGY_SRC_HW_P1:    return hw_state.connected_p1;
+    case ENERGY_SRC_HA:       return ha_energy.connected;
+    case ENERGY_SRC_DOMOTICZ: return dz_energy.connected;
+    default:                  return 0;
     }
 }
 static float energy_elec_power_w(void) {
     switch (settings.energy_elec_source) {
-    case ENERGY_SRC_ZWAVE: return meter_state.power_w;
-    case ENERGY_SRC_HW_P1: return hw_state.power_w;
-    case ENERGY_SRC_HA:    return ha_energy.power_w;
-    default:               return 0;
+    case ENERGY_SRC_ZWAVE:    return meter_state.power_w;
+    case ENERGY_SRC_HW_P1:    return hw_state.power_w;
+    case ENERGY_SRC_HA:       return ha_energy.power_w;
+    case ENERGY_SRC_DOMOTICZ: return dz_energy.power_w;
+    default:                  return 0;
     }
 }
 static float energy_elec_prod_w(void) {
     if (settings.energy_elec_source == ENERGY_SRC_HA &&
         settings.energy_elec_prod_ha_entity[0])
         return ha_energy.power_prod_w;
+    if (settings.energy_elec_source == ENERGY_SRC_DOMOTICZ)
+        return dz_energy.power_prod_w;
     return 0;
 }
 static int energy_gas_connected(void) {
     switch (settings.energy_gas_source) {
-    case ENERGY_SRC_ZWAVE: return meter_state.gas_connected;
-    case ENERGY_SRC_HW_P1: return hw_state.connected_p1;
-    case ENERGY_SRC_HA:    return ha_energy.connected;
-    default:               return 0;
+    case ENERGY_SRC_ZWAVE:    return meter_state.gas_connected;
+    case ENERGY_SRC_HW_P1:    return hw_state.connected_p1;
+    case ENERGY_SRC_HA:       return ha_energy.connected;
+    case ENERGY_SRC_DOMOTICZ: return dz_energy.connected;
+    default:                  return 0;
     }
 }
 static float energy_gas_m3(void) {
     switch (settings.energy_gas_source) {
-    case ENERGY_SRC_ZWAVE: return meter_state.gas_connected ? meter_state.gas_m3 : -1.0f;
-    case ENERGY_SRC_HW_P1: return hw_state.connected_p1 ? hw_state.gas_m3 : -1.0f;
-    case ENERGY_SRC_HA:    return ha_energy.connected ? ha_energy.gas_m3 : -1.0f;
-    default:               return -1.0f;
+    case ENERGY_SRC_ZWAVE:    return meter_state.gas_connected ? meter_state.gas_m3 : -1.0f;
+    case ENERGY_SRC_HW_P1:    return hw_state.connected_p1 ? hw_state.gas_m3 : -1.0f;
+    case ENERGY_SRC_HA:       return ha_energy.connected ? ha_energy.gas_m3 : -1.0f;
+    case ENERGY_SRC_DOMOTICZ: return dz_energy.connected ? dz_energy.gas_m3 : -1.0f;
+    default:                  return -1.0f;
     }
 }
 static int energy_water_connected(void) {
     switch (settings.energy_water_source) {
-    case ENERGY_SRC_HW_P1: return hw_state.connected_water;
-    case ENERGY_SRC_HA:    return ha_energy.connected;
-    default:               return 0;
+    case ENERGY_SRC_HW_P1:    return hw_state.connected_water;
+    case ENERGY_SRC_HA:       return ha_energy.connected;
+    case ENERGY_SRC_DOMOTICZ: return dz_energy.connected;
+    default:                  return 0;
     }
 }
 static float energy_water_m3(void) {
     switch (settings.energy_water_source) {
-    case ENERGY_SRC_HW_P1: return hw_state.water_total_m3;
-    case ENERGY_SRC_HA:    return ha_energy.water_m3;
-    default:               return 0;
+    case ENERGY_SRC_HW_P1:    return hw_state.water_total_m3;
+    case ENERGY_SRC_HA:       return ha_energy.water_m3;
+    case ENERGY_SRC_DOMOTICZ: return dz_energy.water_m3;
+    default:                  return 0;
     }
 }
 static const char * energy_offline_label(void) {
@@ -338,6 +347,8 @@ static const char * energy_offline_label(void) {
         return meter_state.last_flow_s ? "meter offline" : "Initializing...";
     case ENERGY_SRC_HA:
         return ha_energy.connected ? "Initializing..." : "HA offline";
+    case ENERGY_SRC_DOMOTICZ:
+        return dz_energy.connected ? "Initializing..." : "Domoticz offline";
     default:
         return "Off";
     }

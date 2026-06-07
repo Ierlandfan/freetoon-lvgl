@@ -338,13 +338,16 @@ void settings_load(void) {
             snprintf(settings.domoticz_pass, sizeof settings.domoticz_pass, "%s", v);
         else if (strcmp(k, "enable_zwave")    == 0) settings.enable_zwave = iv;
         else if (strcmp(k, "energy_source")     == 0) seen_energy_source_old = iv + 1;  /* 0→1, 1→2 (sticky) */
-        else if (strcmp(k, "energy_elec_source")  == 0) settings.energy_elec_source  = (iv < 0 || iv > 3) ? ENERGY_SRC_ZWAVE : iv;
-        else if (strcmp(k, "energy_gas_source")   == 0) settings.energy_gas_source   = (iv < 0 || iv > 3) ? ENERGY_SRC_ZWAVE : iv;
-        else if (strcmp(k, "energy_water_source") == 0) settings.energy_water_source = (iv < 0 || iv > 2) ? ENERGY_SRC_OFF   : iv;  /* water has no ZWAVE */
+        else if (strcmp(k, "energy_elec_source")  == 0) settings.energy_elec_source  = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+        else if (strcmp(k, "energy_gas_source")   == 0) settings.energy_gas_source   = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+        else if (strcmp(k, "energy_water_source") == 0) settings.energy_water_source = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_OFF   : iv;
         else if (strcmp(k, "energy_elec_ha_entity")       == 0) snprintf(settings.energy_elec_ha_entity, sizeof settings.energy_elec_ha_entity, "%s", v);
         else if (strcmp(k, "energy_elec_prod_ha_entity")  == 0) snprintf(settings.energy_elec_prod_ha_entity, sizeof settings.energy_elec_prod_ha_entity, "%s", v);
         else if (strcmp(k, "energy_gas_ha_entity")        == 0) snprintf(settings.energy_gas_ha_entity, sizeof settings.energy_gas_ha_entity, "%s", v);
         else if (strcmp(k, "energy_water_ha_entity")      == 0) snprintf(settings.energy_water_ha_entity, sizeof settings.energy_water_ha_entity, "%s", v);
+        else if (strcmp(k, "energy_elec_dz_idx")  == 0) settings.energy_elec_dz_idx  = iv;
+        else if (strcmp(k, "energy_gas_dz_idx")   == 0) settings.energy_gas_dz_idx   = iv;
+        else if (strcmp(k, "energy_water_dz_idx") == 0) settings.energy_water_dz_idx = iv;
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
         else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
         else if (strcmp(k, "update_check_enabled") == 0) settings.update_check_enabled = iv;
@@ -677,6 +680,9 @@ void settings_save(void) {
         fprintf(f, "energy_gas_ha_entity=%s\n", settings.energy_gas_ha_entity);
     if (settings.energy_water_ha_entity[0])
         fprintf(f, "energy_water_ha_entity=%s\n", settings.energy_water_ha_entity);
+    fprintf(f, "energy_elec_dz_idx=%d\n",  settings.energy_elec_dz_idx);
+    fprintf(f, "energy_gas_dz_idx=%d\n",   settings.energy_gas_dz_idx);
+    fprintf(f, "energy_water_dz_idx=%d\n", settings.energy_water_dz_idx);
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
     fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fprintf(f, "update_check_enabled=%d\n", settings.update_check_enabled);

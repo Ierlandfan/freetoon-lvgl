@@ -33,6 +33,23 @@ typedef struct {
 
 extern domoticz_state_t domoticz_state;
 
+/* Energy read-out from Domoticz utility devices (selected per channel by idx in
+ * settings, ENERGY_SRC_DOMOTICZ). Filled by domoticz_poll_energy(); read by the
+ * home/dim energy dispatch the same way as ha_energy / hw_state. */
+typedef struct {
+    volatile int   connected;
+    volatile float power_w;        /* electricity device "Usage" (W) */
+    volatile float power_prod_w;   /* electricity device "UsageDeliv" (W) */
+    volatile float gas_m3;         /* gas device "Counter" total (m³) */
+    volatile float gas_hour_m3;    /* trailing-hour gas use (m³) */
+    volatile float water_m3;       /* water device "Counter" total (m³) */
+} domoticz_energy_t;
+extern domoticz_energy_t dz_energy;
+
+/* Poll the configured Domoticz energy device idxs (rate-limited internally).
+ * Called from the Domoticz client thread; no-op unless a channel uses Domoticz. */
+void domoticz_poll_energy(void);
+
 /* Start the WebSocket+HTTP client thread (live push over ws://host/json, data
  * over the JSON API). Needs settings.domoticz_host. Returns 0 on success. */
 int  domoticz_start(void);

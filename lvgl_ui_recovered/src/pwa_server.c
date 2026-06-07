@@ -1362,9 +1362,12 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.vent_host, sizeof settings.vent_host, "%s", sv);
     if (extract_str(body, "opnsense_host", sv, sizeof sv))
         snprintf(settings.opnsense_host, sizeof settings.opnsense_host, "%s", sv);
-    if (extract_int(body, "energy_elec_source", &iv)) settings.energy_elec_source = (iv < 0 || iv > 3) ? ENERGY_SRC_ZWAVE : iv;
-    if (extract_int(body, "energy_gas_source", &iv))  settings.energy_gas_source  = (iv < 0 || iv > 3) ? ENERGY_SRC_ZWAVE : iv;
-    if (extract_int(body, "energy_water_source", &iv))settings.energy_water_source = (iv < 0 || iv > 2) ? ENERGY_SRC_OFF   : iv;
+    if (extract_int(body, "energy_elec_source", &iv)) settings.energy_elec_source = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+    if (extract_int(body, "energy_gas_source", &iv))  settings.energy_gas_source  = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+    if (extract_int(body, "energy_water_source", &iv))settings.energy_water_source = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_OFF   : iv;
+    if (extract_int(body, "energy_elec_dz_idx", &iv))  settings.energy_elec_dz_idx  = iv;
+    if (extract_int(body, "energy_gas_dz_idx", &iv))   settings.energy_gas_dz_idx   = iv;
+    if (extract_int(body, "energy_water_dz_idx", &iv)) settings.energy_water_dz_idx = iv;
     if (extract_str(body, "energy_elec_ha_entity", sv, sizeof sv)) snprintf(settings.energy_elec_ha_entity, sizeof settings.energy_elec_ha_entity, "%s", sv);
     if (extract_str(body, "energy_gas_ha_entity", sv, sizeof sv))  snprintf(settings.energy_gas_ha_entity, sizeof settings.energy_gas_ha_entity, "%s", sv);
     if (extract_str(body, "energy_water_ha_entity", sv, sizeof sv))snprintf(settings.energy_water_ha_entity, sizeof settings.energy_water_ha_entity, "%s", sv);
