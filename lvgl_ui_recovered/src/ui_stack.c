@@ -13,10 +13,24 @@
 #include "backlight.h"
 #include "boxtalk.h"
 #include <stdio.h>
+#include <unistd.h>
 
 #define STACK_MAX 8
 static lv_obj_t * stack[STACK_MAX];
 static int sp = 0;
+
+/* Request a clean UI restart. Drops a marker so ui_launcher.sh's crash-loop
+ * guard doesn't mistake this intentional _exit(0) for a crash (3 fast exits
+ * in 120 s otherwise force the qt-gui fallback — which bit the layout editor's
+ * Save/preset/restart round-trips). Then flush + exit; init respawns the
+ * launcher, which re-launches toonui with the freshly saved cfg/layout. */
+#define UI_RESTART_MARKER "/var/volatile/tmp/toonui_restart"
+void ui_request_restart(void) {
+    FILE * f = fopen(UI_RESTART_MARKER, "w");
+    if (f) fclose(f);
+    fflush(NULL);
+    _exit(0);
+}
 
 static uint32_t last_activity_ms = 0;
 static int      is_dimmed = 0;
@@ -83,8 +97,11 @@ void ui_idle_tick(void) {
     }
     wake_pending = 0;
 
-    /* Auto-brightness: while active, retrack the ambient sensor every ~3 s. */
-    if (!is_dimmed && settings.auto_brightness) {
+    /* Re-apply the active backlight every ~3 s while the screen is on: tracks
+     * the ambient sensor (auto-brightness) AND lets Night mode dim/brighten at
+     * the sunset/time boundary without needing a touch. backlight_set() applies
+     * the night scaling, so this stays a plain re-apply. */
+    if (!is_dimmed && (settings.auto_brightness || settings.night_mode)) {
         static uint32_t last_als_ms = 0;
         uint32_t nt = lv_tick_get();
         if (nt - last_als_ms > 3000) { apply_active_brightness(); last_als_ms = nt; }
@@ -103,6 +120,9 @@ void ui_idle_tick(void) {
     if (settings.auto_home_enabled) {
         uint32_t home_threshold = (uint32_t)settings.auto_home_seconds * 1000u;
         if (elapsed_ms >= home_threshold) {
+            /* Settings modals sit on lv_layer_top (above every screen); dismiss
+             * them so returning home is actually visible. No-op if none open. */
+            settings_close_all_modals();
             int on_subscreen = is_dimmed ? (sp > 2) : (sp > 1);
             if (on_subscreen) {
                 fprintf(stderr, "[ui] auto-home after %u ms idle\n", elapsed_ms);
@@ -126,6 +146,9 @@ void ui_idle_tick(void) {
     uint32_t threshold = (uint32_t)settings.auto_dim_seconds * 1000u;
     if (!is_dimmed && elapsed_ms >= threshold) {
         fprintf(stderr, "[ui] dimming after %u ms idle\n", elapsed_ms);
+        /* Dismiss any open settings modal (top layer) so it doesn't stay stuck
+         * in front of the dim clock. */
+        settings_close_all_modals();
         backlight_set(settings.dim_brightness);
         ui_push(screen_dim_create());
         is_dimmed = 1;

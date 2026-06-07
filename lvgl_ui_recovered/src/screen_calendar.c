@@ -38,7 +38,12 @@ static void pretty_date(const char * iso, char * out, size_t osz) {
 void screen_calendar_show(void) {
     if (modal) lv_obj_del(modal);
 
-    modal = lv_obj_create(lv_scr_act());
+    /* Parent to the top layer, NOT lv_scr_act(): this is opened from the
+     * Settings list, which is usually scrolled down by the time you reach the
+     * Agenda button — a modal on the scrolled screen inherits that scroll
+     * offset and its top ends up above the viewport. The top layer is a fixed
+     * full-screen overlay that's never scrolled. */
+    modal = lv_obj_create(lv_layer_top());
     lv_obj_set_size(modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(modal, 0, 0);
     lv_obj_set_style_bg_color(modal, lv_color_hex(0x0f1a2a), 0);

@@ -25,10 +25,12 @@
 #include "icons.h"
 #include "tile_slots.h"
 #include "news.h"
+#include "wastecollection.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <ifaddrs.h>
@@ -40,7 +42,8 @@
 static lv_obj_t * scr_root = NULL;
 
 /* ---- modal state ---- */
-static lv_obj_t *   cur_modal     = NULL;   /* backdrop of the open category modal */
+static lv_obj_t *   cur_modal     = NULL;   /* backdrop of the topmost open modal */
+static lv_obj_t *   parent_modal  = NULL;   /* backdrop underneath cur_modal when nested */
 static lv_obj_t *   confirm_box   = NULL;   /* boiler-type confirm dialog (child of cur_modal) */
 static lv_timer_t * modal_timer   = NULL;   /* live refresh for Heating/About modals */
 static void       (*modal_tick_fn)(void) = NULL;
@@ -56,6 +59,14 @@ static lv_obj_t * sw_dim_wx;
 static lv_obj_t * sl_forecast_mode, * lbl_forecast_mode;
 static lv_obj_t * sw_dim_waste;
 static lv_obj_t * sw_dim_bars, * sw_dim_bars_swap;
+/* Night-mode modal widgets. */
+static lv_obj_t * sw_night;
+static lv_obj_t * sw_night_src;
+static lv_obj_t * sl_night_start, * lbl_night_start, * row_night_start;
+static lv_obj_t * sl_night_end,   * lbl_night_end,   * row_night_end;
+static lv_obj_t * sl_night_pct,   * lbl_night_pct,   * row_night_pct;
+static lv_obj_t * lbl_night_hint;
+static lv_obj_t * lbl_night_summary;   /* on/off label shown in the Display modal */
 static lv_obj_t * sl_waste_lead, * lbl_waste_lead;
 static lv_obj_t * sl_offset,   * lbl_offset_val;
 static lv_obj_t * sw_boiler;
@@ -285,7 +296,7 @@ static void ta_kb_event(lv_event_t * e) {
             lv_obj_set_size(g_kb, LV_HOR_RES, SY(240));
             lv_obj_align(g_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
             lv_obj_add_event_cb(g_kb, kb_event, LV_EVENT_ALL, NULL);
-            lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, kb_num_map, kb_num_ctrl);
+            lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, (const char **)kb_num_map, kb_num_ctrl);
         }
         lv_keyboard_set_textarea(g_kb, ta);
         lv_keyboard_set_mode(g_kb, lv_obj_get_user_data(ta) == KB_NUMERIC
@@ -324,18 +335,37 @@ static void modal_close(lv_event_t * e) {
     modal_tick_fn = NULL;
     if (cur_modal) {
         lv_obj_t * m = cur_modal;
-        cur_modal = NULL;
+        cur_modal = parent_modal;     /* restore the modal underneath, if any */
+        parent_modal = NULL;
         lv_obj_del_async(m);          /* async: we're inside a descendant's event */
     }
+    if (e) lv_event_stop_bubbling(e); /* prevent the click from bubbling to the
+                                         backdrop and firing modal_close twice */
     settings_save();                  /* persist whatever the modal changed */
+}
+
+/* Tear down the whole open settings-modal stack. These modals live on the top
+ * layer (lv_layer_top), which renders above EVERY screen — so anything that
+ * changes the screen underneath (navigating to a full screen, or the idle
+ * auto-home / auto-dim) must dismiss them, or they stay stuck in front of home
+ * / the dim clock. Public so ui_stack can call it on idle. (modal_close pops
+ * one level and is NULL-event safe.) */
+void settings_close_all_modals(void) {
+    while (cur_modal) modal_close(NULL);
 }
 
 /* Build a dimmed full-screen backdrop + centred panel. Returns the panel;
    caller positions its content below y≈64 (title + close button live there). */
 static lv_obj_t * modal_open(const char * title, int panel_h) {
-    /* Parent on the currently-active screen, not the settings screen's root —
-     * the tile-slots picker can be opened from the home screen too. */
-    cur_modal = lv_obj_create(lv_scr_act());
+    /* Parent on the TOP LAYER, not lv_scr_act(): the Settings grid scrolls, and
+     * a backdrop parented to the scrolled screen sits at content-(0,0) — i.e.
+     * above the viewport once you've scrolled down to a low tile (e.g. Agenda),
+     * so the centered panel's top runs off-screen ("scroll the whole screen up
+     * to see it"). The top layer is a fixed full-screen overlay that's never
+     * scrolled, so the panel always centers on the real screen — and it still
+     * works when a modal is opened from the home screen too. */
+    if (cur_modal) parent_modal = cur_modal;  /* nesting: save the modal underneath */
+    cur_modal = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(cur_modal);
     lv_obj_set_size(cur_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(cur_modal, 0, 0);
@@ -346,13 +376,23 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_add_event_cb(cur_modal, modal_close, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * panel = lv_obj_create(cur_modal);
-    lv_obj_set_size(panel, SX(860), SY(panel_h));
+    /* Clamp height to screen minus margin so the panel doesn't run off the
+     * bottom. Always enable vertical scrolling — even when content nominally
+     * fits — to stop scroll events propagating to the scrollable settings
+     * screen behind the backdrop (especially on Toon 1 at 480px). */
+    int h = SY(panel_h);
+    if (h > DISP_VER - SUNI(20))
+        h = DISP_VER - SUNI(20);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(panel, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(panel, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_size(panel, SX(860), h);
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_radius(panel, 18, 0);
     lv_obj_set_style_pad_all(panel, 20, 0);
-    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_bottom(panel, SUNI(40), 0);
     lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);              /* stop taps reaching backdrop */
 
     lv_obj_t * t = lv_label_create(panel);
@@ -508,6 +548,125 @@ static void about_tick(void) {
 
 /* ============================ category modals ============================ */
 
+/* ---------------------------- Night mode modal --------------------------- */
+static const char * night_hhmm(int minutes, char * buf, size_t n) {
+    if (minutes < 0) minutes = 0;
+    minutes %= 1440;
+    snprintf(buf, n, "%02d:%02d", minutes / 60, minutes % 60);
+    return buf;
+}
+
+/* Live hint (refreshed by the modal timer): in sunset mode show the fetched
+ * sunrise/sunset in LOCAL time, or a fetching note until they land. */
+static void night_tick(void) {
+    if (!lbl_night_hint || settings.night_source != 1) return;
+    long sr = 0, ss = 0;
+    backlight_sun_times(&sr, &ss);
+    if (!sr || !ss) {
+        lv_label_set_text(lbl_night_hint, "Fetching sunrise/sunset...");
+        return;
+    }
+    char a[8], bb[8];
+    time_t tsr = (time_t)sr, tss = (time_t)ss;
+    struct tm lt;
+    localtime_r(&tsr, &lt); snprintf(a,  sizeof a,  "%02d:%02d", lt.tm_hour, lt.tm_min);
+    localtime_r(&tss, &lt); snprintf(bb, sizeof bb, "%02d:%02d", lt.tm_hour, lt.tm_min);
+    lv_label_set_text_fmt(lbl_night_hint, "Sunrise %s    Sunset %s", a, bb);
+}
+
+/* Show the Start/End time pickers only for the fixed-range trigger. In sunset
+ * mode hide them and float the brightness row up right under the trigger (no
+ * gap), with the location hint where the time pickers were. */
+static void night_update_vis(void) {
+    int timerange = (settings.night_source == 0);
+    if (row_night_start && row_night_end) {
+        if (timerange) {
+            lv_obj_clear_flag(row_night_start, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(row_night_end,   LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(row_night_start, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(row_night_end,   LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    int pct_y = timerange ? 398 : 234;   /* below the times, or under the trigger */
+    if (row_night_pct)
+        lv_obj_align(row_night_pct, LV_ALIGN_TOP_LEFT, SX(4), SY(pct_y));
+    if (lbl_night_hint) {
+        lv_obj_align(lbl_night_hint, LV_ALIGN_TOP_LEFT, SX(8), SY(pct_y + 82));
+        if (timerange) lv_obj_add_flag(lbl_night_hint, LV_OBJ_FLAG_HIDDEN);
+        else           lv_obj_clear_flag(lbl_night_hint, LV_OBJ_FLAG_HIDDEN);
+    }
+    night_tick();   /* fill the hint with the sun times right away in sunset mode */
+}
+
+static void on_night_enable(lv_event_t * e) {
+    settings.night_mode = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    if (lbl_night_summary)
+        lv_label_set_text(lbl_night_summary, settings.night_mode ? "on" : "off");
+}
+static void on_night_src(lv_event_t * e) {
+    settings.night_source =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    night_update_vis();
+}
+static void on_night_start(lv_event_t * e) {
+    settings.night_start = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    char b[8]; lv_label_set_text(lbl_night_start, night_hhmm(settings.night_start, b, sizeof b));
+}
+static void on_night_end(lv_event_t * e) {
+    settings.night_end = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    char b[8]; lv_label_set_text(lbl_night_end, night_hhmm(settings.night_end, b, sizeof b));
+}
+static void on_night_pct(lv_event_t * e) {
+    settings.night_pct = lv_slider_get_value(lv_event_get_target(e));
+    lv_label_set_text_fmt(lbl_night_pct, "%d%%", settings.night_pct);
+}
+
+/* Night mode: dim the screen to a % of the day brightness during night hours,
+ * triggered either by a fixed local time range or by sunset->sunrise. */
+static void open_night_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Night mode", 560);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
+    char b[8];
+    lv_obj_t * r;
+
+    r = panel_row(p, 70, "Enable night mode", NULL);
+    sw_night = row_switch(r, settings.night_mode, on_night_enable);
+
+    /* Trigger switch: ON = sunset -> sunrise, OFF = fixed time range. */
+    r = panel_row(p, 152, "Use sunset/sunrise", NULL);
+    sw_night_src = row_switch(r, settings.night_source, on_night_src);
+
+    row_night_start = panel_row(p, 234, "Start", &lbl_night_start);
+    lv_label_set_text(lbl_night_start, night_hhmm(settings.night_start, b, sizeof b));
+    sl_night_start = row_slider(row_night_start, 0, 95, settings.night_start / 15, on_night_start);
+
+    row_night_end = panel_row(p, 316, "End", &lbl_night_end);
+    lv_label_set_text(lbl_night_end, night_hhmm(settings.night_end, b, sizeof b));
+    sl_night_end = row_slider(row_night_end, 0, 95, settings.night_end / 15, on_night_end);
+
+    /* Brightness row + hint are repositioned by night_update_vis(): right under
+       the trigger in sunset mode, below the time pickers in range mode. */
+    row_night_pct = panel_row(p, 398, "Brightness (% of day)", &lbl_night_pct);
+    lv_label_set_text_fmt(lbl_night_pct, "%d%%", settings.night_pct);
+    sl_night_pct = row_slider(row_night_pct, 5, 100, settings.night_pct, on_night_pct);
+
+    lbl_night_hint = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_night_hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lbl_night_hint, SF(18), 0);
+    lv_label_set_text(lbl_night_hint, "Sunset/sunrise uses the Weather location.");
+
+    /* Live-refresh the sun-times hint while the modal is open (the fetch is
+       async, so the times may land a moment after sunset mode is enabled). */
+    modal_tick_fn = night_tick;
+    modal_timer = lv_timer_create(modal_timer_cb, 1000, NULL);
+
+    night_update_vis();
+}
+
 static void open_display_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("Display", 560);
@@ -546,10 +705,18 @@ static void open_display_modal(lv_event_t * e) {
     sl_dim = row_slider(r, 0, 400, settings.dim_brightness, on_dim_change);
     y += 82;
 
-    /* Auto-brightness — follow the LTR-303 ambient sensor (Toon 2). When on, the
-       active backlight tracks the room between the dim and active values above. */
+#ifndef TOON1
+    /* Toon 2 only: continuous ambient-light auto-brightness (LTR-303 sensor). */
     r = panel_row(p, y, "Auto-brightness (light sensor)", NULL);
     row_switch(r, settings.auto_brightness, on_auto_brightness_change);
+    y += 82;
+#endif
+
+    /* Night mode — dims the screen to a % of day brightness during night hours
+       (fixed time range or sunset). Tapping the row opens its own modal. */
+    r = panel_row(p, y, "Night mode", &lbl_night_summary);
+    lv_label_set_text(lbl_night_summary, settings.night_mode ? "on" : "off");
+    lv_obj_add_event_cb(r, open_night_modal, LV_EVENT_CLICKED, NULL);
     y += 82;
 
     /* Usage bars flanking the dim clock: energy now (W) + gas hourly (m³),
@@ -585,10 +752,10 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl_city, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_city, SF(22), 0);
     lv_label_set_text(lbl_city, "City:");
-    lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_wx_city = lv_textarea_create(p);
     lv_obj_set_size(ta_wx_city, SX(380), SY(44));
-    lv_obj_align(ta_wx_city, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_align(ta_wx_city, LV_ALIGN_TOP_LEFT, SX(240), SY(y - 4));
     lv_textarea_set_one_line(ta_wx_city, true);
     lv_textarea_set_text(ta_wx_city, settings.weather_location);
     y += 60;
@@ -597,10 +764,10 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl_id, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_id, SF(22), 0);
     lv_label_set_text(lbl_id, "Buienradar id:");
-    lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_wx_id = lv_textarea_create(p);
     lv_obj_set_size(ta_wx_id, SX(380), SY(44));
-    lv_obj_align(ta_wx_id, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_align(ta_wx_id, LV_ALIGN_TOP_LEFT, SX(240), SY(y - 4));
     lv_textarea_set_one_line(ta_wx_id, true);
     lv_textarea_set_accepted_chars(ta_wx_id, "0123456789");
     char id_str[16]; snprintf(id_str, sizeof id_str, "%d",
@@ -616,12 +783,12 @@ static void open_weather_modal(lv_event_t * e) {
         "Find your city's id in the URL on buienradar.nl/weer/<city>/nl/<ID>\n"
         "(e.g. Medemblik = 2751073, De Bilt = 2757783). Plain KNMI codes\n"
         "won't work — these are GeoNames ids.");
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 70;
 
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, SX(200), SY(50));
-    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_weather_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
@@ -633,7 +800,7 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl_wx_status, lv_color_hex(0x9fc4e6), 0);
     lv_obj_set_style_text_font(lbl_wx_status, SF(18), 0);
     lv_label_set_text(lbl_wx_status, "");
-    lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, SX(220), y + 12);
+    lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, SX(220), SY(y + 12));
 }
 
 static lv_obj_t * lbl_waste_status = NULL;
@@ -704,6 +871,9 @@ static void on_waste_apply(lv_event_t * e) {
     if (ta_waste_city)  snprintf(settings.waste_city,    sizeof settings.waste_city,    "%s", lv_textarea_get_text(ta_waste_city));
     if (ta_waste_ics)   snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url, "%s", lv_textarea_get_text(ta_waste_ics));
     settings_save();
+    waste_state.wake_fetch = 1;   /* wake the background fetcher so the
+                                     "refreshes within a few seconds" status
+                                     below is actually true (else up to 4h). */
     if (lbl_waste_status)
         lv_label_set_text(lbl_waste_status,
             "Saved - the calendar refreshes within a few seconds.");
@@ -715,13 +885,10 @@ static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lb
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, lbl);
-    /* Scale horizontally so fields fit the narrower 800px panel, but keep the
-     * vertical layout in design space — the modal panel scrolls, so preserving
-     * the proven row rhythm avoids labels/fields colliding on the short panel. */
-    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(x), y);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(x), SY(y));
     lv_obj_t * ta = lv_textarea_create(p);
-    lv_obj_set_size(ta, SX(w), 44);
-    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(x), y + 26);
+    lv_obj_set_size(ta, SX(w), SY(44));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(x), SY(y + 26));
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, val ? val : "");
     return ta;
@@ -754,11 +921,11 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, "Afvalverwerker (provider):");
-    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     waste_load_providers();
     dd_waste_prov = lv_dropdown_create(p);
     lv_obj_set_width(dd_waste_prov, SX(720));
-    lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, SX(4), y + 30);
+    lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 30));
     if (g_prov_count) {
         lv_dropdown_set_options(dd_waste_prov, g_prov_opts);
         for (int i = 0; i < g_prov_count; i++)
@@ -783,7 +950,7 @@ static void open_waste_modal(lv_event_t * e) {
 
     lv_obj_t * apply = lv_btn_create(p);
     lv_obj_set_size(apply, SX(200), SY(50));
-    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(apply, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(apply, on_waste_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, "Opslaan"); lv_obj_center(al);
@@ -794,7 +961,7 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_waste_status, SX(736));
     lv_label_set_long_mode(lbl_waste_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_waste_status, "Kies een provider en vul de velden die deze nodig heeft.");
-    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, SX(220), y + 8);
+    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, SX(220), SY(y + 8));
 }
 
 static void open_heating_modal(lv_event_t * e) {
@@ -811,7 +978,7 @@ static void open_heating_modal(lv_event_t * e) {
     /* boiler control type */
     lv_obj_t * box = lv_obj_create(p);
     lv_obj_set_size(box, SX(800), SY(200));
-    lv_obj_align(box, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(box, lv_color_hex(0x1f3050), 0);
     lv_obj_set_style_border_width(box, 0, 0);
     lv_obj_set_style_radius(box, 12, 0);
@@ -1075,8 +1242,7 @@ static void on_restart_yes(lv_event_t * e) {
     (void)e;
     settings_save();
     fprintf(stderr, "[settings] user requested UI restart — exiting\n");
-    fflush(NULL);
-    _exit(0);
+    ui_request_restart();
 }
 static void open_restart_confirm(lv_event_t * e) {
     (void)e;
@@ -1738,6 +1904,8 @@ static void on_int_energy_src(lv_event_t * e) {
     settings_save();
 }
 
+static void open_ha_entities_modal(lv_event_t * e);
+
 static void open_integrations_modal(lv_event_t * e) {
     (void)e;
     /* Five panel_rows × 84 + 92 + 100 (hint label) ≈ 612. Bump the modal
@@ -1780,6 +1948,239 @@ static void open_integrations_modal(lv_event_t * e) {
         "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
         "Toggle a switch then restart toonui.");
     lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+
+    /* Button to open the HA entity configuration modal. */
+    lv_obj_t * b_ha = lv_btn_create(p);
+    lv_obj_set_size(b_ha, SX(420), SY(50));
+    lv_obj_align(b_ha, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
+    lv_obj_set_style_bg_color(b_ha, lv_color_hex(0x335577), 0);
+    lv_obj_add_event_cb(b_ha, open_ha_entities_modal, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bhl = lv_label_create(b_ha);
+    lv_obj_set_style_text_color(bhl, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(bhl, "Configure HA entities...");
+    lv_obj_center(bhl);
+}
+
+/* ============== HA entity configuration modal ============== */
+static lv_obj_t * ta_ha_host            = NULL;
+static lv_obj_t * ta_curtain_entity     = NULL;
+static lv_obj_t * ta_curtain_bat_a      = NULL;
+static lv_obj_t * ta_curtain_bat_b      = NULL;
+static lv_obj_t * ta_blinds_entity      = NULL;
+static lv_obj_t * ta_blinds_bat_a       = NULL;
+static lv_obj_t * ta_blinds_bat_b       = NULL;
+static lv_obj_t * ta_doorbell_entity    = NULL;
+static lv_obj_t * ta_doorbell_camera    = NULL;
+static lv_obj_t * ta_doorbell_seconds   = NULL;
+static lv_obj_t * ta_doorbell_stream    = NULL;
+static lv_obj_t * ta_life360_a_entity   = NULL;
+static lv_obj_t * ta_life360_a_name     = NULL;
+static lv_obj_t * ta_life360_b_entity   = NULL;
+static lv_obj_t * ta_life360_b_name     = NULL;
+static lv_obj_t * ta_calendar_ha_entity = NULL;
+
+/* Browse-button context — heap-allocated, freed in the callback. */
+struct ha_browse_ctx {
+    lv_obj_t * ta;
+    char       domain[32];
+};
+
+static void on_ha_browse(lv_event_t * e) {
+    struct ha_browse_ctx * ctx = lv_event_get_user_data(e);
+    screen_ha_picker_open(ctx->domain, ctx->ta);
+    free(ctx);
+}
+
+/* Helper: add a labelled textarea row to the modal panel. Returns the
+ * y position for the next row. If `domain` is non-NULL a small [🔍]
+ * browse button is placed next to the textarea — tapping it opens the
+ * HA entity picker filtered to that domain. */
+static int ha_field_row(lv_obj_t * p, int y, const char * label,
+                        const char * value, const char * placeholder,
+                        int width, lv_obj_t ** ta_out,
+                        const char * domain) {
+    lv_obj_t * lb = lv_label_create(p);
+    lv_obj_set_style_text_color(lb, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lb, SF(18), 0);
+    lv_label_set_text(lb, label);
+    lv_obj_align(lb, LV_ALIGN_TOP_LEFT, SX(4), y + 4);
+
+    lv_obj_t * ta = lv_textarea_create(p);
+    lv_obj_set_size(ta, width, SY(36));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(260), y);
+    lv_textarea_set_one_line(ta, true);
+    if (placeholder) lv_textarea_set_placeholder_text(ta, placeholder);
+    if (value && value[0]) lv_textarea_set_text(ta, value);
+    *ta_out = ta;
+
+    /* Browse button for entity fields */
+    if (domain) {
+        struct ha_browse_ctx * ctx = malloc(sizeof(*ctx));
+        if (ctx) {
+            ctx->ta = ta;
+            snprintf(ctx->domain, sizeof(ctx->domain), "%s", domain);
+            lv_obj_t * b = lv_btn_create(p);
+            lv_obj_set_size(b, SY(36), SY(36));
+            lv_obj_align(b, LV_ALIGN_TOP_LEFT,
+                         SX(260) + width + SX(6), y);
+            lv_obj_set_style_radius(b, 6, 0);
+            lv_obj_t * bl = lv_label_create(b);
+            lv_label_set_text(bl, "...");
+            lv_obj_center(bl);
+            lv_obj_add_event_cb(b, on_ha_browse, LV_EVENT_CLICKED, ctx);
+        }
+    }
+    return y + 44;
+}
+
+static void on_ha_entities_save(lv_event_t * e) {
+    (void)e;
+    if (ta_ha_host) {
+        const char * v = lv_textarea_get_text(ta_ha_host);
+        snprintf(settings.ha_host, sizeof settings.ha_host, "%s", v ? v : "");
+    }
+    #define SAVE_TA(ta, field) do { \
+        if (ta) { const char * v = lv_textarea_get_text(ta); \
+                  snprintf(field, sizeof field, "%s", v ? v : ""); } \
+    } while(0)
+    SAVE_TA(ta_curtain_entity,     settings.curtain_entity);
+    SAVE_TA(ta_curtain_bat_a,      settings.curtain_bat_a);
+    SAVE_TA(ta_curtain_bat_b,      settings.curtain_bat_b);
+    SAVE_TA(ta_blinds_entity,      settings.blinds_entity);
+    SAVE_TA(ta_blinds_bat_a,       settings.blinds_bat_a);
+    SAVE_TA(ta_blinds_bat_b,       settings.blinds_bat_b);
+    SAVE_TA(ta_doorbell_entity,    settings.doorbell_entity);
+    SAVE_TA(ta_doorbell_camera,    settings.doorbell_camera);
+    SAVE_TA(ta_doorbell_stream,    settings.doorbell_stream_url);
+    SAVE_TA(ta_life360_a_entity,   settings.life360_a_entity);
+    SAVE_TA(ta_life360_a_name,     settings.life360_a_name);
+    SAVE_TA(ta_life360_b_entity,   settings.life360_b_entity);
+    SAVE_TA(ta_life360_b_name,     settings.life360_b_name);
+    SAVE_TA(ta_calendar_ha_entity, settings.calendar_ha_entity);
+    if (ta_doorbell_seconds) {
+        const char * v = lv_textarea_get_text(ta_doorbell_seconds);
+        int iv = v ? atoi(v) : 30;
+        if (iv < 3) iv = 3;
+        if (iv > 300) iv = 300;
+        settings.doorbell_seconds = iv;
+    }
+    #undef SAVE_TA
+    modal_close(e);                       /* persists settings, closes sub-modal, restores parent */
+}
+
+/* Open the dynamic device manager (add/remove/pin lights, covers, switches,
+ * scripts, scenes). It's a full SCREEN, which renders under the top-layer
+ * Settings modals — so dismiss the "HA entities" + "Integrations" modals first,
+ * or the manager opens hidden behind them. Closing them also makes popping back
+ * land cleanly on Settings (no stale modals), and the manager is a destination,
+ * not a sub-dialog you bounce out of. */
+static void on_manage_devices(lv_event_t * e) {
+    (void)e;
+    settings_close_all_modals();
+    ui_push(screen_ha_devices_create());
+}
+
+static void open_ha_entities_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("HA entities", 720);
+    int y = 70;
+    const int tw = SX(480);
+
+    /* HA host */
+    lv_obj_t * lh = lv_label_create(p);
+    lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lh, SF(22), 0);
+    lv_label_set_text(lh, "HA host (ip:port):");
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
+    ta_ha_host = lv_textarea_create(p);
+    lv_obj_set_size(ta_ha_host, tw, SY(44));
+    lv_obj_align(ta_ha_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_textarea_set_one_line(ta_ha_host, true);
+    lv_textarea_set_placeholder_text(ta_ha_host, "192.168.1.10:8123");
+    lv_textarea_set_text(ta_ha_host, settings.ha_host);
+    y += 56;
+
+    /* ── Devices ── (dynamic list: lights, covers, switches, scripts, scenes) */
+    lv_obj_t * lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Devices \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    {
+        lv_obj_t * hint = lv_label_create(p);
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(hint, SF(18), 0);
+        lv_label_set_text(hint, "Lights, covers, switches, scripts and scenes —\n"
+                                "shown behind the home Devices button.");
+        lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+        y += 52;
+        lv_obj_t * bm = lv_btn_create(p);
+        lv_obj_set_size(bm, SX(300), SY(48));
+        lv_obj_align(bm, LV_ALIGN_TOP_LEFT, SX(4), y);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(0x2e5e8a), 0);
+        lv_obj_set_style_radius(bm, 8, 0);
+        lv_obj_add_event_cb(bm, on_manage_devices, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * bml = lv_label_create(bm);
+        lv_obj_set_style_text_color(bml, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(bml, SF(20), 0);
+        lv_label_set_text(bml, "Manage devices...");
+        lv_obj_center(bml);
+        y += 60;
+    }
+
+    /* ── Doorbell ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Doorbell \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Trigger entity:", settings.doorbell_entity, "binary_sensor.deurbel", tw, &ta_doorbell_entity, "binary_sensor");
+    y = ha_field_row(p, y, "Camera entity:", settings.doorbell_camera, "camera.voordeur", tw, &ta_doorbell_camera, "camera");
+    y = ha_field_row(p, y, "Show seconds (3-300):", NULL, "30", SX(120), &ta_doorbell_seconds, NULL);
+    if (ta_doorbell_seconds) {
+        char sec_str[8];
+        snprintf(sec_str, sizeof(sec_str), "%d", settings.doorbell_seconds);
+        lv_textarea_set_text(ta_doorbell_seconds, sec_str);
+    }
+    y = ha_field_row(p, y, "MJPEG stream URL:", settings.doorbell_stream_url, "http://.../stream.mjpeg", tw, &ta_doorbell_stream, NULL);
+    y += 8;
+
+    /* ── Family / Life360 ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Family \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Person A entity:", settings.life360_a_entity, "device_tracker.life360_alice", tw, &ta_life360_a_entity, "device_tracker");
+    y = ha_field_row(p, y, "Person A name:", settings.life360_a_name, "Alice", tw, &ta_life360_a_name, NULL);
+    y = ha_field_row(p, y, "Person B entity:", settings.life360_b_entity, "device_tracker.life360_bob", tw, &ta_life360_b_entity, "device_tracker");
+    y = ha_field_row(p, y, "Person B name:", settings.life360_b_name, "Bob", tw, &ta_life360_b_name, NULL);
+    y += 8;
+
+    /* ── Calendar ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Calendar \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "HA calendar entity:", settings.calendar_ha_entity, "calendar.gezin", tw, &ta_calendar_ha_entity, "calendar");
+    y += 16;
+
+    /* Save button */
+    lv_obj_t * b_save = lv_btn_create(p);
+    lv_obj_set_size(b_save, SX(240), SY(50));
+    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_radius(b_save, 8, 0);
+    lv_obj_add_event_cb(b_save, on_ha_entities_save, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bsl = lv_label_create(b_save);
+    lv_obj_set_style_text_color(bsl, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(bsl, "Save & close");
+    lv_obj_center(bsl);
 }
 
 /* ==================== Tile slots modal ====================
@@ -1997,7 +2398,7 @@ static lv_obj_t * lbl_apply_warning;
 /* Latest async-test results (set by background thread, read by ui timer). */
 static char       g_test_result_buf[200]  = "";
 static char       g_check_result_buf[200] = "";
-static char       g_ket_result_buf[256]   = "";
+static char       g_ket_result_buf[512]   = "";  /* fits the longest FAIL msg + detail */
 static volatile int g_test_pending  = 0;
 static volatile int g_check_pending = 0;
 static volatile int g_ket_pending   = 0;
@@ -2919,7 +3320,7 @@ static void rebuild_topic_checkboxes(void) {
     /* Snapshot to a local array so we hold the mutex briefly. */
     char snap[16][96];
     for (int i = 0; i < n; i++)
-        snprintf(snap[i], sizeof(snap[0]), "%s", g_disc_topics[i]);
+        snprintf(snap[i], sizeof(snap[0]), "%.*s", (int)sizeof(snap[0]) - 1, g_disc_topics[i]);
     pthread_mutex_unlock(&g_disc_mtx);
 
     int y = 0;

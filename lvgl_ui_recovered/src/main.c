@@ -3,7 +3,7 @@
  * starts the BoxTalk client, then hands off to the screen stack.
  */
 #include "lvgl/lvgl.h"
-#include "lv_drivers/display/fbdev.h"
+#include "fbdev.h"   /* vendored copy: cutout + page-flip extras (not the submodule's) */
 #include "lv_drivers/indev/evdev.h"
 #include "bootpick.h"
 #include "boxtalk.h"
@@ -21,6 +21,8 @@
 #include "ventilation.h"
 #include "homeassistant.h"
 #include "doorbell.h"
+#include "video.h"
+#include "ui_cmd.h"
 #include "healthcheck.h"
 #include "pwa_server.h"
 #include "packages.h"
@@ -29,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 /* Wrap evdev_read so any PR event marks activity for the idle timer. */
 static void evdev_read_with_activity(lv_indev_drv_t * drv, lv_indev_data_t * data) {
@@ -36,7 +39,13 @@ static void evdev_read_with_activity(lv_indev_drv_t * drv, lv_indev_data_t * dat
     if (data->state == LV_INDEV_STATE_PR) ui_mark_activity();
 }
 
-/* DISP_HOR / DISP_VER come from display.h (per-target geometry). */
+/* DISP_HOR / DISP_VER come from display.h (per-target geometry).
+ *
+ * 100-line partial draw buffer. A bigger (third-screen) buffer was tried to cut
+ * the per-scroll-frame render-pass count on the object-dense Settings/list
+ * screens — measured zero difference, confirming scrolling is pixel-bound
+ * (every visible pixel recomputed each frame as the list moves) against the
+ * ARM926 + uncached framebuffer, not pass overhead. Reverted to keep RAM low. */
 #define DRAW_BUF_LINES 100
 
 static lv_color_t buf1[DISP_HOR * DRAW_BUF_LINES];
@@ -48,8 +57,21 @@ static lv_color_t buf2[DISP_HOR * DRAW_BUF_LINES];
  * retained pointers stay valid after this returns. */
 static void init_display_and_input(void) {
     lv_init();
+
+    /* Load config up front: the display-buffer choice (page-flip vs partial),
+     * the Toon 1 touch calibration below, and everything after all read the
+     * saved settings — not the compiled-in defaults. (Was loaded further down,
+     * which made the page-flip guard see video_overlay=0 regardless of cfg.) */
+    settings_load();
+
     fbdev_init();
 
+    /* Partial-mode double buffer in cached RAM, then memcpy to the fb in
+     * flush. We tried hardware page-flip (render straight into the fb pages +
+     * FBIOPAN_DISPLAY) but it was a net loss: the i.MX27 fb is uncached, so
+     * LVGL's blend/AA read-modify-write rendering into it is slower than
+     * rendering cached + one streaming memcpy. See git history if revisiting
+     * (e.g. on a cached-fb platform). */
     static lv_disp_draw_buf_t draw_buf;
     lv_disp_draw_buf_init(&draw_buf, buf1, buf2, DISP_HOR * DRAW_BUF_LINES);
     static lv_disp_drv_t disp_drv;
@@ -104,7 +126,6 @@ int main(int argc, char** argv) {
     if (!headless)
         init_display_and_input();
 
-    settings_load();
     layout_load_named(settings.active_layout);   /* home-tile layout: active preset */
 
     /* Marketplace registry — load before boxtalk so the handshake's
@@ -169,6 +190,13 @@ int main(int argc, char** argv) {
 
     ui_init();
 
+    /* Live video pipeline (Toon 1): warm-start vpu_stream so the Video tile
+     * opens in well under a second, and the UNIX-socket command channel for
+     * HA-style /show /hide triggers (doorbell_daemon -> /tmp/toonui.cmd).
+     * No-ops on non-TOON1 builds and when video_enabled=0. */
+    video_init();
+    ui_cmd_start();
+
     /* Doorbell snapshot overlay — watches ha_state.doorbell_seq and shows the
      * camera snapshot fullscreen over any screen. No-op unless configured. */
     if (!settings.client_mode)
@@ -176,12 +204,23 @@ int main(int argc, char** argv) {
 
     fprintf(stderr, "[main] entering LVGL loop\n");
     uint32_t last_idle_check = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint32_t last_tick_ms = (uint32_t)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000u);
     while (1) {
         lv_timer_handler();
         usleep(5000);
-        lv_tick_inc(5);
-        /* Cheap idle check ~5x/sec; ui_idle_tick is internally
-           cheap and only acts when timeout elapsed. */
+        /* Advance LVGL's clock by REAL elapsed wall time, not a fixed 5ms. A
+         * slow render makes one iteration take far longer than 5ms; the old
+         * fixed lv_tick_inc(5) then made lv_tick lag wall-clock badly, so
+         * scroll-momentum animations ran in slow motion ("scrolling takes ages
+         * to finish"). Driving the tick from CLOCK_MONOTONIC keeps animations
+         * correctly timed no matter how slow a frame is. */
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        uint32_t now_ms = (uint32_t)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000u);
+        lv_tick_inc(now_ms - last_tick_ms);
+        last_tick_ms = now_ms;
+        /* Cheap idle check ~5x/sec; ui_idle_tick only acts on timeout. */
         uint32_t now = lv_tick_get();
         if (now - last_idle_check > 200) {
             ui_idle_tick();

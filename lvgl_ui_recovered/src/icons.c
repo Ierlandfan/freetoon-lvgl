@@ -5,6 +5,8 @@
 #include "icon_drop.h"
 #include "icon_fan.h"
 #include "icon_radiator.h"
+#include "icon_ha.h"
+#include "icon_domoticz.h"
 #include "icon_wx_sun.h"
 #include "icon_wx_sun_cloud.h"
 #include "icon_wx_cloud.h"

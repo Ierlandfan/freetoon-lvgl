@@ -7,6 +7,7 @@
  */
 #include "screens.h"
 #include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
+#include "video.h"
 #include "inbox.h"
 #include "boxtalk.h"
 #ifdef WASM_BUILD
@@ -99,18 +100,15 @@ static lv_obj_t * lbl_outside_sub;
 static lv_obj_t * fc_day_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_temp_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_wind_lbl[WEATHER_FORECAST_DAYS];
+static lv_obj_t * fc_desc_lbl[WEATHER_FORECAST_DAYS];
+static lv_obj_t * fc_wind_arrow[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_icon[WEATHER_FORECAST_DAYS];
 static lv_obj_t * envelope_btn;
 static lv_obj_t * envelope_badge;
 static lv_obj_t * envelope_badge_lbl;
-static lv_obj_t * water_spinner;
-static lv_obj_t * forecast_box;
-static lv_obj_t * lbl_outside_main;
-static lv_obj_t * lbl_outside_sub;
-static lv_obj_t * fc_day_lbl[WEATHER_FORECAST_DAYS];
-static lv_obj_t * fc_temp_lbl[WEATHER_FORECAST_DAYS];
-static lv_obj_t * fc_wind_lbl[WEATHER_FORECAST_DAYS];
-static lv_obj_t * fc_icon[WEATHER_FORECAST_DAYS];
+static lv_obj_t * lbl_forecast_city = NULL;
+static lv_obj_t * lbl_life360_a = NULL;
+static lv_obj_t * lbl_life360_b = NULL;
 /* Bicolor partly-cloudy overlay — yellow sun layered on top of the
  * white cloud for 'b'/'j' Buienradar codes. Hidden for all other codes;
  * set_forecast_icon() manages visibility + src + recolor. */
@@ -193,27 +191,6 @@ static const lv_font_t * font_for(int px) {
     return &lv_font_montserrat_12;
 }
 
-static lv_obj_t * water_spinner;
-static lv_obj_t * forecast_box;
-static lv_obj_t * lbl_forecast_city = NULL;
-static lv_obj_t * lbl_life360_a = NULL;
-static lv_obj_t * lbl_life360_b   = NULL;
-static lv_obj_t * lbl_outside_main;
-static lv_obj_t * lbl_outside_sub;
-static lv_obj_t * fc_day_lbl[WEATHER_FORECAST_DAYS];
-static lv_obj_t * fc_temp_lbl[WEATHER_FORECAST_DAYS];
-static lv_obj_t * fc_desc_lbl[WEATHER_FORECAST_DAYS];
-static lv_obj_t * fc_wind_arrow[WEATHER_FORECAST_DAYS];
-static lv_obj_t * lbl_inbox_main;
-static lv_obj_t * lbl_inbox_sub;
-/* Bottom-row labels (Energy/Weather/Waste) — updated by refresh_cb */
-static lv_obj_t * lbl_bot_energy;
-static lv_obj_t * lbl_bot_weather;
-static lv_obj_t * lbl_bot_waste;
-static lv_obj_t * tile_img_flame;
-static lv_obj_t * tile_img_faucet;
-static lv_obj_t * tile_img_drop;
-
 /* Whole-tile pointers so refresh_cb can flip their offline labels or
  * hide them entirely based on the matching enable_* flag +
  * settings.hide_offline_tiles. NULL until the screen is built. */
@@ -222,7 +199,6 @@ static lv_obj_t * tile_family   = NULL;
 static lv_obj_t * tile_vent     = NULL;
 static lv_obj_t * tile_energy   = NULL;
 static lv_obj_t * tile_waste    = NULL;
-static lv_obj_t * tile_curtains = NULL;
 /* Custom-layout-only info tiles (content labels; NULL unless created). */
 static lv_obj_t * tile_news_sum_lbl = NULL;
 static lv_obj_t * tile_cal_lbl      = NULL;
@@ -550,7 +526,7 @@ static void upd_prog_tick(lv_timer_t * t) {
         if (sscanf(line, "@@STEP %d/", &n) == 1) { if (n > cur) cur = n; }
         else if (strncmp(line, "@@FAIL ", 7) == 0) {
             failed = cur > 0 ? cur : 1;
-            snprintf(failmsg, sizeof failmsg, "%s", line + 7);
+            snprintf(failmsg, sizeof failmsg, "%.*s", (int)sizeof(failmsg) - 1, line + 7);
             size_t L = strlen(failmsg);
             while (L && (failmsg[L-1] == '\n' || failmsg[L-1] == '\r')) failmsg[--L] = 0;
         }
@@ -894,19 +870,112 @@ static void on_vent_mode(lv_event_t * e) {
  * onto a 2-position toggle anyway. The buttons reuse on_vent_mode with
  * cmd="low" / "high". */
 
-/* --- Curtains tile (talks to HA via REST in homeassistant.c) ---
- * lbl_curtain_state is updated from refresh_cb; the 3 button handlers
- * fire off async open/close/stop calls.
- *
- * curt_spinner is an lv_spinner that's only visible while ha_state.
- * curtain_state ∈ {"opening","closing"}. curt_bar is a position bar
- * (0..100) so the user can see at a glance how open the curtain is. */
-static lv_obj_t * lbl_curtain_state = NULL;
-static lv_obj_t * curt_spinner      = NULL;
-static lv_obj_t * curt_bar          = NULL;
-static void on_curt_open (lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("open");  else ha_curtain_open_async();  }
-static void on_curt_close(lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("close"); else ha_curtain_close_async(); }
-static void on_curt_stop (lv_event_t * e) { (void)e; if (settings.client_mode) client_link_curtain("stop");  else ha_curtain_stop_async();  }
+/* --- Pinned device quick-tiles (home bottom-left) ---------------------------
+ * Any device flagged pin_home in the device manager appears as a compact
+ * strip here: covers get Open/Stop/Close + a position slider, lights an
+ * On/Off toggle + brightness slider, switches an On/Off toggle, scripts/
+ * scenes a Run button. State is refreshed from ha_devices[] in refresh_cb.
+ * Replaces the old fixed curtain + blinds tiles (covers are now just pinned
+ * cover devices, configurable in Settings -> Devices). */
+#define HOME_PIN_MAX 3
+typedef struct {
+    int        dev_idx;     /* index into ha_devices[] */
+    lv_obj_t * tile;
+    lv_obj_t * lbl;         /* "<name>  <state>" */
+    lv_obj_t * slider;      /* cover position / light brightness, or NULL */
+    lv_obj_t * btn;         /* light/switch toggle or script Run, or NULL */
+    lv_obj_t * btn_lbl;
+} home_pin_t;
+static home_pin_t home_pins[HOME_PIN_MAX];
+static int        home_pin_count = 0;
+
+static int pin_ev_idx(lv_event_t * e) { return (int)(intptr_t)lv_event_get_user_data(e); }
+static void on_pin_open (lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "open");  }
+static void on_pin_stop (lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "stop");  }
+static void on_pin_close(lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "close"); }
+static void on_pin_toggle(lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_toggle_async(ha_devices[i].type, ha_devices[i].entity_id); }
+static void on_pin_run(lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_run_async(ha_devices[i].type, ha_devices[i].entity_id); }
+static void on_pin_pos(lv_event_t * e) {
+    int i = pin_ev_idx(e);
+    if (i < 0 || i >= ha_device_count) return;
+    int v = lv_slider_get_value(lv_event_get_target(e));
+    if (ha_devices[i].type == HADEV_LIGHT) ha_light_set_brightness_async(ha_devices[i].entity_id, v);
+    else                                   ha_cover_set_position_async(ha_devices[i].entity_id, v);
+}
+
+/* Build one pinned tile at row `slot` (0-based) for ha_devices[dev_idx]. */
+static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
+    if (home_pin_count >= HOME_PIN_MAX) return;
+    ha_device_t * D = &ha_devices[dev_idx];
+    home_pin_t * P = &home_pins[home_pin_count];
+    memset(P, 0, sizeof *P);
+    P->dev_idx = dev_idx;
+
+    lv_obj_t * t = lv_obj_create(parent);
+    P->tile = t;
+    lv_obj_set_size(t, 520, 44);
+    lv_obj_set_pos(t, 20, 386 + slot * 48);
+    lv_obj_set_style_bg_color(t, lv_color_hex(COL_TILE_BG), 0);
+    lv_obj_set_style_border_width(t, 0, 0);
+    lv_obj_set_style_radius(t, 12, 0);
+    lv_obj_set_style_pad_all(t, 6, 0);
+    lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
+
+    P->lbl = lv_label_create(t);
+    lv_obj_set_style_text_color(P->lbl, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(P->lbl, SF(14), 0);
+    lv_label_set_text(P->lbl, D->name);
+    lv_obj_align(P->lbl, LV_ALIGN_TOP_LEFT, 8, 2);
+
+    if (D->type == HADEV_COVER || D->type == HADEV_LIGHT) {
+        P->slider = lv_slider_create(t);
+        lv_obj_set_size(P->slider, 240, 6);
+        lv_obj_align(P->slider, LV_ALIGN_BOTTOM_LEFT, 8, -4);
+        lv_slider_set_range(P->slider, 0, 100);
+        lv_slider_set_value(P->slider, 0, LV_ANIM_OFF);
+        lv_obj_set_style_bg_color(P->slider, lv_color_hex(0x223344), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(P->slider,
+            lv_color_hex(D->type == HADEV_LIGHT ? 0xffcc44 : 0x44aaff), LV_PART_INDICATOR);
+        lv_obj_remove_style(P->slider, NULL, LV_PART_KNOB);
+        lv_obj_add_event_cb(P->slider, on_pin_pos, LV_EVENT_RELEASED, (void *)(intptr_t)dev_idx);
+    }
+
+    if (D->type == HADEV_COVER) {
+        struct { const char * txt; uint32_t col; lv_event_cb_t cb; int x; } cb[] = {
+            { "Open", 0x2e6e3a, on_pin_open, -156 },
+            { "Stop", 0x6a5424, on_pin_stop,  -82 },
+            { "Close",0x6e3a3a, on_pin_close,  -8 },
+        };
+        for (size_t i = 0; i < 3; i++) {
+            lv_obj_t * b = lv_btn_create(t);
+            lv_obj_set_size(b, 70, 32);
+            lv_obj_align(b, LV_ALIGN_RIGHT_MID, cb[i].x, 0);
+            lv_obj_set_style_bg_color(b, lv_color_hex(cb[i].col), 0);
+            lv_obj_set_style_radius(b, 8, 0);
+            lv_obj_add_event_cb(b, cb[i].cb, LV_EVENT_CLICKED, (void *)(intptr_t)dev_idx);
+            lv_obj_t * l = lv_label_create(b);
+            lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_font(l, SF(14), 0);
+            lv_label_set_text(l, cb[i].txt);
+            lv_obj_center(l);
+        }
+    } else {
+        int run = (D->type == HADEV_SCRIPT || D->type == HADEV_SCENE);
+        P->btn = lv_btn_create(t);
+        lv_obj_set_size(P->btn, run ? 90 : 70, 32);
+        lv_obj_align(P->btn, LV_ALIGN_RIGHT_MID, -8, 0);
+        lv_obj_set_style_bg_color(P->btn, lv_color_hex(run ? 0x2e5e8a : 0x3a4658), 0);
+        lv_obj_set_style_radius(P->btn, 8, 0);
+        lv_obj_add_event_cb(P->btn, run ? on_pin_run : on_pin_toggle, LV_EVENT_CLICKED,
+                            (void *)(intptr_t)dev_idx);
+        P->btn_lbl = lv_label_create(P->btn);
+        lv_obj_set_style_text_color(P->btn_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(P->btn_lbl, SF(14), 0);
+        lv_label_set_text(P->btn_lbl, run ? (D->type == HADEV_SCENE ? "Activate" : "Run") : "Off");
+        lv_obj_center(P->btn_lbl);
+    }
+    home_pin_count++;
+}
 
 /* Timer button cycles 10 → 20 → 30 → off and updates its own label.
  * "off" maps to vremotecmd=auto (the most natural resting state). */
@@ -1039,7 +1108,7 @@ static void apply_offline_tile_visibility(void) {
         { tile_water,    water_live,  LT_WATER  },
         { tile_vent,     vent_live,   LT_VENT   },
         { tile_family,   family_live, LT_FAMILY },
-        { tile_curtains, family_live, LT_NONE   },   /* curtains share the HA gate */
+        /* Pinned device tiles show their own "(HA offline)" text in refresh_cb. */
     };
     for (size_t i = 0; i < sizeof(v)/sizeof(v[0]); i++) {
         if (!v[i].tile) continue;
@@ -1676,33 +1745,41 @@ static void refresh_cb(lv_timer_t * t) {
     if (vent_state.connected)
         vent_apply_fan_anim(vent_state.fan_rpm);
 
-    /* Curtains tile — state + position + battery from the HA poller.
-       Spinner is shown only while actively moving; the position bar always
-       reflects the live percentage. */
-    if (lbl_curtain_state) {
-        if (ha_state.connected) {
-            const char * s = ha_state.curtain_state[0]
-                             ? ha_state.curtain_state : "?";
-            char pretty[32] = {0};
-            snprintf(pretty, sizeof(pretty), "%c%s",
-                     (s[0] >= 'a' && s[0] <= 'z') ? s[0] - 'a' + 'A' : s[0],
-                     s + 1);
-            lv_label_set_text_fmt(lbl_curtain_state,
-                                  "Gordijnen %s %d%%  bat %d%%",
-                                  pretty,
-                                  ha_state.curtain_pos,
-                                  ha_state.curtain_battery);
-            if (curt_bar) lv_bar_set_value(curt_bar, ha_state.curtain_pos,
-                                           LV_ANIM_ON);
-            if (curt_spinner) {
-                int moving = (!strcmp(s, "opening") || !strcmp(s, "closing"));
-                if (moving) lv_obj_clear_flag(curt_spinner, LV_OBJ_FLAG_HIDDEN);
-                else        lv_obj_add_flag (curt_spinner, LV_OBJ_FLAG_HIDDEN);
-            }
-        } else {
-            lv_label_set_text(lbl_curtain_state, "Gordijnen  (HA offline)");
-            if (curt_spinner) lv_obj_add_flag(curt_spinner, LV_OBJ_FLAG_HIDDEN);
+    /* Pinned device quick-tiles — live state from ha_devices[]. */
+    for (int p = 0; p < home_pin_count; p++) {
+        home_pin_t * P = &home_pins[p];
+        if (P->dev_idx < 0 || P->dev_idx >= ha_device_count || !P->lbl) continue;
+        ha_device_t * D = &ha_devices[P->dev_idx];
+        if (!ha_state.connected) {
+            lv_label_set_text_fmt(P->lbl, "%s  (HA offline)", D->name);
+            continue;
         }
+        if (D->type == HADEV_COVER) {
+            const char * s = D->state[0] ? D->state : "?";
+            char pretty[24];
+            snprintf(pretty, sizeof pretty, "%c%s",
+                     (s[0] >= 'a' && s[0] <= 'z') ? s[0] - 'a' + 'A' : s[0], s + 1);
+            lv_label_set_text_fmt(P->lbl, "%s  %s %d%%", D->name, pretty,
+                                  D->position >= 0 ? D->position : 0);
+            if (P->slider && D->position >= 0)
+                lv_slider_set_value(P->slider, D->position, LV_ANIM_ON);
+        } else if (D->type == HADEV_LIGHT || D->type == HADEV_SWITCH) {
+            const char * st = !D->available ? "offline" : (D->on ? "on" : "off");
+            if (D->type == HADEV_LIGHT && D->available && D->on && D->brightness > 0)
+                lv_label_set_text_fmt(P->lbl, "%s  on %d%%", D->name, D->brightness * 100 / 255);
+            else
+                lv_label_set_text_fmt(P->lbl, "%s  %s", D->name, st);
+            if (P->btn_lbl) lv_label_set_text(P->btn_lbl, D->on ? "On" : "Off");
+            if (P->btn) lv_obj_set_style_bg_color(P->btn,
+                            lv_color_hex(D->on ? 0xffcc44 : 0x3a4658), 0);
+            if (P->slider && D->type == HADEV_LIGHT) {
+                if (D->on && D->brightness > 0)
+                    lv_slider_set_value(P->slider, D->brightness * 100 / 255, LV_ANIM_OFF);
+                else if (!D->on)
+                    lv_slider_set_value(P->slider, 0, LV_ANIM_OFF);
+            }
+        }
+        /* script/scene: static label + Run button, nothing to refresh */
     }
 
 
@@ -2191,14 +2268,32 @@ static void on_home_gesture_to_lights(lv_event_t * e) {
  * opens the lights backend on release. */
 static lv_obj_t * lights_handle     = NULL;
 static lv_obj_t * lights_handle_lbl = NULL;
+static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
 
 static void lights_handle_set(bool open) {
     if (!lights_handle) return;
-    lv_obj_set_size(lights_handle, open ? 132 : 22, open ? 56 : 64);
-    lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 2 : -10, 0);
+    lv_obj_set_size(lights_handle, open ? 160 : 56, open ? 56 : 80);
+    lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -4, 0);
     lv_obj_set_style_radius(lights_handle, open ? 16 : LV_RADIUS_CIRCLE, 0);
-    if (open) lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-    else      lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+    if (open) {
+        /* Expanded: word label, hide the logo. */
+        if (lights_handle_img) lv_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+        if (lights_handle_lbl) {
+            lv_label_set_text(lights_handle_lbl, "Devices");
+            lv_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
+            lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else {
+        /* Collapsed: the backend logo if we have one, else the charge glyph. */
+        if (lights_handle_img) {
+            lv_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+            if (lights_handle_lbl) lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else if (lights_handle_lbl) {
+            lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
+            lv_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
+            lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 static void on_lights_handle(lv_event_t * e) {
     switch (lv_event_get_code(e)) {
@@ -2416,7 +2511,8 @@ static void * map_fetch_thread(void * arg) {
         for (int col = 0; col < 2; col++) {
             int tx = left + col, ty = top + row;
             tx = ((tx % n) + n) % n;
-            if (ty < 0) ty = 0; if (ty >= n) ty = n - 1;
+            if (ty < 0) ty = 0;
+            if (ty >= n) ty = n - 1;
             char cmd[400];
             snprintf(cmd, sizeof cmd,
                 "curl -fsSL -m 12 -A 'freetoon-map/1.0' -o /tmp/map_%d.png "
@@ -2826,6 +2922,10 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_up_lbl);
 
+    /* Camera button — icon-only, stacked above the "+". Self-gated: only
+     * appears when video is enabled (no-op on Toon 2 / when disabled). */
+    video_install_button(th, btn_up);
+
     /* Mode toggle row — Manual | Program, both tappable. Active mode gets
      * a white outline. Buttons are compact (110 + 140) — the active preset
      * is already visible from the highlighted preset button on the row
@@ -2914,7 +3014,11 @@ lv_obj_t * screen_home_create(void) {
     /* Bottom strip: humidity | eCO2 | TVOC | water-pressure on one row.
        Font 18 keeps the 4 values from running into each other on a
        520-wide tile. y offset 0 pins them flush with the tile bottom
-       so the mode-toggle and preset rows above have more breathing room. */
+       so the mode-toggle and preset rows above have more breathing room.
+       humidity/eCO2/TVOC come from the eCO2/TVOC air sensor that only
+       Toon 2 has -- omit them on Toon 1 (the update sites null-check, so
+       leaving these NULL just hides them; water-pressure stays). */
+#ifndef TOON1
     lbl_t_humidity = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_humidity, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_t_humidity, SF(18), 0);
@@ -2932,6 +3036,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(lbl_t_tvoc, SF(18), 0);
     lv_label_set_text(lbl_t_tvoc, "TVOC --");
     lv_obj_align(lbl_t_tvoc, LV_ALIGN_BOTTOM_LEFT, 280, 8);
+#endif
 
     lbl_t_pressure = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_pressure, lv_color_hex(COL_TEXT_DIM), 0);
@@ -3370,70 +3475,19 @@ lv_obj_t * screen_home_create(void) {
     }
     home_show_page(0);
 
-    /* --- Curtains tile — slim strip below the (shrunk) thermostat tile.
-           Talks to Home Assistant via REST. Shows the group state +
-           battery; provides Open / Stop / Close buttons. --- */
-    lv_obj_t * curt_tile = lv_obj_create(scr_root);
-    tile_curtains = curt_tile;
-    lv_obj_set_size(curt_tile, 520, 44);
-    lv_obj_set_pos(curt_tile, 20, 386);
-    lv_obj_set_style_bg_color(curt_tile, lv_color_hex(COL_TILE_BG), 0);
-    lv_obj_set_style_border_width(curt_tile, 0, 0);
-    lv_obj_set_style_radius(curt_tile, 12, 0);
-    lv_obj_set_style_pad_all(curt_tile, 6, 0);
-    lv_obj_clear_flag(curt_tile, LV_OBJ_FLAG_SCROLLABLE);
-
-    /* Left strip: title + live state ("Gordijnen — open / 99%  bat 89%"). */
-    lbl_curtain_state = lv_label_create(curt_tile);
-    lv_obj_set_style_text_color(lbl_curtain_state, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_curtain_state, SF(14), 0);
-    lv_label_set_text(lbl_curtain_state, "Gordijnen  --");
-    lv_obj_align(lbl_curtain_state, LV_ALIGN_TOP_LEFT, 8, 2);
-
-    /* Position bar 0..100 sits underneath the label so the user can see
-       at a glance how open the curtain is. Same teal as the existing
-       curtain-related elements. */
-    curt_bar = lv_bar_create(curt_tile);
-    lv_obj_set_size(curt_bar, 240, 6);
-    lv_obj_align(curt_bar, LV_ALIGN_BOTTOM_LEFT, 8, -4);
-    lv_bar_set_range(curt_bar, 0, 100);
-    lv_bar_set_value(curt_bar, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(curt_bar, lv_color_hex(0x223344), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(curt_bar, lv_color_hex(0x44aaff), LV_PART_INDICATOR);
-
-    /* Tiny spinner overlay — visible only while the curtain is mid-move.
-       lv_spinner is the same widget the water tile uses; it's an arc
-       that rotates continuously. */
-    curt_spinner = lv_spinner_create(curt_tile, 1200, 80);
-    lv_obj_set_size(curt_spinner, 28, 28);
-    lv_obj_align(curt_spinner, LV_ALIGN_LEFT_MID, 254, 0);
-    lv_obj_set_style_arc_color(curt_spinner, lv_color_hex(0x223344), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(curt_spinner, lv_color_hex(0x44aaff),
-                               LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(curt_spinner, 4, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(curt_spinner, 4, LV_PART_INDICATOR);
-    lv_obj_add_flag(curt_spinner, LV_OBJ_FLAG_HIDDEN);
-
-    /* Three buttons on the right: Open / Stop / Close. Narrower than the
-       default tile-button width so the label on the left has room for the
-       full state + battery readout. */
-    struct { const char * txt; uint32_t col; lv_event_cb_t cb; int x; } cbtn[] = {
-        { "Open",  0x2e6e3a, on_curt_open,  -156 },
-        { "Stop",  0x6a5424, on_curt_stop,   -82 },
-        { "Close", 0x6e3a3a, on_curt_close,   -8 },
-    };
-    for (size_t i = 0; i < sizeof(cbtn)/sizeof(cbtn[0]); i++) {
-        lv_obj_t * b = lv_btn_create(curt_tile);
-        lv_obj_set_size(b, 70, 32);
-        lv_obj_align(b, LV_ALIGN_RIGHT_MID, cbtn[i].x, 0);
-        lv_obj_set_style_bg_color(b, lv_color_hex(cbtn[i].col), 0);
-        lv_obj_set_style_radius(b, 8, 0);
-        lv_obj_add_event_cb(b, cbtn[i].cb, LV_EVENT_CLICKED, NULL);
-        lv_obj_t * bl = lv_label_create(b);
-        lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(bl, SF(14), 0);
-        lv_label_set_text(bl, cbtn[i].txt);
-        lv_obj_center(bl);
+    /* --- Pinned device quick-tiles — replaces the old fixed curtain/blinds
+           strips. Renders the devices flagged pin_home in the device manager
+           (Settings -> Devices), stacked below the thermostat tile. Only in
+           the default layout; the custom-layout grid uses its own tiles + the
+           LT_LIGHTS tile, so hardcoded strips would collide with the grid.
+           Moved to the foreground at the end of create() so they sit above
+           the later-built forecast strip. --- */
+    home_pin_count = 0;
+    if (!settings.custom_layout_enabled) {
+        int maxn = (DISP_VER >= 560) ? HOME_PIN_MAX : 2;
+        for (int i = 0; i < ha_device_count && home_pin_count < maxn; i++)
+            if (ha_devices[i].pin_home)
+                build_pin_tile(scr_root, i, home_pin_count);
     }
 
     /* City header above the forecast — labels the strip and shows the
@@ -3697,24 +3751,37 @@ lv_obj_t * screen_home_create(void) {
      * Same target as the swipe-right gesture, but discoverable. */
     {
         lights_handle = lv_btn_create(scr_root);
-        lv_obj_set_size(lights_handle, 22, 64);
-        lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -10, 0);
+        lv_obj_set_size(lights_handle, 56, 80);
+        lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -4, 0);
         lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x2a4060), 0);
         lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x3a5688), LV_STATE_PRESSED);
         lv_obj_set_style_bg_opa(lights_handle, LV_OPA_70, 0);
         lv_obj_set_style_radius(lights_handle, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_pad_all(lights_handle, 0, 0);
-        lv_obj_set_ext_click_area(lights_handle, 18);   /* easy to grab while slim */
+        lv_obj_set_ext_click_area(lights_handle, 24);   /* generous touch target */
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESSED,    NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_RELEASED,   NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESS_LOST, NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_CLICKED,    NULL);
         lights_handle_lbl = lv_label_create(lights_handle);
         lv_obj_set_style_text_color(lights_handle_lbl, lv_color_hex(0xffe08a), 0);
-        lv_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
-        lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE " Lights");
+        lv_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
+        lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
         lv_obj_center(lights_handle_lbl);
-        lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);   /* shown only while expanded */
+
+        /* Collapsed handle shows the active backend's logo: Domoticz if that's
+         * configured (matches open_lights_backend's priority), else HA. The
+         * charge glyph stays as the fallback when neither is enabled. */
+        const lv_img_dsc_t * logo = settings.enable_domoticz ? &icon_domoticz
+                                  : settings.enable_ha       ? &icon_ha
+                                  : NULL;
+        if (logo) {
+            lights_handle_img = lv_img_create(lights_handle);
+            lv_img_set_src(lights_handle_img, logo);
+            lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
+            lv_obj_center(lights_handle_img);
+            lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     /* Gear in the very top-right corner of the screen. */
@@ -3730,6 +3797,11 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(gear_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(gear_lbl, SF(18), 0);
     lv_obj_center(gear_lbl);
+
+    /* Pinned device tiles were built before the forecast strip, so raise them
+     * above it now that every tile exists. */
+    for (int p = 0; p < home_pin_count; p++)
+        if (home_pins[p].tile) lv_obj_move_foreground(home_pins[p].tile);
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 500, NULL);
     return scr_root;
