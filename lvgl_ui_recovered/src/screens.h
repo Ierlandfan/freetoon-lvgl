@@ -38,6 +38,7 @@ lv_obj_t * screen_ha_picker_create(void);       /* Settings -> HA entity picker 
 void screen_ha_picker_open(const char * domain, lv_obj_t * target_ta);  /* creates overlay on top layer */
 void screen_ha_picker_open_add(const char * domain, int dev_type);      /* add-mode: pick -> ha_device_add */
 lv_obj_t * screen_ha_devices_create(void);      /* Settings -> Devices manager (add/remove/pin) */
+void       screen_ha_devices_set_add_mode(int dz); /* 0 = HA add-buttons, 1 = Domoticz only */
 lv_obj_t * screen_crypto_create(void);           /* crypto tile-tap -> price-history graphs */
 lv_obj_t * screen_forecast_create(void);
 lv_obj_t * screen_stats_create(void);

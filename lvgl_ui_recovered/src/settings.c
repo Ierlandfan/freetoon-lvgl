@@ -143,6 +143,8 @@ settings_t settings = {
     /* PIN off by default. */
     .pin_enabled         = 0,
     .pin_code            = "",
+
+    .lang                = 0,   /* English by default */
 };
 
 float display_indoor_temp(float raw) {
@@ -366,6 +368,7 @@ void settings_load(void) {
         else if (strcmp(k, "pin_enabled")       == 0) settings.pin_enabled = iv;
         else if (strcmp(k, "pin_code")          == 0)
             snprintf(settings.pin_code, sizeof settings.pin_code, "%s", v);
+        else if (strcmp(k, "lang")              == 0) settings.lang = (iv == 1) ? 1 : 0;
     }
     fclose(f);
 
@@ -687,5 +690,6 @@ void settings_save(void) {
     fprintf(f, "pwa_login_pass=%s\n",    settings.pwa_login_pass);
     fprintf(f, "pin_enabled=%d\n",       settings.pin_enabled);
     fprintf(f, "pin_code=%s\n",          settings.pin_code);
+    fprintf(f, "lang=%d\n",              settings.lang);
     fclose(f);
 }

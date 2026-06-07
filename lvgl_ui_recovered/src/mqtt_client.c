@@ -356,12 +356,8 @@ static int subscriber_session(void) {
         }
         fprintf(stderr, "[mqtt] subscribed: %s\n", settings.mqtt_topics[i]);
     }
-    /* Domoticz native MQTT gateway: domoticz/out. (HA reads over its WebSocket,
-     * not MQTT — see homeassistant.c.) */
-    if (settings.mqtt_domoticz) {
-        if (mqtt_send_subscribe(s, pid++, "domoticz/out") == 0)
-            fprintf(stderr, "[mqtt] subscribed: domoticz/out\n");
-    }
+    /* Devices no longer use MQTT (HA → WebSocket, Domoticz → ws://host/json).
+     * The broker here only carries the optional packages banner/state topics. */
     /* Switch RX timeout to PING cadence so we wake to send pings + check
      * the restart flag. */
     struct timeval tv = { .tv_sec = PING_S, .tv_usec = 0 };

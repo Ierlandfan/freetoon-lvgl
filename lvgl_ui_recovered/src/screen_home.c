@@ -943,17 +943,17 @@ static home_pin_t home_pins[HOME_PIN_MAX];
 static int        home_pin_count = 0;
 
 static int pin_ev_idx(lv_event_t * e) { return (int)(intptr_t)lv_event_get_user_data(e); }
-static void on_pin_open (lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "open");  }
-static void on_pin_stop (lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "stop");  }
-static void on_pin_close(lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "close"); }
-static void on_pin_toggle(lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_toggle_async(ha_devices[i].type, ha_devices[i].entity_id); }
-static void on_pin_run(lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_run_async(ha_devices[i].type, ha_devices[i].entity_id); }
+static void on_pin_open (lv_event_t * e) { ha_dev_cover(pin_ev_idx(e), "open");  }
+static void on_pin_stop (lv_event_t * e) { ha_dev_cover(pin_ev_idx(e), "stop");  }
+static void on_pin_close(lv_event_t * e) { ha_dev_cover(pin_ev_idx(e), "close"); }
+static void on_pin_toggle(lv_event_t * e) { ha_dev_toggle(pin_ev_idx(e)); }
+static void on_pin_run(lv_event_t * e) { ha_dev_run(pin_ev_idx(e)); }
 static void on_pin_pos(lv_event_t * e) {
     int i = pin_ev_idx(e);
     if (i < 0 || i >= ha_device_count) return;
     int v = lv_slider_get_value(lv_event_get_target(e));
-    if (ha_devices[i].type == HADEV_LIGHT) ha_light_set_brightness_async(ha_devices[i].entity_id, v);
-    else                                   ha_cover_set_position_async(ha_devices[i].entity_id, v);
+    if (ha_devices[i].type == HADEV_LIGHT) ha_dev_brightness(i, v);
+    else                                   ha_dev_position(i, v);
 }
 static void pin_select_cycle(int idx, int dir) {
     if (idx < 0 || idx >= ha_device_count) return;
@@ -977,7 +977,7 @@ static void pin_select_cycle(int idx, int dir) {
         if (n == next) { target = tok; break; }
         n++;
     }
-    if (target) ha_device_select_option_async(D->entity_id, target);
+    if (target) ha_dev_select_set(idx, target);   /* backend-aware (HA or Domoticz) */
 }
 static void on_pin_select_prev(lv_event_t * e) { pin_select_cycle(pin_ev_idx(e), -1); }
 static void on_pin_select_next(lv_event_t * e) { pin_select_cycle(pin_ev_idx(e),  1); }
@@ -1906,12 +1906,15 @@ static void refresh_cb(lv_timer_t * t) {
         vent_apply_fan_anim(vent_state.fan_rpm);
 
     /* Pinned device quick-tiles — live state from ha_devices[]. */
+    ha_devices_sync_dz();          /* refresh Domoticz-backed pinned tiles */
     for (int p = 0; p < home_pin_count; p++) {
         home_pin_t * P = &home_pins[p];
         if (P->dev_idx < 0 || P->dev_idx >= ha_device_count || !P->lbl) continue;
         ha_device_t * D = &ha_devices[P->dev_idx];
-        if (!ha_state.connected) {
-            lv_label_set_text_fmt(P->lbl, "%s  (HA offline)", D->name);
+        int offline = (D->backend == HADEV_BE_DZ) ? !D->available : !ha_state.connected;
+        if (offline) {
+            lv_label_set_text_fmt(P->lbl, "%s  (%s offline)", D->name,
+                                  D->backend == HADEV_BE_DZ ? "Domoticz" : "HA");
             continue;
         }
         if (D->type == HADEV_COVER) {
@@ -2365,11 +2368,11 @@ static void refresh_cb(lv_timer_t * t) {
 /* ---------- screen builder ---------- */
 /* Push the Lights page. Used by both the swipe-right gesture and the
  * lightbulb button in the top-right. */
-/* Route to whichever lights backend is enabled: Domoticz if configured,
- * otherwise the Home Assistant lights page. */
+/* The unified Devices screen lists both Home Assistant and Domoticz devices
+ * from the one managed list (ha_devices[], backend-tagged). The raw Domoticz
+ * auto-discovery browser still lives at Settings → Domoticz. */
 static void open_lights_backend(void) {
-    if (settings.enable_domoticz) ui_push(screen_domoticz_create());
-    else                          ui_push(screen_lights_create());
+    ui_push(screen_lights_create());
 }
 /* Click handler for the optional LT_LIGHTS grid tile (custom layout). */
 static void on_lights_tile(lv_event_t * e) { (void)e; open_lights_backend(); }
@@ -2442,27 +2445,36 @@ static void on_home_gesture_to_lights(lv_event_t * e) {
 /* Collapsible lights handle: idles as a slim half-circle tab peeking from the
  * left edge, expands into a horizontal "Lights" button while pressed, and
  * opens the lights backend on release. */
-static lv_obj_t * lights_handle     = NULL;
-static lv_obj_t * lights_handle_lbl = NULL;
-static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
+static lv_obj_t * lights_handle      = NULL;
+static lv_obj_t * lights_handle_lbl  = NULL;
+static lv_obj_t * lights_handle_img  = NULL;   /* backend logo (HA / Domoticz) */
+static lv_obj_t * lights_handle_img2 = NULL;   /* 2nd logo when both backends on */
+/* Thermostat-tile geometry, captured when the tile is built, so the left-edge
+ * Devices handle can be anchored just below the setpoint "−" button (which
+ * moves with the tile height set in the layout editor) instead of overlapping
+ * it at the fixed screen mid-line. */
+static int s_th_y = 20, s_th_h = 360;
+static int lights_handle_yoff = 0;             /* LEFT_MID y offset for the handle */
 
 static void lights_handle_set(bool open) {
     if (!lights_handle) return;
     lv_obj_set_size(lights_handle, open ? 160 : 56, open ? 56 : 80);
-    lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -4, 0);
+    lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -4, lights_handle_yoff);
     lv_obj_set_style_radius(lights_handle, open ? 16 : LV_RADIUS_CIRCLE, 0);
     if (open) {
-        /* Expanded: word label, hide the logo. */
-        if (lights_handle_img) lv_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+        /* Expanded: word label, hide the logo(s). */
+        if (lights_handle_img)  lv_obj_add_flag(lights_handle_img,  LV_OBJ_FLAG_HIDDEN);
+        if (lights_handle_img2) lv_obj_add_flag(lights_handle_img2, LV_OBJ_FLAG_HIDDEN);
         if (lights_handle_lbl) {
             lv_label_set_text(lights_handle_lbl, "Devices");
             lv_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
             lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     } else {
-        /* Collapsed: the backend logo if we have one, else the charge glyph. */
+        /* Collapsed: the backend logo(s) if we have any, else the charge glyph. */
         if (lights_handle_img) {
             lv_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+            if (lights_handle_img2) lv_obj_clear_flag(lights_handle_img2, LV_OBJ_FLAG_HIDDEN);
             if (lights_handle_lbl) lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
         } else if (lights_handle_lbl) {
             lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
@@ -2974,6 +2986,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_t * th = lv_obj_create(scr_root);
     lv_obj_set_size(th, 520, 360);   /* bottom flush with the curtains/right column */
     lv_obj_set_pos(th, 20, 20);
+    s_th_y = 20; s_th_h = 360;       /* explicit (lv_obj_get_* isn't laid out yet) */
     /* Custom layout: move/size/hide the thermostat block from the grid. Size
      * it to its grid cell too (like every make_tile tile) so its footprint and
      * its neighbours line up on the grid — otherwise the native 520x360 tile is
@@ -2988,6 +3001,7 @@ lv_obj_t * screen_home_create(void) {
             layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &w, &h);
             lv_obj_set_pos(th, x, y);
             lv_obj_set_size(th, w, h);
+            s_th_y = y; s_th_h = h;
             /* The "ft" logo badge is a fixed 40px box at screen (8,6). A custom
              * layout can place the thermostat at the top-left corner, putting the
              * clock behind the badge — shift it right to clear it. (pad_all=20.) */
@@ -3219,7 +3233,15 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_t_pressure, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_t_pressure, SF(18), 0);
     lv_label_set_text(lbl_t_pressure, "-- bar");
+#ifdef TOON1
+    /* Toon 1 has no air-sensor strip, and at a short tile height the bottom-right
+     * pressure collided with the Away preset. Park it just under the setpoint
+     * (centred), which tracks the tile centre at any height. (Toon 2 keeps it
+     * bottom-right next to humidity/eCO2/TVOC, which wouldn't fit up here.) */
+    lv_obj_align(lbl_t_pressure, LV_ALIGN_CENTER, 0, 37);
+#else
     lv_obj_align(lbl_t_pressure, LV_ALIGN_BOTTOM_RIGHT, -12, 8);
+#endif
 
     /* CH-pressure warning banner. Sits on top of the Heater tile so the
        user can't miss it. EVENT_BUBBLE keeps the tile clickable through
@@ -3939,9 +3961,18 @@ lv_obj_t * screen_home_create(void) {
      * opens the lights backend (Domoticz if enabled, else Home Assistant).
      * Same target as the swipe-right gesture, but discoverable. */
     {
+        /* Anchor a touch below the setpoint "−" button so the two never overlap,
+         * whatever tile height the layout editor picks. Minus-button bottom (in
+         * screen px) = tile_top + tile_h/2 + 28 (sp_row is CENTER −10, the button
+         * 76 tall); place the 80-px handle ~8 px under it. Clamp to a safe band
+         * so a very tall/short tile can't push it off-screen or into the curtains. */
+        lights_handle_yoff = s_th_y + s_th_h / 2 - 164;
+        if (lights_handle_yoff < -150) lights_handle_yoff = -150;
+        if (lights_handle_yoff >  100) lights_handle_yoff =  100;
+
         lights_handle = lv_btn_create(scr_root);
         lv_obj_set_size(lights_handle, 56, 80);
-        lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -4, 0);
+        lv_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -4, lights_handle_yoff);
         lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x2a4060), 0);
         lv_obj_set_style_bg_color(lights_handle, lv_color_hex(0x3a5688), LV_STATE_PRESSED);
         lv_obj_set_style_bg_opa(lights_handle, LV_OPA_70, 0);
@@ -3958,18 +3989,25 @@ lv_obj_t * screen_home_create(void) {
         lv_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
         lv_obj_center(lights_handle_lbl);
 
-        /* Collapsed handle shows the active backend's logo: Domoticz if that's
-         * configured (matches open_lights_backend's priority), else HA. The
-         * charge glyph stays as the fallback when neither is enabled. */
-        const lv_img_dsc_t * logo = settings.enable_domoticz ? &icon_domoticz
-                                  : settings.enable_ha       ? &icon_ha
-                                  : NULL;
-        if (logo) {
+        /* Collapsed handle shows the enabled backends' logos: HA and/or
+         * Domoticz. Both on → two stacked logos; one → centred single; neither
+         * → the charge glyph fallback. */
+        const lv_img_dsc_t * l1 = NULL; const lv_img_dsc_t * l2 = NULL;
+        if (settings.enable_ha && settings.enable_domoticz) { l1 = &icon_ha; l2 = &icon_domoticz; }
+        else if (settings.enable_domoticz)                  { l1 = &icon_domoticz; }
+        else if (settings.enable_ha)                        { l1 = &icon_ha; }
+        if (l1) {
             lights_handle_img = lv_img_create(lights_handle);
-            lv_img_set_src(lights_handle_img, logo);
-            lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
-            lv_obj_center(lights_handle_img);
+            lv_img_set_src(lights_handle_img, l1);
+            lv_img_set_zoom(lights_handle_img, l2 ? 168 : 224);   /* smaller when stacked */
+            lv_obj_align(lights_handle_img, l2 ? LV_ALIGN_CENTER : LV_ALIGN_CENTER, 0, l2 ? -18 : 0);
             lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (l2) {
+            lights_handle_img2 = lv_img_create(lights_handle);
+            lv_img_set_src(lights_handle_img2, l2);
+            lv_img_set_zoom(lights_handle_img2, 168);
+            lv_obj_align(lights_handle_img2, LV_ALIGN_CENTER, 0, 18);
         }
     }
 

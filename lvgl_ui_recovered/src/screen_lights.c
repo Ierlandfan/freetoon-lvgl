@@ -35,6 +35,7 @@ typedef struct {
     lv_obj_t * btn;        /* primary toggle/run button (light/switch/script/scene) */
     lv_obj_t * btn_lbl;
     lv_obj_t * slider;     /* brightness / cover position (light/cover) or NULL */
+    lv_obj_t * chips;      /* input_select: flex-wrap of option buttons, or NULL */
 } dev_row_t;
 
 static lv_obj_t   * scr_root  = NULL;
@@ -51,63 +52,27 @@ static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); 
 /* ---- action handlers (user_data = device index) ---- */
 static int ev_idx(lv_event_t * e) { return (int)(intptr_t)lv_event_get_user_data(e); }
 
-static void on_toggle(lv_event_t * e) {
-    int i = ev_idx(e);
-    if (i >= 0 && i < ha_device_count)
-        ha_device_toggle_async(ha_devices[i].type, ha_devices[i].entity_id);
-}
-static void on_run(lv_event_t * e) {
-    int i = ev_idx(e);
-    if (i >= 0 && i < ha_device_count)
-        ha_device_run_async(ha_devices[i].type, ha_devices[i].entity_id);
-}
+static void on_toggle(lv_event_t * e)  { ha_dev_toggle(ev_idx(e)); }
+static void on_run(lv_event_t * e)     { ha_dev_run(ev_idx(e)); }
 static void on_bright(lv_event_t * e) {
-    int i = ev_idx(e);
-    if (i >= 0 && i < ha_device_count)
-        ha_light_set_brightness_async(ha_devices[i].entity_id,
-                                      lv_slider_get_value(lv_event_get_target(e)));
+    ha_dev_brightness(ev_idx(e), lv_slider_get_value(lv_event_get_target(e)));
 }
 static void on_cover_pos(lv_event_t * e) {
-    int i = ev_idx(e);
-    if (i >= 0 && i < ha_device_count)
-        ha_cover_set_position_async(ha_devices[i].entity_id,
-                                    lv_slider_get_value(lv_event_get_target(e)));
+    ha_dev_position(ev_idx(e), lv_slider_get_value(lv_event_get_target(e)));
 }
-static void on_cover_open (lv_event_t * e) { int i = ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "open");  }
-static void on_cover_stop (lv_event_t * e) { int i = ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "stop");  }
-static void on_cover_close(lv_event_t * e) { int i = ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "close"); }
+static void on_cover_open (lv_event_t * e) { ha_dev_cover(ev_idx(e), "open");  }
+static void on_cover_stop (lv_event_t * e) { ha_dev_cover(ev_idx(e), "stop");  }
+static void on_cover_close(lv_event_t * e) { ha_dev_cover(ev_idx(e), "close"); }
 
-/* Cycle an input_select to the next / previous option.
- * Parses D->options ("Open|Peek|Close"), finds the current state, and
- * picks the neighbour. Wraps around at the ends. */
-static void select_cycle(int idx, int dir) {
-    if (idx < 0 || idx >= ha_device_count) return;
-    ha_device_t * D = &ha_devices[idx];
-    if (!D->options[0]) return;
-    /* Walk pipe-delimited options to build an index. */
-    char opts[256];
-    snprintf(opts, sizeof(opts), "%s", D->options);
-    int count = 0, cur = -1;
-    char * save = NULL;
-    for (char * tok = strtok_r(opts, "|", &save); tok; tok = strtok_r(NULL, "|", &save)) {
-        if (!strcmp(tok, D->state)) cur = count;
-        count++;
-    }
-    if (count == 0) return;
-    if (cur < 0) cur = 0;
-    int next = (cur + dir + count) % count;
-    /* Find the option at that index again. */
-    snprintf(opts, sizeof(opts), "%s", D->options);
-    save = NULL;
-    int n = 0; const char * target = NULL;
-    for (char * tok = strtok_r(opts, "|", &save); tok; tok = strtok_r(NULL, "|", &save)) {
-        if (n == next) { target = tok; break; }
-        n++;
-    }
-    if (target) ha_device_select_option_async(D->entity_id, target);
+/* input_select: tap an option chip to select it. The chip's user_data packs
+ * the device index in the high bits and the option index in the low 8 bits;
+ * we read the chip's own label for the option name. */
+static void on_select_chip(lv_event_t * e) {
+    lv_obj_t * chip = lv_event_get_target(e);
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    lv_obj_t * lbl = lv_obj_get_child(chip, 0);
+    if (lbl) ha_dev_select_set(idx, lv_label_get_text(lbl));
 }
-static void on_select_prev(lv_event_t * e) { select_cycle(ev_idx(e), -1); }
-static void on_select_next(lv_event_t * e) { select_cycle(ev_idx(e),  1); }
 
 /* ---- row builders ---- */
 static lv_obj_t * make_card(int h) {
@@ -201,11 +166,54 @@ static void build_dev_row(int i) {
         break;
     }
     case HADEV_SELECT: {
-        lv_obj_t * c = make_card(56);
-        card_name(c, D->name, LV_ALIGN_LEFT_MID, 4, -8);
-        R->lbl_state = mk_state(c, LV_ALIGN_LEFT_MID, 4, 12);
-        mk_btn(c, "<",  0x3a4658, 36, 30, LV_ALIGN_RIGHT_MID, -48, 0, on_select_prev, i);
-        mk_btn(c, ">",  0x3a4658, 36, 30, LV_ALIGN_RIGHT_MID,  -2, 0, on_select_next, i);
+        /* Flex-column card (name + a flex-wrap of all option chips). The card
+         * sizes to its content, so every option is reachable — flowing onto a
+         * 2nd (or further) row when they don't fit on one. */
+        lv_obj_t * c = lv_obj_create(list);
+        lv_obj_set_width(c, lv_pct(100));
+        lv_obj_set_height(c, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_color(c, lv_color_hex(COL_CARD), 0);
+        lv_obj_set_style_border_width(c, 0, 0);
+        lv_obj_set_style_radius(c, 12, 0);
+        lv_obj_set_style_pad_all(c, 8, 0);
+        lv_obj_set_style_pad_row(c, 6, 0);
+        lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
+        lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+        card_name(c, D->name, LV_ALIGN_TOP_LEFT, 0, 0);
+
+        lv_obj_t * box = lv_obj_create(c);
+        lv_obj_remove_style_all(box);
+        lv_obj_set_width(box, lv_pct(100));
+        lv_obj_set_height(box, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW_WRAP);
+        lv_obj_set_style_pad_row(box, 6, 0);
+        lv_obj_set_style_pad_column(box, 6, 0);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+        R->chips = box;
+
+        if (D->options[0]) {
+            char opts[256]; snprintf(opts, sizeof opts, "%s", D->options);
+            char * save = NULL;
+            for (char * tok = strtok_r(opts, "|", &save); tok; tok = strtok_r(NULL, "|", &save)) {
+                lv_obj_t * chip = lv_btn_create(box);
+                lv_obj_set_height(chip, 36);
+                lv_obj_set_width(chip, LV_SIZE_CONTENT);
+                lv_obj_set_style_radius(chip, 8, 0);
+                lv_obj_set_style_pad_hor(chip, 12, 0);
+                lv_obj_set_style_bg_color(chip, lv_color_hex(COL_OFF), 0);
+                lv_obj_add_event_cb(chip, on_select_chip, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+                lv_obj_t * cl = lv_label_create(chip);
+                lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
+                lv_obj_set_style_text_font(cl, SF(15), 0);
+                lv_label_set_text(cl, tok);
+                lv_obj_center(cl);
+            }
+        } else {
+            lv_obj_t * ph = lv_label_create(box);
+            lv_obj_set_style_text_color(ph, lv_color_hex(COL_TEXT_DIM), 0);
+            lv_obj_set_style_text_font(ph, SF(15), 0);
+            lv_label_set_text(ph, "(no options reported yet)");
+        }
         break;
     }
     default: {   /* HADEV_SCRIPT / HADEV_SCENE — stateless Run button */
@@ -232,16 +240,18 @@ static void rebuild_rows(void) {
     lv_obj_clean(list);
     row_count = 0;
 
-    int show = settings.enable_ha && ha_device_count > 0;
+    ha_devices_sync_dz();
+    int any_backend = settings.enable_ha || settings.enable_domoticz;
+    int show = any_backend && ha_device_count > 0;
     if (empty_hint) {
         if (show) lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
         else      lv_obj_clear_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
     }
     if (!show) {
         lv_label_set_text(empty_hint,
-            settings.enable_ha
-                ? "No devices yet.\nAdd lights, covers, switches or scripts in\nSettings  >  Devices."
-                : "Home Assistant is disabled.\nEnable it in Settings  >  Integrations.");
+            any_backend
+                ? "No devices yet.\nAdd Home Assistant or Domoticz devices in\nSettings  >  Devices."
+                : "No backend enabled.\nEnable Home Assistant and/or Domoticz in\nSettings  >  Integrations.");
         return;
     }
 
@@ -272,6 +282,7 @@ static void on_scr_event(lv_event_t * e) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    ha_devices_sync_dz();            /* pull live Domoticz state into ha_devices[] */
     for (int r = 0; r < row_count; r++) {
         dev_row_t * R = &rows[r];
         ha_device_t * D = &ha_devices[R->dev_idx];
@@ -316,9 +327,15 @@ static void refresh_cb(lv_timer_t * t) {
                 }
             }
         } else if (D->type == HADEV_SELECT) {
-            if (R->lbl_state) {
-                lv_label_set_text(R->lbl_state, D->state[0] ? D->state : "--");
-                lv_obj_set_style_text_color(R->lbl_state, lv_color_hex(COL_TEXT_DIM), 0);
+            if (R->chips) {                       /* highlight the active option chip */
+                uint32_t nc = lv_obj_get_child_cnt(R->chips);
+                for (uint32_t k = 0; k < nc; k++) {
+                    lv_obj_t * chip = lv_obj_get_child(R->chips, k);
+                    lv_obj_t * cl = lv_obj_get_child(chip, 0);
+                    if (!cl) continue;
+                    int sel = (strcmp(lv_label_get_text(cl), D->state) == 0);
+                    lv_obj_set_style_bg_color(chip, lv_color_hex(sel ? 0x2e6e3a : COL_OFF), 0);
+                }
             }
         }
     }

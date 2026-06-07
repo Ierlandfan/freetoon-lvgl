@@ -12,34 +12,30 @@
  *   blind:  ...&switchcmd=Open|Close|Stop
  */
 
-#define DOMOTICZ_MAX_DEV 24
+#define DOMOTICZ_MAX_DEV 256   /* a busy Domoticz easily has 100s of used devices */
 
-enum { DZ_SWITCH = 0, DZ_DIMMER = 1, DZ_BLIND = 2 };
+enum { DZ_SWITCH = 0, DZ_DIMMER = 1, DZ_BLIND = 2, DZ_SELECTOR = 3 };
 
 typedef struct {
     int  idx;                 /* Domoticz device idx */
-    int  kind;                /* DZ_SWITCH / DZ_DIMMER / DZ_BLIND */
+    int  kind;                /* DZ_SWITCH / DZ_DIMMER / DZ_BLIND / DZ_SELECTOR */
     char name[40];
     volatile int on;          /* 0/1 (for blinds: 1 = open) */
-    volatile int level;       /* 0..100 dimmer/blind level, -1 if n/a */
+    volatile int level;       /* dimmer/blind 0..100; selector = level value (idx*10); -1 n/a */
+    char options[256];        /* selector: pipe-delimited option names ("Off|Weg|…") */
 } domoticz_dev_t;
 
 typedef struct {
     volatile int   connected;
     volatile int   count;
-    volatile long  last_mqtt_s;   /* time() of last domoticz/out update, 0=never */
     domoticz_dev_t dev[DOMOTICZ_MAX_DEV];
 } domoticz_state_t;
 
 extern domoticz_state_t domoticz_state;
 
+/* Start the WebSocket+HTTP client thread (live push over ws://host/json, data
+ * over the JSON API). Needs settings.domoticz_host. Returns 0 on success. */
 int  domoticz_start(void);
-
-/* Feed a Domoticz "domoticz/out" MQTT message (JSON with idx/nvalue/Level)
- * into the device model — the uniform MQTT read path alongside HA. No-op
- * unless settings.mqtt_domoticz and the topic is "domoticz/out". */
-#include <stddef.h>
-void domoticz_mqtt_on_message(const char * topic, const unsigned char * payload, size_t len);
 
 /* Synchronous connection test for the Settings screen. Runs the same auth
  * ladder as the live client (session cookie → re-login → HTTP Basic). Returns

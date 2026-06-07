@@ -89,11 +89,18 @@ extern int        ha_light_count;
  * list; pin==1 devices also appear as quick-tiles on the home screen. */
 enum { HADEV_LIGHT = 0, HADEV_COVER, HADEV_SWITCH, HADEV_SELECT, HADEV_SCRIPT, HADEV_SCENE };
 
+/* A managed device can live in either backend. Home Assistant devices control
+ * via the WebSocket; Domoticz devices via domoticz.c (idx + switchcmd). Both
+ * share this one list so the Devices screen + home tiles show them together. */
+enum { HADEV_BE_HA = 0, HADEV_BE_DZ = 1 };
+
 typedef struct {
     int          type;           /* HADEV_* */
-    char         entity_id[64];  /* "light.bank_lamp" / "cover.blind" / … */
+    char         entity_id[64];  /* HA: "light.bank_lamp"; Domoticz: "dz:<idx>" */
     char         name[32];       /* display name */
     int          pin_home;       /* 0/1 — also show as a home quick-tile */
+    int          backend;        /* HADEV_BE_HA / HADEV_BE_DZ */
+    int          dz_idx;         /* Domoticz device idx (backend==HADEV_BE_DZ) */
     /* live state (light/switch use on+brightness; cover uses position+state) */
     volatile int available;      /* 0 if HA says unavailable / unreachable */
     volatile int on;             /* 0/1 (light/switch) */
@@ -124,6 +131,25 @@ void ha_device_toggle_async(int type, const char * entity_id);      /* light/swi
 void ha_device_cover_async(const char * entity_id, const char * cmd); /* "open"/"stop"/"close" */
 void ha_device_run_async(int type, const char * entity_id);          /* script/scene */
 void ha_device_select_option_async(const char * entity_id, const char * option);  /* select */
+
+/* Backend-aware control by device index — routes to HA (WebSocket) or Domoticz
+ * (idx) automatically per ha_devices[idx].backend. Screens use these so one
+ * tile/row works for either backend. */
+void ha_dev_toggle(int idx);                 /* light/switch */
+void ha_dev_cover(int idx, const char * cmd); /* "open"/"stop"/"close" */
+void ha_dev_position(int idx, int pct);       /* cover 0..100 */
+void ha_dev_brightness(int idx, int pct);     /* light 0..100 */
+void ha_dev_run(int idx);                     /* script/scene */
+void ha_dev_select_set(int idx, const char * option);  /* input_select / DZ selector */
+
+/* Mirror live Domoticz state (domoticz_state.dev[]) into the backend==DZ
+ * entries of ha_devices[], so the unified Devices screen + home tiles repaint
+ * Domoticz devices. Cheap; call from a UI refresh tick. */
+void ha_devices_sync_dz(void);
+
+/* Add a Domoticz device to the managed list (settings device manager). kind is
+ * DZ_SWITCH/DZ_DIMMER/DZ_BLIND. Returns the new index or -1 if rejected. */
+int  ha_device_add_dz(int dz_kind, int dz_idx, const char * name, int pin);
 
 /* List editing for the settings device manager (each persists ha_devices.conf).
  * ha_device_add returns the new index, or -1 if rejected (list full / unsafe

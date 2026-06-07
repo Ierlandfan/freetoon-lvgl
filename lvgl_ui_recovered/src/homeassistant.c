@@ -12,6 +12,7 @@
 #include "http.h"
 #include "notify.h"
 #include "settings.h"
+#include "domoticz.h"      /* unified Domoticz devices: DZ_* + control + state */
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -359,26 +360,38 @@ int hadev_type_from_str(const char * s) {
 void ha_devices_save(void) {
     FILE * f = fopen(HA_DEVICES_CONF, "w");
     if (!f) return;
-    fprintf(f, "# type|entity_id|Name|pin   (type = light|cover|switch|input_select|script|scene)\n");
+    fprintf(f, "# type|entity_id|Name|pin|backend   "
+               "(type=light|cover|switch|input_select|script|scene; backend 0=HA 1=Domoticz, entity 'dz:<idx>')\n");
     for (int i = 0; i < ha_device_count; i++) {
         ha_device_t * D = &ha_devices[i];
-        fprintf(f, "%s|%s|%s|%d\n", hadev_type_str(D->type),
-                D->entity_id, D->name, D->pin_home ? 1 : 0);
+        fprintf(f, "%s|%s|%s|%d|%d\n", hadev_type_str(D->type),
+                D->entity_id, D->name, D->pin_home ? 1 : 0, D->backend);
     }
     fclose(f);
 }
 
-static void devices_add(int type, const char * entity, const char * name, int pin) {
+/* backend = HADEV_BE_HA | HADEV_BE_DZ. For Domoticz, `entity` is "dz:<idx>"
+ * and ha_id_safe() is skipped (the idx isn't an HA entity id). */
+static void devices_add_be(int type, const char * entity, const char * name,
+                           int pin, int backend) {
     if (ha_device_count >= HA_DEVICE_MAX || !entity || !entity[0]) return;
-    if (!ha_id_safe(entity)) return;
+    if (backend == HADEV_BE_HA && !ha_id_safe(entity)) return;
     ha_device_t * D = &ha_devices[ha_device_count++];
     memset((void *)D, 0, sizeof *D);
     D->type = type;
+    D->backend = backend;
     snprintf(D->entity_id, sizeof D->entity_id, "%s", entity);
     snprintf(D->name, sizeof D->name, "%s", (name && name[0]) ? name : entity);
     D->pin_home   = pin ? 1 : 0;
     D->brightness = -1;
     D->position   = -1;
+    if (backend == HADEV_BE_DZ) {
+        const char * c = strchr(entity, ':');
+        D->dz_idx = c ? atoi(c + 1) : 0;
+    }
+}
+static void devices_add(int type, const char * entity, const char * name, int pin) {
+    devices_add_be(type, entity, name, pin, HADEV_BE_HA);
 }
 
 void ha_devices_load(void) {
@@ -390,17 +403,22 @@ void ha_devices_load(void) {
             char * nl = strchr(line, '\n'); if (nl) *nl = 0;
             char * cr = strchr(line, '\r'); if (cr) *cr = 0;
             if (!line[0] || line[0] == '#') continue;
-            /* type | entity_id | name | pin */
+            /* type | entity_id | name | pin | backend(optional) */
             char * p_ent = strchr(line, '|'); if (!p_ent) continue; *p_ent++ = 0;
-            const char * name = ""; int pin = 0;
+            const char * name = ""; int pin = 0, backend = HADEV_BE_HA;
             char * p_name = strchr(p_ent, '|');
             if (p_name) {
                 *p_name++ = 0;
                 char * p_pin = strchr(p_name, '|');
-                if (p_pin) { *p_pin++ = 0; pin = atoi(p_pin); }
+                if (p_pin) {
+                    *p_pin++ = 0;
+                    char * p_be = strchr(p_pin, '|');
+                    if (p_be) { *p_be++ = 0; backend = atoi(p_be); }
+                    pin = atoi(p_pin);
+                }
                 name = p_name;
             }
-            devices_add(hadev_type_from_str(line), p_ent, name, pin);
+            devices_add_be(hadev_type_from_str(line), p_ent, name, pin, backend);
         }
         fclose(f);
         fprintf(stderr, "[ha] loaded %d devices from " HA_DEVICES_CONF "\n", ha_device_count);
@@ -450,6 +468,7 @@ static void poll_devices(void) {
     char body[768];
     for (int i = 0; i < ha_device_count; i++) {
         ha_device_t * D = &ha_devices[i];
+        if (D->backend == HADEV_BE_DZ) continue;   /* Domoticz: synced separately */
         if (D->type == HADEV_SCRIPT || D->type == HADEV_SCENE) continue;
         if (ha_get_state(D->entity_id, body, sizeof body) != 0) { D->available = 0; continue; }
         apply_device(D, body);
@@ -512,6 +531,106 @@ void ha_device_select_option_async(const char * entity_id, const char * option) 
     pthread_detach(t);
 }
 
+/* Copy the n-th '|'-delimited token of s into out. */
+static void pipe_token(const char * s, int n, char * out, size_t osz) {
+    out[0] = 0;
+    int k = 0; const char * tok = s;
+    for (const char * p = s; ; p++) {
+        if (*p == '|' || *p == 0) {
+            if (k == n) {
+                size_t len = (size_t)(p - tok);
+                if (len >= osz) len = osz - 1;
+                memcpy(out, tok, len); out[len] = 0; return;
+            }
+            if (*p == 0) return;
+            k++; tok = p + 1;
+        }
+    }
+}
+/* Index of the token equal to `name`, or -1. */
+static int pipe_index(const char * s, const char * name) {
+    size_t nl = strlen(name);
+    int k = 0; const char * tok = s;
+    for (const char * p = s; ; p++) {
+        if (*p == '|' || *p == 0) {
+            if ((size_t)(p - tok) == nl && strncmp(tok, name, nl) == 0) return k;
+            if (*p == 0) return -1;
+            k++; tok = p + 1;
+        }
+    }
+}
+
+/* ---- backend-aware control by device index (HA WebSocket or Domoticz idx) ---- */
+void ha_dev_toggle(int idx) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_switch_async(D->dz_idx, "Toggle");
+    else                           ha_device_toggle_async(D->type, D->entity_id);
+}
+void ha_dev_cover(int idx, const char * cmd) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) {
+        const char * dz = !strcmp(cmd, "open") ? "Open"
+                        : !strcmp(cmd, "close") ? "Close" : "Stop";
+        domoticz_switch_async(D->dz_idx, dz);
+    } else ha_device_cover_async(D->entity_id, cmd);
+}
+void ha_dev_position(int idx, int pct) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_set_level_async(D->dz_idx, pct);
+    else                           ha_cover_set_position_async(D->entity_id, pct);
+}
+void ha_dev_brightness(int idx, int pct) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_set_level_async(D->dz_idx, pct);
+    else                           ha_light_set_brightness_async(D->entity_id, pct);
+}
+void ha_dev_run(int idx) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_switch_async(D->dz_idx, "On");  /* Domoticz has no scripts */
+    else                           ha_device_run_async(D->type, D->entity_id);
+}
+void ha_dev_select_set(int idx, const char * option) {
+    if (idx < 0 || idx >= ha_device_count || !option) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) {
+        int oi = pipe_index(D->options, option);   /* Domoticz selector level = idx*10 */
+        if (oi >= 0) domoticz_set_level_async(D->dz_idx, oi * 10);
+    } else {
+        ha_device_select_option_async(D->entity_id, option);
+    }
+}
+
+/* Mirror live Domoticz state into the backend==DZ entries of ha_devices[]. */
+void ha_devices_sync_dz(void) {
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        if (D->backend != HADEV_BE_DZ) continue;
+        D->available = 0;
+        for (int j = 0; j < domoticz_state.count; j++) {
+            domoticz_dev_t * z = &domoticz_state.dev[j];
+            if (z->idx != D->dz_idx) continue;
+            D->available = 1;
+            D->on = z->on;
+            if (D->type == HADEV_COVER) {
+                D->position = (z->level >= 0) ? z->level : (z->on ? 100 : 0);
+                snprintf(D->state, sizeof D->state, "%s", z->on ? "open" : "closed");
+            } else if (D->type == HADEV_LIGHT) {
+                D->brightness = (z->level >= 0) ? z->level * 255 / 100 : (z->on ? 255 : 0);
+            } else if (D->type == HADEV_SELECT) {
+                snprintf(D->options, sizeof D->options, "%s", z->options);
+                pipe_token(z->options, (z->level > 0) ? z->level / 10 : 0,
+                           D->state, sizeof D->state);
+            }
+            break;
+        }
+    }
+}
+
 /* ---- list editing (settings device manager) ---- */
 int ha_device_add(int type, const char * entity_id, const char * name, int pin) {
     int before = ha_device_count;
@@ -526,6 +645,20 @@ int ha_device_add(int type, const char * entity_id, const char * name, int pin) 
     if (ha_get_state(entity_id, body, sizeof body) == 0)
         apply_device(&ha_devices[idx], body);
     return idx;
+}
+/* Add a Domoticz device to the managed list. kind = DZ_SWITCH/DZ_DIMMER/DZ_BLIND. */
+int ha_device_add_dz(int dz_kind, int dz_idx, const char * name, int pin) {
+    int type = (dz_kind == DZ_BLIND)    ? HADEV_COVER
+             : (dz_kind == DZ_DIMMER)   ? HADEV_LIGHT
+             : (dz_kind == DZ_SELECTOR) ? HADEV_SELECT : HADEV_SWITCH;
+    char entity[64];
+    snprintf(entity, sizeof entity, "dz:%d", dz_idx);
+    int before = ha_device_count;
+    devices_add_be(type, entity, name, pin, HADEV_BE_DZ);
+    if (ha_device_count == before) return -1;        /* list full / duplicate */
+    ha_devices_save();
+    ha_devices_sync_dz();                            /* show its state right away */
+    return ha_device_count - 1;
 }
 void ha_device_remove(int idx) {
     if (idx < 0 || idx >= ha_device_count) return;

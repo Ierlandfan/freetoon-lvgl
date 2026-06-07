@@ -404,6 +404,22 @@ static int parse_ics(const char * body) {
             }
         }
 
+        /* Normalise the raw SUMMARY (or UID-derived) label to a short
+         * standard name that waste_icon_for_label() / waste_accent_for_label()
+         * in icons.c can match. Without this, labels like
+         * "Groente/Fruit/Tuinafval" or "Plastic/Metaal/Drankpakken" fall
+         * through to the grey default. ics_slot() already knows how to
+         * classify every Dutch municipality's terminology. */
+        if (label[0]) {
+            char lc[40]; int o = 0;
+            for (const char * q = label; *q && o < (int)sizeof(lc) - 1; q++)
+                lc[o++] = (char)tolower((unsigned char)*q);
+            lc[o] = 0;
+            int si = ics_slot(lc);
+            if (si >= 0 && si < WASTE_TYPES)
+                snprintf(label, sizeof label, "%s", HVC_TYPES[si].label);
+        }
+
         if (date[0] && label[0] && strcmp(date, today) >= 0) {
             /* Find this label's slot, or claim the next free one. */
             int slot = -1;

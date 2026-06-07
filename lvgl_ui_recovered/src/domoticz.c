@@ -17,7 +17,6 @@
 #include "domoticz.h"
 #include "http.h"
 #include "settings.h"
-#include "mqtt_client.h"   /* mqtt_publish — domoticz/in control path */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -150,6 +149,27 @@ static int jstr(const char * p, const char * end, const char * key, char * out, 
     return n > 0;
 }
 
+/* Decode base64 (Domoticz "LevelNames" is base64 of "Off|opt1|opt2|…"). */
+static int b64val(int c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+static void b64dec(const char * in, char * out, size_t osz) {
+    size_t o = 0; int bits = 0, val = 0;
+    for (const char * p = in; *p; p++) {
+        if (*p == '=') break;
+        int v = b64val((unsigned char)*p);
+        if (v < 0) continue;
+        val = (val << 6) | v; bits += 6;
+        if (bits >= 8) { bits -= 8; if (o + 1 < osz) out[o++] = (char)((val >> bits) & 0xff); }
+    }
+    out[o] = 0;
+}
+
 static int parse_devices(const char * body) {
     int n = 0;
     const char * p = strstr(body, "\"result\"");
@@ -157,55 +177,33 @@ static int parse_devices(const char * body) {
     while (n < DOMOTICZ_MAX_DEV && (p = strstr(p, "{")) != NULL) {
         const char * end = strstr(p, "}");
         if (!end) break;
-        char idx[16] = "", name[40] = "", stype[32] = "", status[40] = "", level[8] = "";
+        char idx[16] = "", name[40] = "", stype[32] = "", status[40] = "",
+             level[8] = "", lnames[344] = "";
         jstr(p, end, "idx", idx, sizeof idx);
         jstr(p, end, "Name", name, sizeof name);
         jstr(p, end, "SwitchType", stype, sizeof stype);
         jstr(p, end, "Status", status, sizeof status);
         jstr(p, end, "Level", level, sizeof level);
+        jstr(p, end, "LevelNames", lnames, sizeof lnames);
         if (idx[0] && name[0]) {
             domoticz_dev_t * d = &domoticz_state.dev[n];
             d->idx = atoi(idx);
             snprintf(d->name, sizeof d->name, "%s", name);
-            if (strstr(stype, "Blind"))      d->kind = DZ_BLIND;
-            else if (strstr(stype, "Dimmer")) d->kind = DZ_DIMMER;
-            else                              d->kind = DZ_SWITCH;
+            if      (strstr(stype, "Selector")) d->kind = DZ_SELECTOR;
+            else if (strstr(stype, "Blind"))    d->kind = DZ_BLIND;
+            else if (strstr(stype, "Dimmer"))   d->kind = DZ_DIMMER;
+            else                                d->kind = DZ_SWITCH;
             d->on = !(strcmp(status, "Off") == 0 || strcmp(status, "Closed") == 0 ||
                       strcmp(status, "Stopped") == 0);
             d->level = (d->kind == DZ_SWITCH) ? -1 : atoi(level);
+            if (d->kind == DZ_SELECTOR && lnames[0]) b64dec(lnames, d->options, sizeof d->options);
+            else d->options[0] = 0;
             n++;
         }
         p = end + 1;
     }
     domoticz_state.count = n;
     return 0;
-}
-
-/* Uniform MQTT read path: a "domoticz/out" message (Domoticz MQTT gateway)
- * updates an existing device (matched by idx). The device LIST is still
- * discovered via getdevices; domoticz/out keeps live state fresh over the
- * broker — alongside HA's mqtt_statestream, one broker for everything. */
-void domoticz_mqtt_on_message(const char * topic, const unsigned char * payload, size_t len) {
-    if (!settings.mqtt_domoticz || !topic || !payload) return;
-    if (strcmp(topic, "domoticz/out") != 0) return;
-    char body[1024];
-    size_t n = len < sizeof body - 1 ? len : sizeof body - 1;
-    memcpy(body, payload, n); body[n] = 0;
-    const char * end = body + n;
-    char idx[16] = "", nval[12] = "", level[8] = "";
-    jstr(body, end, "idx",    idx,  sizeof idx);
-    jstr(body, end, "nvalue", nval, sizeof nval);
-    jstr(body, end, "Level",  level, sizeof level);
-    if (!idx[0]) return;
-    int id = atoi(idx);
-    for (int i = 0; i < domoticz_state.count; i++) {
-        domoticz_dev_t * d = &domoticz_state.dev[i];
-        if (d->idx != id) continue;
-        if (nval[0])                            d->on = (atoi(nval) != 0);
-        if (level[0] && d->kind != DZ_SWITCH)   d->level = atoi(level);
-        domoticz_state.last_mqtt_s = time(NULL);
-        break;
-    }
 }
 
 /* ---------------------------------------------------------------- WebSocket */
@@ -436,7 +434,7 @@ static int http_getdevices(void) {
         "json.htm?type=command&param=getdevices&filter=light&used=true&order=Name";
     char host[80], port[8];
     parse_host(host, sizeof host, port, sizeof port);
-    static char body[64 * 1024];
+    static char body[256 * 1024];   /* getdevices can be 200KB+ with many devices */
     char url[400];
 
     session_jar_path();
@@ -464,7 +462,7 @@ int domoticz_probe(void) {
         "json.htm?type=command&param=getdevices&filter=light&used=true&order=Name";
     char host[80], port[8];
     parse_host(host, sizeof host, port, sizeof port);
-    static char body[64 * 1024];
+    static char body[256 * 1024];   /* getdevices can be 200KB+ with many devices */
     char url[400];
     int reached = 0;
 
@@ -593,23 +591,8 @@ static void fire(int idx, const char * cmd, int level) {
 }
 
 void domoticz_switch_async(int idx, const char * cmd) {
-    if (settings.mqtt_domoticz) {   /* native Domoticz MQTT: publish to domoticz/in */
-        char p[160];
-        snprintf(p, sizeof p,
-                 "{\"command\":\"switchlight\",\"idx\":%d,\"switchcmd\":\"%s\"}", idx, cmd);
-        mqtt_publish("domoticz/in", p);
-        return;
-    }
     fire(idx, cmd, 0);
 }
 void domoticz_set_level_async(int idx, int level) {
-    if (settings.mqtt_domoticz) {
-        char p[160];
-        snprintf(p, sizeof p,
-                 "{\"command\":\"switchlight\",\"idx\":%d,\"switchcmd\":\"Set Level\",\"level\":%d}",
-                 idx, level);
-        mqtt_publish("domoticz/in", p);
-        return;
-    }
     fire(idx, NULL, level);
 }

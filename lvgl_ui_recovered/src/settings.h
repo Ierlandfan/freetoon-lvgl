@@ -299,6 +299,8 @@ typedef struct {
      * Stored plaintext (UI PIN, not a security boundary). */
     int  pin_enabled;
     char pin_code[8];         /* 4-6 numeric chars; empty = effectively off */
+
+	int  lang;		/* 0 = English, 1 = Nederlands — default 0 */
 } settings_t;
 
 #define FORECAST_AUTO   0

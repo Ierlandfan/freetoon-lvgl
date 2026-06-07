@@ -11,6 +11,7 @@
 #include "screens.h"
 #include "display.h"
 #include "homeassistant.h"
+#include "domoticz.h"
 #include "settings.h"
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +28,12 @@
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * list     = NULL;
 static lv_obj_t * empty_hint = NULL;
+static lv_obj_t * addrow   = NULL;
+/* Which add-buttons to offer: 0 = Home Assistant types, 1 = Domoticz only. The
+ * device LIST is the same (all backends) either way — only the +add options
+ * differ, so HA settings and Domoticz settings both open this one manager. */
+static int        g_add_mode = 0;
+void screen_ha_devices_set_add_mode(int dz) { g_add_mode = dz ? 1 : 0; }
 
 static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); }
@@ -66,6 +73,111 @@ static lv_obj_t * small_btn(lv_obj_t * parent, const char * txt, uint32_t col,
     return b;
 }
 
+/* ---- Domoticz device chooser (adds a Domoticz device to the managed list,
+ * the same way the HA picker adds an HA entity). Filter chips by kind keep a
+ * big install (100s of devices) navigable; render is capped. ---- */
+static lv_obj_t * dz_modal = NULL;
+static lv_obj_t * dz_list  = NULL;
+static int        dz_filter = -1;      /* -1 = all, else DZ_* */
+#define DZ_CHOOSER_MAX 100
+
+static void dz_modal_close(void) {
+    if (dz_modal) { lv_obj_del(dz_modal); dz_modal = NULL; dz_list = NULL; }
+}
+static void on_dz_close(lv_event_t * e) { (void)e; dz_modal_close(); }
+static void on_dz_pick(lv_event_t * e) {
+    int j = (int)(intptr_t)lv_event_get_user_data(e);
+    if (j >= 0 && j < domoticz_state.count) {
+        domoticz_dev_t * z = &domoticz_state.dev[j];
+        ha_device_add_dz(z->kind, z->idx, z->name, 0);
+    }
+    dz_modal_close();
+    rebuild();
+}
+static const char * dz_kind_name(int kind) {
+    return kind == DZ_BLIND ? "blind" : kind == DZ_DIMMER ? "dimmer"
+         : kind == DZ_SELECTOR ? "selector" : "switch";
+}
+static void populate_dz_list(void) {
+    if (!dz_list) return;
+    lv_obj_clean(dz_list);
+    if (domoticz_state.count == 0) {
+        lv_list_add_text(dz_list, settings.enable_domoticz
+            ? "No Domoticz devices yet. Set the host in Settings -> Domoticz."
+            : "Enable Domoticz first (Settings -> Domoticz).");
+        return;
+    }
+    int shown = 0, matched = 0;
+    for (int j = 0; j < domoticz_state.count; j++) {
+        domoticz_dev_t * z = &domoticz_state.dev[j];
+        if (dz_filter >= 0 && z->kind != dz_filter) continue;
+        matched++;
+        if (shown >= DZ_CHOOSER_MAX) continue;
+        char label[96];
+        snprintf(label, sizeof label, "%s   (%s #%d)", z->name, dz_kind_name(z->kind), z->idx);
+        lv_obj_t * b = lv_list_add_btn(dz_list, NULL, label);
+        lv_obj_add_event_cb(b, on_dz_pick, LV_EVENT_CLICKED, (void *)(intptr_t)j);
+        shown++;
+    }
+    if (matched == 0)        lv_list_add_text(dz_list, "No devices of this type.");
+    else if (matched > shown) {
+        char m[64]; snprintf(m, sizeof m, "+%d more — narrow with a type filter", matched - shown);
+        lv_list_add_text(dz_list, m);
+    }
+}
+static void on_dz_chip(lv_event_t * e) {
+    dz_filter = (int)(intptr_t)lv_event_get_user_data(e);
+    populate_dz_list();
+}
+static void open_dz_chooser(lv_event_t * e) {
+    (void)e;
+    ha_devices_sync_dz();
+    dz_filter = -1;
+    dz_modal_close();
+    dz_modal = lv_obj_create(scr_root);
+    lv_obj_set_size(dz_modal, DISP_HOR, DISP_VER);
+    lv_obj_align(dz_modal, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(dz_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(dz_modal, LV_OPA_60, 0);
+    lv_obj_set_style_border_width(dz_modal, 0, 0);
+    lv_obj_clear_flag(dz_modal, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * panel = lv_obj_create(dz_modal);
+    lv_obj_set_size(panel, SX(700), SY(440));
+    lv_obj_center(panel);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(0x14233a), 0);
+    lv_obj_set_style_radius(panel, 14, 0);
+    lv_obj_set_style_border_width(panel, 0, 0);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * t = lv_label_create(panel);
+    lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(t, SF(24), 0);
+    lv_label_set_text(t, "Add Domoticz device");
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 6, 6);
+    lv_obj_t * x = small_btn(panel, LV_SYMBOL_CLOSE, 0x3a4658, 60, 40, on_dz_close, 0);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -2, 2);
+
+    /* Kind filter chips. */
+    static const struct { int f; const char * t; } chips[] = {
+        { -1, "All" }, { DZ_SWITCH, "Switch" }, { DZ_DIMMER, "Dimmer" },
+        { DZ_SELECTOR, "Selector" }, { DZ_BLIND, "Blind" },
+    };
+    int cx = 6;
+    for (unsigned i = 0; i < sizeof(chips)/sizeof(chips[0]); i++) {
+        lv_obj_t * c = small_btn(panel, chips[i].t, 0x2a4060, SX(124), SY(38), on_dz_chip, chips[i].f);
+        lv_obj_align(c, LV_ALIGN_TOP_LEFT, SX(cx), SY(50));
+        cx += 130;
+    }
+
+    dz_list = lv_list_create(panel);
+    lv_obj_set_size(dz_list, SX(672), SY(322));
+    lv_obj_align(dz_list, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_set_style_bg_opa(dz_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(dz_list, 0, 0);
+    populate_dz_list();
+}
+
 static void rebuild(void) {
     if (!list) return;
     lv_obj_clean(list);
@@ -95,7 +207,10 @@ static void rebuild(void) {
         lv_obj_t * tp = lv_label_create(c);
         lv_obj_set_style_text_color(tp, lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(tp, SF(14), 0);
-        lv_label_set_text_fmt(tp, "%s  -  %s", hadev_type_str(D->type), D->entity_id);
+        if (D->backend == HADEV_BE_DZ)
+            lv_label_set_text_fmt(tp, "%s  -  Domoticz #%d", hadev_type_str(D->type), D->dz_idx);
+        else
+            lv_label_set_text_fmt(tp, "%s  -  %s", hadev_type_str(D->type), D->entity_id);
         lv_obj_align(tp, LV_ALIGN_LEFT_MID, 4, 12);
 
         /* Home-pin toggle + remove. */
@@ -109,8 +224,26 @@ static void rebuild(void) {
     }
 }
 
+/* (Re)build the add-buttons for the current mode. HA mode: one button per HA
+ * device type. Domoticz mode: a single "+ Domoticz" chooser button. */
+static void build_addrow(void) {
+    if (!addrow) return;
+    lv_obj_clean(addrow);
+    if (g_add_mode == 0) {
+        const struct { int type; const char * txt; } adds[] = {
+            { HADEV_LIGHT, "+ Light" }, { HADEV_COVER, "+ Cover" },
+            { HADEV_SWITCH, "+ Switch" }, { HADEV_SELECT, "+ Select" },
+            { HADEV_SCRIPT, "+ Script" }, { HADEV_SCENE, "+ Scene" },
+        };
+        for (size_t i = 0; i < sizeof(adds)/sizeof(adds[0]); i++)
+            small_btn(addrow, adds[i].txt, 0x2e5e8a, SX(140), SY(40), on_add, adds[i].type);
+    } else {
+        small_btn(addrow, "+ Domoticz device", 0x2e7e5a, SX(240), SY(40), open_dz_chooser, 0);
+    }
+}
+
 static void on_scr_event(lv_event_t * e) {
-    if (lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED) rebuild();
+    if (lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED) { build_addrow(); rebuild(); }
 }
 
 lv_obj_t * screen_ha_devices_create(void) {
@@ -139,23 +272,18 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_label_set_text(bl, "< Back");
     lv_obj_center(bl);
 
-    /* Add-buttons row: one per device type. */
-    lv_obj_t * addrow = lv_obj_create(scr_root);
+    /* Add-buttons row: populated by build_addrow() per the active mode. */
+    addrow = lv_obj_create(scr_root);
     lv_obj_set_size(addrow, DISP_HOR - 32, SY(48));
     lv_obj_align(addrow, LV_ALIGN_TOP_MID, 0, SY(58));
     lv_obj_set_style_bg_opa(addrow, 0, 0);
     lv_obj_set_style_border_width(addrow, 0, 0);
     lv_obj_set_style_pad_all(addrow, 0, 0);
-    lv_obj_clear_flag(addrow, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(addrow, LV_DIR_HOR);   /* type buttons scroll horizontally */
+    lv_obj_set_scrollbar_mode(addrow, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(addrow, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(addrow, 6, 0);
-    const struct { int type; const char * txt; } adds[] = {
-        { HADEV_LIGHT, "+ Light" }, { HADEV_COVER, "+ Cover" },
-        { HADEV_SWITCH, "+ Switch" }, { HADEV_SELECT, "+ Select" },
-        { HADEV_SCRIPT, "+ Script" }, { HADEV_SCENE, "+ Scene" },
-    };
-    for (size_t i = 0; i < sizeof(adds)/sizeof(adds[0]); i++)
-        small_btn(addrow, adds[i].txt, 0x2e5e8a, SX(140), SY(40), on_add, adds[i].type);
+    build_addrow();
 
     /* Scrollable device list. */
     list = lv_obj_create(scr_root);
@@ -174,8 +302,9 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_label_set_long_mode(empty_hint, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(empty_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(empty_hint,
-        "No devices yet. Use the buttons above to add a light, cover,\n"
-        "switch, select, script or scene from your Home Assistant.");
+        "No devices yet. Use the buttons above to add a light, cover, switch,\n"
+        "select, script or scene from Home Assistant, or + Domoticz for a\n"
+        "Domoticz device. Both backends share this list.");
     lv_obj_align(empty_hint, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
 

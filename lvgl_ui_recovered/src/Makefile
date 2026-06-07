@@ -30,7 +30,11 @@ ifeq ($(TARGET),toon1)
   CROSS      := /tmp/qt_rebuild/toon1-toolchain/bin/arm-linux-
   SYSROOT    := /tmp/qt_rebuild/toon1-toolchain/arm-buildroot-linux-gnueabi/sysroot
   SYSROOTFLAG:= --sysroot=$(SYSROOT)
-  ARCHFLAGS  := -march=armv5te -marm -mfloat-abi=soft
+  # -mcpu=arm926ej-s schedules for the exact i.MX27 core (its pipeline), which
+  # is more specific than -march=armv5te; still armv5te-compatible code. -marm
+  # (no Thumb -> full register width for pixel ops) and -mfloat-abi=soft (the
+  # 926 has no FPU) are required. See LVGL.docx research.
+  ARCHFLAGS  := -mcpu=arm926ej-s -marm -mfloat-abi=soft
   TARGET_DEF := -DTOON1
   GLIBC_CFLAGS  := -include glibc_compat.h
   GLIBC_LDFLAGS := -Wl,--wrap=stat -Wl,--wrap=fstat -Wl,--wrap=lstat \
@@ -113,7 +117,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  screen_adapters.c screen_domoticz.c screen_calendar.c screen_layout_editor.c \
                  screen_crypto_picker.c screen_crypto.c screen_ha_picker.c screen_ha_devices.c \
                  stats.c airhist.c homewizard.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c \
-                 wastecollection.c ventilation.c homeassistant.c \
+                 wastecollection.c ventilation.c homeassistant.c i18n.c \
                  notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
