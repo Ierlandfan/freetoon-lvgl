@@ -143,38 +143,41 @@ static void open_dz_chooser(lv_event_t * e) {
     lv_obj_clear_flag(dz_modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * panel = lv_obj_create(dz_modal);
-    lv_obj_set_size(panel, SX(700), SY(440));
+    lv_obj_set_size(panel, SX(700), SY(450));
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x14233a), 0);
     lv_obj_set_style_radius(panel, 14, 0);
     lv_obj_set_style_border_width(panel, 0, 0);
+    lv_obj_set_style_pad_all(panel, 10, 0);   /* explicit, so the TOP-anchored rows below line up */
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * t = lv_label_create(panel);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(24), 0);
     lv_label_set_text(t, "Add Domoticz device");
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 6, 6);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 4);
     lv_obj_t * x = small_btn(panel, LV_SYMBOL_CLOSE, 0x3a4658, 60, 40, on_dz_close, 0);
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -2, 2);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, 0, 0);
 
     /* Kind filter chips. */
     static const struct { int f; const char * t; } chips[] = {
         { -1, "All" }, { DZ_SWITCH, "Switch" }, { DZ_DIMMER, "Dimmer" },
         { DZ_SELECTOR, "Selector" }, { DZ_BLIND, "Blind" },
     };
-    int cx = 6;
+    int cx = 4;
     for (unsigned i = 0; i < sizeof(chips)/sizeof(chips[0]); i++) {
         lv_obj_t * c = small_btn(panel, chips[i].t, 0x2a4060, SX(124), SY(38), on_dz_chip, chips[i].f);
-        lv_obj_align(c, LV_ALIGN_TOP_LEFT, SX(cx), SY(50));
+        lv_obj_align(c, LV_ALIGN_TOP_LEFT, SX(cx), SY(52));
         cx += 130;
     }
 
+    /* List sits below the chip row (top-anchored so it never rides over them). */
     dz_list = lv_list_create(panel);
-    lv_obj_set_size(dz_list, SX(672), SY(322));
-    lv_obj_align(dz_list, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_set_size(dz_list, SX(676), SY(330));
+    lv_obj_align(dz_list, LV_ALIGN_TOP_LEFT, 0, SY(98));
     lv_obj_set_style_bg_opa(dz_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(dz_list, 0, 0);
+    lv_obj_set_style_pad_all(dz_list, 0, 0);
     populate_dz_list();
 }
 
