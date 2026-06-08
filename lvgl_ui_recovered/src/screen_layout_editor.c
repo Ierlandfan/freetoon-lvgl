@@ -49,15 +49,21 @@ static lv_obj_t * page_btn;        /* toolbar page-switch button (label shows cu
 static void build_canvas_rects(void);   /* fwd */
 static void on_copy_p2(lv_event_t * e);  /* fwd */
 
-/* insert-palette size presets (grid units) */
+/* insert-palette size presets (grid units). Covers the tile minimums so a
+ * tile can be inserted at its real size directly — previously the only data
+ * size was 6x4, forcing a "place big, then shrink" dance for 3x3 tiles. */
 static const struct { const char * name; int w, h; } SIZES[] = {
-    { "Klein\n3x2",  3, 2 },
-    { "Half\n6x2",   6, 2 },
-    { "Groot\n6x4",  6, 4 },
-    { "Breed\n12x2", 12, 2 },
+    { "2x2",  2, 2 },    /* lights */
+    { "2x3",  2, 3 },    /* waste / vent */
+    { "3x2",  3, 2 },    /* water / family */
+    { "3x3",  3, 3 },    /* energy / agenda / news / slot — the common data tile */
+    { "4x4",  4, 4 },    /* a bigger data tile */
+    { "6x2",  6, 2 },    /* half-width strip */
+    { "6x4",  6, 4 },    /* big block */
+    { "12x1", 12, 1 },   /* full-width strip: forecast / ticker */
 };
 #define N_SIZES ((int)(sizeof SIZES / sizeof SIZES[0]))
-static int        pick_w = 6, pick_h = 2;   /* currently-selected insert size */
+static int        pick_w = 3, pick_h = 3;   /* default to the common data size */
 static lv_obj_t * size_btns[N_SIZES];
 static lv_obj_t * type_grid;                 /* palette's type-button container */
 static lv_obj_t * preset_mgr;                /* "Indelingen" preset-manager modal */
@@ -357,20 +363,22 @@ static void on_add(lv_event_t * e) {
     lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
     lv_obj_set_style_text_font(title, SF(14), 0);
 
-    /* size row */
+    /* size row — wraps to 2 rows (4 per row) so all presets stay tappable */
     lv_obj_t * srow = lv_obj_create(chooser);
     lv_obj_set_width(srow, LV_PCT(100));
-    lv_obj_set_height(srow, 70);
+    lv_obj_set_height(srow, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(srow, 0, 0);
     lv_obj_set_style_border_width(srow, 0, 0);
     lv_obj_set_style_pad_all(srow, 2, 0);
+    lv_obj_set_style_pad_row(srow, 6, 0);
+    lv_obj_set_style_pad_column(srow, 6, 0);
     lv_obj_clear_flag(srow, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(srow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_flow(srow, LV_FLEX_FLOW_ROW_WRAP);
     for (int s = 0; s < N_SIZES; s++) {
         lv_obj_t * b = lv_btn_create(srow);
         size_btns[s] = b;
-        lv_obj_set_flex_grow(b, 1);
-        lv_obj_set_height(b, 58);
+        lv_obj_set_width(b, LV_PCT(23));
+        lv_obj_set_height(b, 50);
         lv_obj_set_style_bg_color(b, lv_color_hex(0x2a4060), 0);
         lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_border_width(b, (SIZES[s].w == pick_w && SIZES[s].h == pick_h) ? 3 : 0, 0);
