@@ -2993,6 +2993,7 @@ lv_obj_t * screen_home_create(void) {
 
     /* --- Big thermostat tile (height 360 — was 410, lost 50 px to make room
            for the new Curtains strip below it). --- */
+    int th_w = 520, th_h = 360;      /* the box the internals are authored for */
     lv_obj_t * th = lv_obj_create(scr_root);
     lv_obj_set_size(th, 520, 360);   /* bottom flush with the curtains/right column */
     lv_obj_set_pos(th, 20, 20);
@@ -3011,7 +3012,7 @@ lv_obj_t * screen_home_create(void) {
             layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &w, &h);
             lv_obj_set_pos(th, x, y);
             lv_obj_set_size(th, w, h);
-            s_th_y = y; s_th_h = h;
+            s_th_y = y; s_th_h = h; th_w = w; th_h = h;
             /* The "ft" logo badge is a fixed 40px box at screen (8,6). A custom
              * layout can place the thermostat at the top-left corner, putting the
              * clock behind the badge — shift it right to clear it. (pad_all=20.) */
@@ -3020,17 +3021,29 @@ lv_obj_t * screen_home_create(void) {
             lv_obj_add_flag(th, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    /* Responsive scale: the internals below are authored for the 520x360
+     * default box. In a custom layout the tile can be smaller (and on Toon 1
+     * every cell has fewer pixels), so the fixed 460px setpoint row etc. used
+     * to overflow. Scale every internal size/offset/font by the tile's size
+     * relative to that reference — uniform (keeps aspect), never enlarged, with
+     * a sane floor. Default box → th_s == 1.0, so nothing changes there. */
+    float th_s = (float)th_w / 520.0f;
+    { float hs = (float)th_h / 360.0f; if (hs < th_s) th_s = hs; }
+    if (th_s > 1.0f) th_s = 1.0f;
+    if (th_s < 0.5f) th_s = 0.5f;
+#define TS(v) ((int)((v) * th_s + ((v) < 0 ? -0.5f : 0.5f)))
+
     lv_obj_set_style_bg_color(th, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_border_width(th, 0, 0);
     lv_obj_set_style_radius(th, 18, 0);
-    lv_obj_set_style_pad_all(th, 20, 0);
+    lv_obj_set_style_pad_all(th, TS(20), 0);
     lv_obj_clear_flag(th, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(th, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(th, open_thermostat, LV_EVENT_CLICKED, NULL);
 
     lbl_t_clock = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_clock, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_t_clock, SF(28), 0);
+    lv_obj_set_style_text_font(lbl_t_clock, SF(TS(28)), 0);
     lv_label_set_text(lbl_t_clock, "--:--");
     lv_obj_align(lbl_t_clock, LV_ALIGN_TOP_LEFT, clock_dx, 0);
 
@@ -3038,9 +3051,9 @@ lv_obj_t * screen_home_create(void) {
        date+time block. */
     lbl_t_date = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_date, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_date, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_t_date, SF(TS(18)), 0);
     lv_label_set_text(lbl_t_date, "");
-    lv_obj_align(lbl_t_date, LV_ALIGN_TOP_LEFT, 0, 36);
+    lv_obj_align(lbl_t_date, LV_ALIGN_TOP_LEFT, 0, TS(36));
 
     /* Moon phase — 40-px icon sitting below the date, just left-of-centre
      * inside the heater tile. ALWAYS shown so the user sees the current
@@ -3065,26 +3078,26 @@ lv_obj_t * screen_home_create(void) {
        eCO2/TVOC bucket (green/lime/yellow/orange/red). */
     lbl_t_aq = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_aq, lv_color_hex(0x66cc88), 0);
-    lv_obj_set_style_text_font(lbl_t_aq, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_t_aq, SF(TS(18)), 0);
     lv_label_set_text(lbl_t_aq, "");
-    lv_obj_align(lbl_t_aq, LV_ALIGN_TOP_RIGHT, 0, 6);
+    lv_obj_align(lbl_t_aq, LV_ALIGN_TOP_RIGHT, 0, TS(6));
 
     /* "Thermostat" title removed per request — the gear icon and tile
        content already make this tile's role obvious. */
 
     lbl_t_temp = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_temp, lv_color_hex(COL_TEMP_YELLOW), 0);
-    lv_obj_set_style_text_font(lbl_t_temp, SF(48), 0);
+    lv_obj_set_style_text_font(lbl_t_temp, SF(TS(48)), 0);
     lv_label_set_text(lbl_t_temp, "-- C");
-    lv_obj_align(lbl_t_temp, LV_ALIGN_CENTER, 0, -90);
+    lv_obj_align(lbl_t_temp, LV_ALIGN_CENTER, 0, TS(-90));
 
     /* Setpoint row: [-] setpoint [+]. sp_row itself is NOT clickable so
      * taps on its centre (the setpoint label dead-zone between the two
      * buttons) pass through to the tile and open the detail page. The
      * +/- buttons keep their own click handlers. */
     lv_obj_t * sp_row = lv_obj_create(th);
-    lv_obj_set_size(sp_row, 460, 84);
-    lv_obj_align(sp_row, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_set_size(sp_row, TS(460), TS(84));
+    lv_obj_align(sp_row, LV_ALIGN_CENTER, 0, TS(-10));
     lv_obj_set_style_bg_opa(sp_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_pad_all(sp_row, 0, 0);
@@ -3092,7 +3105,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * btn_dn = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_dn, 84, 76);
+    lv_obj_set_size(btn_dn, TS(84), TS(76));
     lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_bg_color(btn_dn, lv_color_hex(COL_TILE_ACCENT), 0);
     lv_obj_set_style_radius(btn_dn, 12, 0);
@@ -3100,18 +3113,18 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_add_event_cb(btn_dn, on_tile_sp_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_dn_lbl = lv_label_create(btn_dn);
     lv_label_set_text(btn_dn_lbl, "-");
-    lv_obj_set_style_text_font(btn_dn_lbl, SF(48), 0);
+    lv_obj_set_style_text_font(btn_dn_lbl, SF(TS(48)), 0);
     lv_obj_set_style_text_color(btn_dn_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_dn_lbl);
 
     lbl_t_setpoint = lv_label_create(sp_row);
     lv_obj_set_style_text_color(lbl_t_setpoint, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_t_setpoint, SF(28), 0);
+    lv_obj_set_style_text_font(lbl_t_setpoint, SF(TS(28)), 0);
     lv_label_set_text(lbl_t_setpoint, "to -- C");
     lv_obj_align(lbl_t_setpoint, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t * btn_up = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_up, 84, 76);
+    lv_obj_set_size(btn_up, TS(84), TS(76));
     lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_color(btn_up, lv_color_hex(COL_TILE_ACCENT), 0);
     lv_obj_set_style_radius(btn_up, 12, 0);
@@ -3119,7 +3132,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_add_event_cb(btn_up, on_tile_sp_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_up_lbl = lv_label_create(btn_up);
     lv_label_set_text(btn_up_lbl, "+");
-    lv_obj_set_style_text_font(btn_up_lbl, SF(48), 0);
+    lv_obj_set_style_text_font(btn_up_lbl, SF(TS(48)), 0);
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_up_lbl);
 
@@ -3133,14 +3146,14 @@ lv_obj_t * screen_home_create(void) {
      * below, so the Program button doesn't need to carry it. An asterisk
      * appears on Program while a +/- temporary override is in flight. */
     {
-        const int manual_w = 110, prog_w = 140, btn_h = 38, gap = 6;
+        const int manual_w = TS(110), prog_w = TS(140), btn_h = TS(38), gap = TS(6);
         const int total   = manual_w + prog_w + gap;
         const int left_x  = -total / 2 + manual_w / 2;
         const int right_x = -total / 2 + manual_w + gap + prog_w / 2;
 
         tile_btn_mode_manual = lv_btn_create(th);
         lv_obj_set_size(tile_btn_mode_manual, manual_w, btn_h);
-        lv_obj_align(tile_btn_mode_manual, LV_ALIGN_CENTER, left_x, 70);
+        lv_obj_align(tile_btn_mode_manual, LV_ALIGN_CENTER, left_x, TS(70));
         lv_obj_set_style_bg_color(tile_btn_mode_manual, lv_color_hex(0x6a5424), 0);
         lv_obj_set_style_radius(tile_btn_mode_manual, 19, 0);
         lv_obj_set_style_border_color(tile_btn_mode_manual, lv_color_hex(0xffffff), 0);
@@ -3151,12 +3164,12 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_t * ml = lv_label_create(tile_btn_mode_manual);
         lv_label_set_text(ml, "Manual");
         lv_obj_set_style_text_color(ml, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(ml, SF(22), 0);
+        lv_obj_set_style_text_font(ml, SF(TS(22)), 0);
         lv_obj_center(ml);
 
         tile_btn_mode_program = lv_btn_create(th);
         lv_obj_set_size(tile_btn_mode_program, prog_w, btn_h);
-        lv_obj_align(tile_btn_mode_program, LV_ALIGN_CENTER, right_x, 70);
+        lv_obj_align(tile_btn_mode_program, LV_ALIGN_CENTER, right_x, TS(70));
         lv_obj_set_style_bg_color(tile_btn_mode_program, lv_color_hex(0x2f6b6b), 0);
         lv_obj_set_style_radius(tile_btn_mode_program, 19, 0);
         lv_obj_set_style_border_color(tile_btn_mode_program, lv_color_hex(0xffffff), 0);
@@ -3167,7 +3180,7 @@ lv_obj_t * screen_home_create(void) {
         lbl_t_program = lv_label_create(tile_btn_mode_program);
         lv_label_set_text(lbl_t_program, "Program");
         lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl_t_program, SF(22), 0);
+        lv_obj_set_style_text_font(lbl_t_program, SF(TS(22)), 0);
         lv_obj_center(lbl_t_program);
     }
 
@@ -3180,13 +3193,13 @@ lv_obj_t * screen_home_create(void) {
     {
         const char * names[4] = {"Comfort", "Home", "Sleep", "Away"};
         uint32_t     cols[4]  = {0xcc7733, 0x3377cc, 0x553388, 0x557788};
-        const int    bw = 78, bh = 34, gap = 4;
+        const int    bw = TS(78), bh = TS(34), gap = TS(4);
         int total = 4 * bw + 3 * gap;
         for (int i = 0; i < 4; i++) {
             lv_obj_t * b = lv_btn_create(th);
             lv_obj_set_size(b, bw, bh);
             lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total / 2 + i * (bw + gap) + bw / 2, 124);
+                         -total / 2 + i * (bw + gap) + bw / 2, TS(124));
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 8, 0);
             lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
@@ -3198,7 +3211,7 @@ lv_obj_t * screen_home_create(void) {
             lv_obj_t * bl = lv_label_create(b);
             lv_label_set_text(bl, names[i]);
             lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(bl, SF(18), 0);
+            lv_obj_set_style_text_font(bl, SF(TS(18)), 0);
             lv_obj_center(bl);
             tile_btn_preset[i] = b;
         }
@@ -3208,9 +3221,9 @@ lv_obj_t * screen_home_create(void) {
        the flame/faucet stays paired with the text. */
     lbl_t_burner = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_burner, lv_color_hex(COL_BURNER_RED), 0);
-    lv_obj_set_style_text_font(lbl_t_burner, SF(22), 0);
+    lv_obj_set_style_text_font(lbl_t_burner, SF(TS(22)), 0);
     lv_label_set_text(lbl_t_burner, "idle");
-    lv_obj_align(lbl_t_burner, LV_ALIGN_BOTTOM_MID, 30, -40);
+    lv_obj_align(lbl_t_burner, LV_ALIGN_BOTTOM_MID, TS(30), TS(-40));
 
     /* Bottom strip: humidity | eCO2 | TVOC | water-pressure on one row.
        Font 18 keeps the 4 values from running into each other on a
@@ -3222,43 +3235,43 @@ lv_obj_t * screen_home_create(void) {
 #ifndef TOON1
     lbl_t_humidity = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_humidity, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_humidity, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_t_humidity, SF(TS(18)), 0);
     lv_label_set_text(lbl_t_humidity, "RH --%");
-    lv_obj_align(lbl_t_humidity, LV_ALIGN_BOTTOM_LEFT, 12, 8);
+    lv_obj_align(lbl_t_humidity, LV_ALIGN_BOTTOM_LEFT, TS(12), TS(8));
 
     lbl_t_ppm = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_ppm, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_ppm, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_t_ppm, SF(TS(18)), 0);
     lv_label_set_text(lbl_t_ppm, "-- ppm");
-    lv_obj_align(lbl_t_ppm, LV_ALIGN_BOTTOM_LEFT, 140, 8);
+    lv_obj_align(lbl_t_ppm, LV_ALIGN_BOTTOM_LEFT, TS(140), TS(8));
 
     lbl_t_tvoc = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_tvoc, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_tvoc, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_t_tvoc, SF(TS(18)), 0);
     lv_label_set_text(lbl_t_tvoc, "TVOC --");
-    lv_obj_align(lbl_t_tvoc, LV_ALIGN_BOTTOM_LEFT, 280, 8);
+    lv_obj_align(lbl_t_tvoc, LV_ALIGN_BOTTOM_LEFT, TS(280), TS(8));
 #endif
 
     lbl_t_pressure = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_pressure, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_pressure, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_t_pressure, SF(TS(18)), 0);
     lv_label_set_text(lbl_t_pressure, "-- bar");
 #ifdef TOON1
     /* Toon 1 has no air-sensor strip, and at a short tile height the bottom-right
      * pressure collided with the Away preset. Park it just under the setpoint
      * (centred), which tracks the tile centre at any height. (Toon 2 keeps it
      * bottom-right next to humidity/eCO2/TVOC, which wouldn't fit up here.) */
-    lv_obj_align(lbl_t_pressure, LV_ALIGN_CENTER, 0, 37);
+    lv_obj_align(lbl_t_pressure, LV_ALIGN_CENTER, 0, TS(37));
 #else
-    lv_obj_align(lbl_t_pressure, LV_ALIGN_BOTTOM_RIGHT, -12, 8);
+    lv_obj_align(lbl_t_pressure, LV_ALIGN_BOTTOM_RIGHT, TS(-12), TS(8));
 #endif
 
     /* CH-pressure warning banner. Sits on top of the Heater tile so the
        user can't miss it. EVENT_BUBBLE keeps the tile clickable through
        the banner. Hidden by default; shown only when pressure is low. */
     pressure_banner = lv_obj_create(th);
-    lv_obj_set_size(pressure_banner, 520, 42);
-    lv_obj_align(pressure_banner, LV_ALIGN_TOP_LEFT, -10, -10);
+    lv_obj_set_size(pressure_banner, th_w, TS(42));
+    lv_obj_align(pressure_banner, LV_ALIGN_TOP_LEFT, TS(-10), TS(-10));
     lv_obj_set_style_radius(pressure_banner, 0, 0);
     lv_obj_set_style_border_width(pressure_banner, 0, 0);
     lv_obj_clear_flag(pressure_banner, LV_OBJ_FLAG_SCROLLABLE);
@@ -3269,7 +3282,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(pressure_banner_lbl,
                                 lv_color_hex(0x000000), 0);
     lv_obj_set_style_text_font(pressure_banner_lbl,
-                               SF(22), 0);
+                               SF(TS(22)), 0);
     lv_label_set_text(pressure_banner_lbl, "");
     lv_obj_center(pressure_banner_lbl);
     lv_obj_add_flag(pressure_banner_lbl, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -3286,7 +3299,7 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_zoom(tile_img_flame, 256);
     lv_obj_set_style_img_recolor(tile_img_flame, lv_color_hex(COL_BURNER_RED), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_flame, 255, 0);
-    lv_obj_align(tile_img_flame, LV_ALIGN_CENTER, 110, -90);
+    lv_obj_align(tile_img_flame, LV_ALIGN_CENTER, TS(110), TS(-90));
     lv_obj_add_flag(tile_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW indicator is FULLY red (faucet + drop both tinted) so it's
@@ -3297,7 +3310,7 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_zoom(tile_img_faucet, 256);
     lv_obj_set_style_img_recolor(tile_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_faucet, 255, 0);
-    lv_obj_align(tile_img_faucet, LV_ALIGN_CENTER, 105, -100);
+    lv_obj_align(tile_img_faucet, LV_ALIGN_CENTER, TS(105), TS(-100));
     lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW drop is RED so it's instantly distinguishable from the blue
@@ -3309,7 +3322,7 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_zoom(tile_img_drop, 256);
     lv_obj_set_style_img_recolor(tile_img_drop, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_drop, 255, 0);
-    lv_obj_align(tile_img_drop, LV_ALIGN_CENTER, 125, -80);
+    lv_obj_align(tile_img_drop, LV_ALIGN_CENTER, TS(125), TS(-80));
     lv_obj_add_flag(tile_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     /* Live water-flow indicator on the left side of the indoor temp —
@@ -3321,15 +3334,16 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_zoom(tile_img_water, 256);
     lv_obj_set_style_img_recolor(tile_img_water, lv_color_hex(0x66bbff), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_water, 255, 0);
-    lv_obj_align(tile_img_water, LV_ALIGN_CENTER, -180, -90);
+    lv_obj_align(tile_img_water, LV_ALIGN_CENTER, TS(-180), TS(-90));
     lv_obj_add_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
 
     tile_lbl_water = lv_label_create(th);
     lv_obj_set_style_text_color(tile_lbl_water, lv_color_hex(0x66bbff), 0);
-    lv_obj_set_style_text_font(tile_lbl_water, SF(14), 0);
+    lv_obj_set_style_text_font(tile_lbl_water, SF(TS(14)), 0);
     lv_label_set_text(tile_lbl_water, "");
-    lv_obj_align(tile_lbl_water, LV_ALIGN_CENTER, -140, -90);
+    lv_obj_align(tile_lbl_water, LV_ALIGN_CENTER, TS(-140), TS(-90));
     lv_obj_add_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+#undef TS
 
     /* --- Waste tile: two stacked pickup rows ---
        Each row gets its own type-specific icon (newspaper for Papier,

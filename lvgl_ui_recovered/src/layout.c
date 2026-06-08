@@ -156,6 +156,11 @@ void layout_delete_preset(const char * name) {
     remove(layout_path(name, path, sizeof path));
 }
 
+/* Inset each tile by this many px on every side so neighbouring tiles don't
+ * touch (visible gap = 2*GAP between tiles, GAP at the screen edge) — matches
+ * the breathing room of the hard-coded default home layout. */
+#define LAYOUT_GAP (SCREEN_W / 160)   /* 5px on Toon1 (800), 6px on Toon2 (1024) */
+
 void layout_cell_px(int col, int row, int w, int h,
                     int * x, int * y, int * pw, int * ph) {
     /* Round so the right/bottom edges land exactly on the screen border
@@ -164,10 +169,10 @@ void layout_cell_px(int col, int row, int w, int h,
     int y0 = row * SCREEN_H / LAYOUT_ROWS;
     int x1 = (col + w) * SCREEN_W / LAYOUT_COLS;
     int y1 = (row + h) * SCREEN_H / LAYOUT_ROWS;
-    if (x)  *x  = x0;
-    if (y)  *y  = y0;
-    if (pw) *pw = x1 - x0;
-    if (ph) *ph = y1 - y0;
+    if (x)  *x  = x0 + LAYOUT_GAP;
+    if (y)  *y  = y0 + LAYOUT_GAP;
+    if (pw) *pw = x1 - x0 - 2 * LAYOUT_GAP;
+    if (ph) *ph = y1 - y0 - 2 * LAYOUT_GAP;
 }
 
 const layout_tile_t * layout_find(int type) {
