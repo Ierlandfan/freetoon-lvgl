@@ -31,6 +31,12 @@ int http_fetch(const char * url, char * out, size_t out_max) {
         got += k;
     }
     out[got] = 0;
+    /* Drain the rest so curl finishes writing and exits 0. Without this a
+       response larger than out_max leaves curl mid-write; pclose closes the
+       read end, curl gets SIGPIPE and exits non-zero, and a perfectly good
+       (just truncated) fetch would be reported as a failure. */
+    char drain[4096];
+    while (fread(drain, 1, sizeof drain, fp) > 0) { }
     int rc = pclose(fp);
     return (rc == 0 && got > 0) ? 0 : -1;
 }
@@ -67,6 +73,10 @@ int http_fetch_cookies(const char * url, const char * jar, char * out, size_t ou
         got += k;
     }
     out[got] = 0;
+    /* Drain the rest (see http_fetch above) so a >out_max response doesn't
+       SIGPIPE curl into a non-zero exit and a false failure. */
+    char drain[4096];
+    while (fread(drain, 1, sizeof drain, fp) > 0) { }
     int rc = pclose(fp);
     return (rc == 0 && got > 0) ? 0 : -1;
 }

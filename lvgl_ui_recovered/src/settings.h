@@ -8,7 +8,18 @@ typedef struct {
     int auto_home_seconds;    /* 5..600 — idle timeout before auto-returning home */
     int active_brightness;    /* 0..1000 backlight when active */
     int dim_brightness;       /* 0..1000 backlight while dimmed */
-    int auto_brightness;      /* 0/1 — follow the LTR-303 ambient sensor (Toon 2) */
+    int auto_brightness;      /* 0/1 — Toon 2: follow the LTR-303 ambient sensor */
+
+    /* Night mode — scale the backlight to night_pct% of normal during night
+     * hours. night_source: 0 = fixed LOCAL time range [night_start,night_end),
+     * 1 = local sunset->sunrise (geocoded from weather_location). Times are
+     * minutes-of-day (0..1439). Applies on both Toons (on Toon 2 it scales on
+     * top of the light sensor). */
+    int night_mode;           /* 0/1 — enable night dimming */
+    int night_source;         /* 0 = fixed time range, 1 = sunset->sunrise */
+    int night_start;          /* minutes-of-day — range start (default 22:00) */
+    int night_end;            /* minutes-of-day — range end   (default 07:00) */
+    int night_pct;            /* 1..100 — night brightness as % of day brightness */
 
     /* Toon 1 TSC2007 touch panel alignment. Resistive panels are mounted any-
      * which-way; these three booleans cover all 8 orientations. Tweak in
@@ -22,6 +33,7 @@ typedef struct {
     int show_dim_weather;     /* 0/1 — show today's weather icon on the dim screen */
     int show_dim_waste;       /* 0/1 — show next-pickup on the dim screen */
     int show_dim_bars;        /* 0/1 — usage bars (energy now / gas hourly) flanking the dim clock */
+    int show_dim_metrics;     /* 0/1 — TVOC/eCO2/CH-pressure row on the dim screen */
     int dim_bars_swap;        /* 0 = energy LEFT + gas RIGHT (default); 1 = swapped */
     int dim_waste_lead_days;  /* 0..7 — only show if pickup is within this many days
                                  (0 disables; 1 = only on pickup day; 2 = day before + day of) */
@@ -77,18 +89,20 @@ typedef struct {
     char mqtt_pass[64];
     char mqtt_topics[8][96];
     int  mqtt_topic_count;
+    /* MQTT as the PRIMARY device-read path (curl stays a fallback). When on,
+     * we subscribe to the backend's MQTT topics and feed the live device model
+     * from there; the per-entity curl polls are skipped while MQTT is fresh. */
+    int  mqtt_ha_reads;          /* 0/1 — subscribe to HA mqtt_statestream */
+    char mqtt_ha_base[64];       /* statestream base topic, default "homeassistant" */
+    int  mqtt_domoticz;          /* 0/1 — subscribe domoticz/out (Domoticz MQTT gateway) */
 
     /* Integration toggles — runtime on/off for optional add-ons.
      * Default is 0 ("basic" install). On first boot (no toonui.cfg key),
      * settings_load() auto-enables a flag if its config file is present:
-     *   enable_p1_elec   ← /mnt/data/p1bridge.conf exists
-     *   enable_p1_water  ← /mnt/data/p1bridge.conf has a .115 line
      *   enable_vent      ← /mnt/data/vent.conf exists (non-empty)
      *   enable_ha        ← /mnt/data/ha.cfg exists (non-empty)
      * After first save the cfg keys are authoritative — user flips in
      * Settings → Integrations and toonui restarts to apply. */
-    int enable_p1_elec;
-    int enable_p1_water;
     int enable_vent;
     int enable_ha;
 
@@ -108,13 +122,32 @@ typedef struct {
      * reference_toon_zwave_api memory for the HTTP API. */
     int enable_zwave;
 
-    /* Energy data source for the Energy tile.
-     *   0 = meteradapter — the Toon's own built-in smart-meter reading via
-     *       happ_pwrusage (the official/stock path). Default.
-     *   1 = p1 — HomeWizard P1 over the LAN (the homewizard.c poller).
-     * Per-device: a Toon with a working meteradapter uses 0; a setup that
-     * reads the meter via a HomeWizard P1 instead picks 1. */
-    int energy_source;
+    /* Energy/water data source per resource. Each is an ENERGY_SRC_*
+     * value: 0=Off, 1=HomeAssistant, 2=HomeWizard P1, 3=Z-Wave meteradapter
+     * (ZWAVE only valid for elec+gas). Independent — you can mix sources
+     * (e.g. elec from P1, gas from HA, water off).
+     * Migrated from the old single `energy_source` key on first load. */
+    int  energy_elec_source;
+    int  energy_gas_source;
+    int  energy_water_source;
+    char energy_elec_ha_entity[64];       /* HA sensor for consumption (W) */
+    char energy_elec_prod_ha_entity[64];  /* HA sensor for solar production (W), optional */
+    char energy_gas_ha_entity[64];        /* HA sensor for cumulative gas (m³) */
+    char energy_water_ha_entity[64];      /* HA sensor for cumulative water (m³) */
+    /* Domoticz device idx per channel (ENERGY_SRC_DOMOTICZ). The elec device's
+     * Usage/UsageDeliv give power + return; gas/water use the Counter total. */
+    int  energy_elec_dz_idx;
+    int  energy_elec_prod_dz_idx;
+    int  energy_gas_dz_idx;
+    int  energy_water_dz_idx;
+
+    /* Daily energy accumulation — persisted so dim-screen bars and the
+     * statistics screen survive restarts. Date is "YYYY-MM-DD". */
+    char  energy_daily_date[16];
+    float energy_daily_kwh;
+    float energy_daily_net_kwh;   /* signed net (negative = solar export) for Stats */
+    float energy_daily_gas_m3;
+    float energy_daily_water_m3;
 
     /* Boot-picker — when 1, the launcher-spawned `toonui --bootpick`
      * shows a 10 s "freetoon vs stock qt-gui" picker before dispatching.
@@ -174,6 +207,11 @@ typedef struct {
     char curtain_entity[64];
     char curtain_bat_a[64];
     char curtain_bat_b[64];
+    /* Blinds — second HA cover entity with optional battery sensors. Same
+     * shape as the curtain fields above. Empty = blinds tile hidden. */
+    char blinds_entity[64];
+    char blinds_bat_a[64];
+    char blinds_bat_b[64];
     /* Doorbell snapshot — when the HA trigger entity (binary_sensor / input_
      * boolean / event) goes "on", fetch a snapshot of doorbell_camera and show
      * it fullscreen on the Toon for doorbell_seconds. All empty/0 = disabled. */
@@ -184,6 +222,20 @@ typedef struct {
      * Frigate/go2rtc resized MJPEG). When set, the overlay plays this stream
      * frame-by-frame instead of a single snapshot. Empty = still snapshot. */
     char doorbell_stream_url[256];
+
+    /* Live video tile (Toon 1 only): hardware MPEG-4/H.264 decode on the
+     * i.MX27 VPU via /root/vpu/vpu_stream, shown either direct-to-fb0 (with
+     * an LVGL cutout) or as an fb1 graphic-window hardware overlay. Distinct
+     * from the doorbell_* snapshot feature above. Cfg keys are video_* with
+     * camera_* accepted as aliases (older configs). */
+    int  video_enabled;        /* 0/1 — install the Video tile + warm pipeline */
+    int  video_size_pct;       /* 25..125 % of video_src_w x video_src_h */
+    int  video_src_w;          /* what the sender pushes (default 640) */
+    int  video_src_h;          /* (default 480) */
+    int  video_x;              /* panel px, or -1 to centre */
+    int  video_y;              /* panel px, or -1 to centre */
+    int  video_rtp;            /* UDP RTP port for vpu_stream; 0 = legacy TCP 5000 */
+    int  video_overlay;        /* 0 = fb0 + cutout; 1 = fb1 FG hardware overlay */
 
     /* LAN hosts for the optional integrations + healthcheck probes. All
      * empty by default so no personal network topology ships in the binary;
@@ -261,11 +313,21 @@ typedef struct {
      * Stored plaintext (UI PIN, not a security boundary). */
     int  pin_enabled;
     char pin_code[8];         /* 4-6 numeric chars; empty = effectively off */
+
+	int  lang;		/* 0 = English, 1 = Nederlands — default 0 */
 } settings_t;
 
 #define FORECAST_AUTO   0
 #define FORECAST_HOURLY 1
 #define FORECAST_DAILY  2
+
+/* Per-resource energy/water source selectors. */
+#define ENERGY_SRC_OFF       0
+#define ENERGY_SRC_HA        1
+#define ENERGY_SRC_HW_P1     2
+#define ENERGY_SRC_ZWAVE     3
+#define ENERGY_SRC_DOMOTICZ  4
+#define ENERGY_SRC_MAX       4
 
 /* Display-side adjusted indoor temperature: raw + settings.temp_offset_centi/100 */
 float display_indoor_temp(float raw);

@@ -21,6 +21,18 @@ void meteradapter_on_flow(float watts) {
     meter_state.connected = 1;
 }
 
+void meteradapter_on_gas_flow(float lph) {
+    meter_state.gas_hour_m3   = lph / 1000.0f;   /* liters/hour -> m3/h */
+    meter_state.last_gas_s    = time(NULL);
+    meter_state.gas_connected = 1;
+}
+
+void meteradapter_on_gas_qty(float dm3) {
+    meter_state.gas_m3        = dm3 / 1000.0f;    /* dm3 -> m3 */
+    meter_state.last_gas_s    = time(NULL);
+    meter_state.gas_connected = 1;
+}
+
 static void *watchdog_thread(void *arg) {
     (void)arg;
     for (;;) {
@@ -28,6 +40,9 @@ static void *watchdog_thread(void *arg) {
         if (meter_state.last_flow_s == 0 ||
             time(NULL) - meter_state.last_flow_s > MET_STALE_S)
             meter_state.connected = 0;
+        if (meter_state.last_gas_s == 0 ||
+            time(NULL) - meter_state.last_gas_s > MET_STALE_S)
+            meter_state.gas_connected = 0;
     }
     return NULL;
 }

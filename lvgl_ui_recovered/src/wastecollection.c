@@ -210,7 +210,8 @@ int waste_next_2_pickups(waste_pickup_t * out1, waste_pickup_t * out2) {
  * collected on the late/evening round (~21:00); the grey (Restafval), green
  * (GFT) and paper rounds wrap up in the afternoon (~16:00). */
 static int waste_cutoff_hour(const char * label) {
-    if (label && (strstr(label, "Plastic") || strstr(label, "plastic"))) return 21;
+    if (label && (strstr(label, "Plastic") || strstr(label, "plastic") ||
+                  strstr(label, "PMD") || strstr(label, "pmd"))) return 21;
     return 16;
 }
 
@@ -300,6 +301,34 @@ static int ics_slot(const char * s) {
     return -1;
 }
 
+static void ics_label_from_uid(const char * uid, char * out, size_t outsz) {
+    if (outsz) out[0] = 0;
+    if (!uid || !uid[0] || !out || outsz == 0) return;
+
+    const char * type = strrchr(uid, '-');
+    type = type ? type + 1 : uid;
+
+    char t[32];
+    size_t n = 0;
+    while (type[n] && type[n] != '\r' && type[n] != '\n' &&
+           type[n] != '@' && n < sizeof(t) - 1) {
+        unsigned char c = (unsigned char)type[n];
+        t[n] = (char)tolower(c);
+        n++;
+    }
+    t[n] = 0;
+
+    if (strcmp(t, "pmd") == 0) {
+        snprintf(out, outsz, "PMD");
+    } else if (strcmp(t, "gft") == 0) {
+        snprintf(out, outsz, "GFT");
+    } else if (strcmp(t, "restafval") == 0 || strcmp(t, "rest") == 0) {
+        snprintf(out, outsz, "Restafval");
+    } else if (strcmp(t, "papier") == 0 || strcmp(t, "paper") == 0) {
+        snprintf(out, outsz, "Papier");
+    }
+}
+
 /* Generic ICS parse: the calendar's own SUMMARY text is the waste-type label,
  * so it works for any municipality (HVC, mijnafvalwijzer, Ximmio, …) regardless
  * of how they name their streams. Each distinct SUMMARY claims one of the
@@ -353,6 +382,44 @@ static int parse_ics(const char * body) {
             }
         }
 
+        /* Prefer short type names from UID when present, e.g.
+         * UID:2026-34-pmd -> PMD. Some ICS feeds have very long SUMMARY
+         * strings that are poor UI labels but stable, compact UIDs. */
+        {
+            char uid[80] = "";
+            char uid_label[40] = "";
+            const char * u = strstr(p, "UID");
+            if (u && u < evend) {
+                const char * c = strchr(u, ':');
+                if (c) {
+                    int n = 0; c++;
+                    while (*c && *c != '\r' && *c != '\n' &&
+                           n < (int)sizeof(uid) - 1)
+                        uid[n++] = *c++;
+                    uid[n] = 0;
+                    ics_label_from_uid(uid, uid_label, sizeof uid_label);
+                    if (uid_label[0])
+                        snprintf(label, sizeof label, "%s", uid_label);
+                }
+            }
+        }
+
+        /* Normalise the raw SUMMARY (or UID-derived) label to a short
+         * standard name that waste_icon_for_label() / waste_accent_for_label()
+         * in icons.c can match. Without this, labels like
+         * "Groente/Fruit/Tuinafval" or "Plastic/Metaal/Drankpakken" fall
+         * through to the grey default. ics_slot() already knows how to
+         * classify every Dutch municipality's terminology. */
+        if (label[0]) {
+            char lc[40]; int o = 0;
+            for (const char * q = label; *q && o < (int)sizeof(lc) - 1; q++)
+                lc[o++] = (char)tolower((unsigned char)*q);
+            lc[o] = 0;
+            int si = ics_slot(lc);
+            if (si >= 0 && si < WASTE_TYPES)
+                snprintf(label, sizeof label, "%s", HVC_TYPES[si].label);
+        }
+
         if (date[0] && label[0] && strcmp(date, today) >= 0) {
             /* Find this label's slot, or claim the next free one. */
             int slot = -1;
@@ -383,7 +450,15 @@ static int parse_ics(const char * body) {
 static int fetch_ics(void) {
     if (!settings.waste_ics_url[0]) return -1;
     static char body[300 * 1024];
-    if (http_fetch(settings.waste_ics_url, body, sizeof body) != 0) return -1;
+    /* file:///path → read directly (e.g. a Python/cron job writes the ICS) */
+    if (strncmp(settings.waste_ics_url, "file://", 7) == 0) {
+        FILE * f = fopen(settings.waste_ics_url + 7, "r");
+        if (!f) return -1;
+        size_t n = fread(body, 1, sizeof body - 1, f);
+        body[n] = 0; fclose(f);
+    } else {
+        if (http_fetch(settings.waste_ics_url, body, sizeof body) != 0) return -1;
+    }
     if (!strstr(body, "VEVENT")) return -1;
     return parse_ics(body);
 }
@@ -396,12 +471,21 @@ static int fetch_plugin(void) {
     char cmd[1280];
     snprintf(cmd, sizeof cmd,
         "/mnt/data/wastefetch '%s' '%s' '%s' '%s' '%s' '%s' '%s' "
-        "/mnt/data/wastedates.ics >/dev/null 2>&1",
+        "/mnt/data/wastedates.ics 2>/tmp/wastefetch.log",
         settings.waste_plugin, settings.waste_postcode, settings.waste_housenr,
         settings.waste_icsid, settings.waste_street, settings.waste_city,
         settings.waste_ics_url);
     if (system(cmd) == -1) return -1;
-    FILE * f = fopen("/mnt/data/wastedates.ics", "r");
+    /* Log the exit code + first line of stderr so the one-shot fetch can be
+       debugged on-device without recompiling */
+    FILE * f = fopen("/tmp/wastefetch.log", "r");
+    if (f) {
+        char line[256];
+        if (fgets(line, sizeof line, f))
+            fprintf(stderr, "[waste] wastefetch: %s", line);
+        fclose(f);
+    }
+    f = fopen("/mnt/data/wastedates.ics", "r");
     if (!f) return -1;
     static char body[300 * 1024];
     size_t n = fread(body, 1, sizeof body - 1, f);
@@ -434,7 +518,10 @@ static void * waste_thread(void * arg) {
                     waste_state.items[1].label, waste_state.items[1].date,
                     waste_state.items[2].label, waste_state.items[2].date,
                     waste_state.items[3].label, waste_state.items[3].date);
-        sleep(4 * 60 * 60);   /* 4 hours */
+        /* Sleep in 10 s steps so a settings-save wake_fetch arrives quickly. */
+        for (int s = 0; s < 4 * 60 * 60 && !waste_state.wake_fetch; s += 10)
+            sleep(10);
+        waste_state.wake_fetch = 0;
     }
     return NULL;
 }

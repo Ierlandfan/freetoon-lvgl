@@ -1185,7 +1185,7 @@ static int handle_settings_get(int fd) {
         "\"weather_location\":\"%s\",\"weather_location_id\":%d,"
         "\"forecast_mode\":%d,\"ot_bridge_mode\":\"%s\",\"otgw_host\":\"%s\","
         "\"mqtt_enabled\":%d,\"mqtt_host\":\"%s\",\"mqtt_port\":%d,\"mqtt_user\":\"%s\","
-        "\"enable_p1_elec\":%d,\"enable_p1_water\":%d,\"enable_vent\":%d,"
+        "\"enable_vent\":%d,"
         "\"enable_ha\":%d,\"enable_zwave\":%d,\"vnc_enabled\":%d,"
         "\"enable_domoticz\":%d,\"domoticz_host\":\"%s\",\"domoticz_user\":\"%s\","
         "\"hide_offline_tiles\":%d,\"boot_picker_enabled\":%d,"
@@ -1196,7 +1196,9 @@ static int handle_settings_get(int fd) {
         "\"doorbell_entity\":\"%s\",\"doorbell_camera\":\"%s\",\"doorbell_seconds\":%d,"
         "\"doorbell_stream_url\":\"%s\","
         "\"p1_elec_host\":\"%s\",\"p1_water_host\":\"%s\",\"vent_host\":\"%s\",\"opnsense_host\":\"%s\","
-        "\"energy_source\":%d,\"auto_update_enabled\":%d,\"auto_update_hour\":%d,"
+        "\"energy_elec_source\":%d,\"energy_gas_source\":%d,\"energy_water_source\":%d,"
+        "\"energy_elec_ha_entity\":\"%s\",\"energy_gas_ha_entity\":\"%s\",\"energy_water_ha_entity\":\"%s\","
+        "\"auto_update_enabled\":%d,\"auto_update_hour\":%d,"
         "\"news_enabled\":%d,\"news_rss_url\":\"%s\",\"news_scroll_speed\":%d,"
         "\"calendar_enabled\":%d,\"calendar_ha_entity\":\"%s\",\"calendar_ics_url\":\"%s\","
         "\"tile_rotate_enabled\":%d,\"tile_rotate_seconds\":%d,\"tile_rotate_members\":\"%s\","
@@ -1212,7 +1214,7 @@ static int handle_settings_get(int fd) {
         settings.weather_location, settings.weather_location_id,
         settings.forecast_mode, settings.ot_bridge_mode, settings.otgw_host,
         settings.mqtt_enabled, settings.mqtt_host, settings.mqtt_port, settings.mqtt_user,
-        settings.enable_p1_elec, settings.enable_p1_water, settings.enable_vent,
+        settings.enable_vent,
         settings.enable_ha, settings.enable_zwave, settings.vnc_enabled,
         settings.enable_domoticz, settings.domoticz_host, settings.domoticz_user,
         settings.hide_offline_tiles, settings.boot_picker_enabled,
@@ -1223,7 +1225,9 @@ static int handle_settings_get(int fd) {
         settings.doorbell_entity, settings.doorbell_camera, settings.doorbell_seconds,
         settings.doorbell_stream_url,
         settings.p1_elec_host, settings.p1_water_host, settings.vent_host, settings.opnsense_host,
-        settings.energy_source, settings.auto_update_enabled, settings.auto_update_hour,
+        settings.energy_elec_source, settings.energy_gas_source, settings.energy_water_source,
+        settings.energy_elec_ha_entity, settings.energy_gas_ha_entity, settings.energy_water_ha_entity,
+        settings.auto_update_enabled, settings.auto_update_hour,
         settings.news_enabled, settings.news_rss_url, settings.news_scroll_speed,
         settings.calendar_enabled, settings.calendar_ha_entity, settings.calendar_ics_url,
         settings.tile_rotate_enabled, settings.tile_rotate_seconds, settings.tile_rotate_members,
@@ -1264,8 +1268,8 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.waste_city, sizeof settings.waste_city, "%s", sv);
     if (extract_int(body, "forecast_mode", &iv))      settings.forecast_mode = iv;
     if (extract_int(body, "mqtt_port", &iv))          settings.mqtt_port = iv;
-    if (extract_int(body, "enable_p1_elec", &iv))     settings.enable_p1_elec = !!iv;
-    if (extract_int(body, "enable_p1_water", &iv))    settings.enable_p1_water = !!iv;
+    if (extract_int(body, "enable_p1_elec", &iv))     { /* deprecated — ignore, P1 is now derived from source */ }
+    if (extract_int(body, "enable_p1_water", &iv))    { /* deprecated */ }
     if (extract_int(body, "enable_vent", &iv))        settings.enable_vent = !!iv;
     if (extract_int(body, "enable_ha", &iv))          settings.enable_ha = !!iv;
     if (extract_int(body, "enable_domoticz", &iv))    settings.enable_domoticz = !!iv;
@@ -1358,7 +1362,15 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.vent_host, sizeof settings.vent_host, "%s", sv);
     if (extract_str(body, "opnsense_host", sv, sizeof sv))
         snprintf(settings.opnsense_host, sizeof settings.opnsense_host, "%s", sv);
-    if (extract_int(body, "energy_source", &iv))      settings.energy_source = !!iv;
+    if (extract_int(body, "energy_elec_source", &iv)) settings.energy_elec_source = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+    if (extract_int(body, "energy_gas_source", &iv))  settings.energy_gas_source  = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+    if (extract_int(body, "energy_water_source", &iv))settings.energy_water_source = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_OFF   : iv;
+    if (extract_int(body, "energy_elec_dz_idx", &iv))  settings.energy_elec_dz_idx  = iv;
+    if (extract_int(body, "energy_gas_dz_idx", &iv))   settings.energy_gas_dz_idx   = iv;
+    if (extract_int(body, "energy_water_dz_idx", &iv)) settings.energy_water_dz_idx = iv;
+    if (extract_str(body, "energy_elec_ha_entity", sv, sizeof sv)) snprintf(settings.energy_elec_ha_entity, sizeof settings.energy_elec_ha_entity, "%s", sv);
+    if (extract_str(body, "energy_gas_ha_entity", sv, sizeof sv))  snprintf(settings.energy_gas_ha_entity, sizeof settings.energy_gas_ha_entity, "%s", sv);
+    if (extract_str(body, "energy_water_ha_entity", sv, sizeof sv))snprintf(settings.energy_water_ha_entity, sizeof settings.energy_water_ha_entity, "%s", sv);
     /* Auto-update */
     if (extract_int(body, "auto_update_enabled", &iv))settings.auto_update_enabled = !!iv;
     if (extract_int(body, "auto_update_hour", &iv))   settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;
@@ -1381,6 +1393,153 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.tile_rotate_members, sizeof settings.tile_rotate_members, "%s", sv);
     settings_save();
     return send_status(fd, 200, "OK", "{\"ok\":1,\"note\":\"some changes apply after a toonui restart\"}");
+}
+
+static const char SETTINGS_HTML[] =
+"<!doctype html><html><head><meta charset=utf-8>"
+"<meta name=viewport content='width=device-width,initial-scale=1'>"
+"<title>freetoon settings</title><style>"
+"body{font-family:system-ui,sans-serif;background:#0e1a2a;color:#dfe9f3;margin:0;padding:16px;-webkit-tap-highlight-color:transparent}"
+"h1{font-size:20px;margin:0 0 2px}"
+".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}"
+".grid.hide{display:none}"
+".tile{background:#16243a;border:1px solid #20344f;border-radius:14px;padding:16px 14px;cursor:pointer;display:flex;flex-direction:column;gap:8px;min-height:74px}"
+".tile:active{background:#1d3050}.tile .ic{font-size:26px}.tile .nm{font-size:16px;font-weight:600}"
+".panel{display:none}.panel.show{display:block}"
+".phead{display:flex;align-items:center;gap:12px;margin:6px 0 12px}.phead b{font-size:18px}"
+".back{background:#2a4060;color:#fff;border:0;border-radius:10px;padding:8px 16px;font-size:18px;cursor:pointer}"
+".r{display:flex;align-items:center;justify-content:space-between;padding:11px 2px;gap:12px;border-bottom:1px solid #16243a}"
+".r label{flex:1}input,select{background:#1a2940;color:#fff;border:1px solid #2a4060;border-radius:8px;padding:8px;font-size:15px}"
+"input[type=text],input[type=number]{width:170px}input[type=checkbox]{width:24px;height:24px}"
+"#savebar{position:sticky;bottom:0;background:#0e1a2a;padding:12px 0;display:none}#savebar.show{display:block}"
+"button.save{background:#2e6e3a;color:#fff;border:0;border-radius:10px;padding:14px 22px;font-size:17px;cursor:pointer}"
+"#msg{color:#ffcc44;margin-left:12px}"
+"</style></head><body><h1>freetoon settings</h1>"
+"<p style='margin:-2px 0 6px'><a href=/about style='color:#6fb3ff'>About / License</a></p>"
+"<div id=grid class=grid>loading...</div>"
+"<div id=panels></div>"
+"<div id=savebar><button class=save onclick=save()>Save</button><span id=msg></span></div>"
+"<script>"
+"var S={};"
+"var SCHEMA=["
+"['Display','h'],"
+"['auto_dim_enabled','Auto-dim','b'],['auto_dim_seconds','Dim after (s)','n'],"
+"['active_brightness','Active brightness (0-1000)','n'],['dim_brightness','Dim brightness (0-1000)','n'],"
+"['temp_offset_centi','Temp offset (centi-C)','n'],"
+"['show_dim_weather','Weather on dim','b'],['show_dim_waste','Waste on dim','b'],"
+"['dim_waste_lead_days','Waste lead days (0-7)','n'],"
+"['waste_plugin','Waste provider id (plugin_index.json; e.g. 6=HVC, 33=generic)','t'],"
+"['waste_icsid','Waste calendar/ICS-id (ICSId providers e.g. HVC)','t'],"
+"['waste_street','Waste street (street-based providers)','t'],['waste_city','Waste city','t'],"
+"['waste_ics_url','or: own iCal / ICS URL','t'],"
+"['Weather','h'],"
+"['weather_location','City (auto-resolves id)','t'],['weather_location_id','Buienradar id (auto)','n'],"
+"['forecast_mode','Forecast (0 auto/1 hourly/2 daily)','n'],"
+"['Heating','h'],"
+"['ot_bridge_mode','OT bridge (off/proxy/wireless)','t'],['otgw_host','OTGW host (ip)','t'],"
+"['MQTT','h'],"
+"['mqtt_enabled','MQTT enabled','b'],"
+"['mqtt_host','Broker host','t'],['mqtt_port','Port','n'],['mqtt_user','User','t'],"
+"['Integrations','h'],"
+"['p1_elec_host','P1 elec host (ip)','t'],['p1_water_host','P1 water host (ip)','t'],"
+"['energy_elec_source','Elec source (0 Off/1 HA/2 HW P1/3 Z-Wave)','n'],"
+"['energy_gas_source','Gas source (0 Off/1 HA/2 HW P1/3 Z-Wave)','n'],"
+"['energy_water_source','Water source (0 Off/1 HA/2 HW P1)','n'],"
+"['energy_elec_ha_entity','HA elec consumption sensor','t'],"
+"['energy_gas_ha_entity','HA gas sensor','t'],"
+"['energy_water_ha_entity','HA water sensor','t'],"
+"['enable_vent','Ventilation','b'],['vent_host','Itho vent host (ip)','t'],"
+"['enable_zwave','Z-Wave control','b'],"
+"['opnsense_host','Router host (healthcheck, ip)','t'],"
+"['Home Assistant','h'],"
+"['enable_ha','Home Assistant enabled','b'],['ha_host','HA host (ip:port)','t'],"
+"['curtain_entity','Curtain cover entity','t'],"
+"['curtain_bat_a','Curtain battery sensor A','t'],['curtain_bat_b','Curtain battery sensor B','t'],"
+"['doorbell_entity','Doorbell trigger entity (on=ring)','t'],"
+"['doorbell_camera','Doorbell camera entity','t'],['doorbell_seconds','Snapshot shown (s)','n'],"
+"['doorbell_stream_url','Doorbell MJPEG stream URL (live; blank=still)','t'],"
+"['life360_a_entity','Person A device_tracker','t'],['life360_a_name','Person A name','t'],"
+"['life360_b_entity','Person B device_tracker','t'],['life360_b_name','Person B name','t'],"
+"['Domoticz','h'],"
+"['enable_domoticz','Domoticz enabled','b'],['domoticz_host','Domoticz host (ip:port)','t'],"
+"['domoticz_user','Domoticz user (opt)','t'],"
+"['Newsreader','h'],"
+"['news_enabled','News ticker','b'],['news_rss_url','RSS feed URL','t'],"
+"['news_scroll_speed','News ticker speed (px/s, 30-150)','n'],"
+"['Calendar','h'],"
+"['calendar_enabled','Agenda enabled','b'],['calendar_ha_entity','HA calendar entity (calendar.x)','t'],"
+"['calendar_ics_url','iCal (.ics) URL','t'],"
+"['Tile auto-rotate','h'],"
+"['tile_rotate_enabled','Rotate a tile','b'],['tile_rotate_seconds','Rotate every (s)','n'],"
+"['tile_rotate_members','Rotate members (id1,id2,..)','t'],"
+"['Updates','h'],"
+"['update_check_enabled','Update check','b'],"
+"['update_channel','Update channel (1 beta/dev, 0 stable)','n'],"
+"['auto_update_enabled','Auto-update nightly','b'],['auto_update_hour','Auto-update hour (0-23)','n'],"
+"['__update__','','U'],"
+"['Client mode (slave Toon / tablet)','h'],"
+"['client_mode','Client mode (mirror a master Toon)','b'],['master_host','Master Toon IP/host','t'],"
+"['Display options','h'],"
+"['vnc_enabled','VNC server','b'],['hide_offline_tiles','Hide offline tiles','b'],"
+"['boot_picker_enabled','Boot picker','b']"
+"];"
+"function ico(n){var m={'Display':'\\uD83D\\uDDA5\\uFE0F','Weather':'\\u2601\\uFE0F',"
+"'Heating':'\\uD83D\\uDD25','MQTT':'\\uD83D\\uDCE1','Integrations':'\\uD83D\\uDD0C',"
+"'Home Assistant':'\\uD83C\\uDFE0','Domoticz':'\\uD83D\\uDCA1','Newsreader':'\\uD83D\\uDCF0',"
+"'Tile auto-rotate':'\\uD83D\\uDD01','Updates':'\\u2B07\\uFE0F','Display options':'\\u2699\\uFE0F',"
+"'Calendar':'\\uD83D\\uDCC5'};"
+"return m[n]||'\\u2699\\uFE0F';}"
+"function rowHtml(s){var k=s[0],lbl=s[1],t=s[2],v=S[k];var inp;"
+"if(t=='U')return '<div class=r><button type=button onclick=doUpd() id=updbtn>Update now</button>"
+"<span id=updmsg style=\"margin-left:8px;font-size:13px;color:#9ab\"></span></div>';"
+"if(t=='b')inp='<input type=checkbox id=\"'+k+'\"'+(v?' checked':'')+'>';"
+"else if(t=='n')inp='<input type=number id=\"'+k+'\" value=\"'+(v==null?'':v)+'\">';"
+"else inp='<input type=text id=\"'+k+'\" value=\"'+(v==null?'':String(v).replace(/\"/g,'&quot;'))+'\">';"
+"return '<div class=r><label>'+lbl+'</label>'+inp+'</div>';}"
+"var SECS=[];"
+"function build(){SECS=[];var cur=null;"
+"for(var i=0;i<SCHEMA.length;i++){var s=SCHEMA[i];"
+"if(s[1]=='h'){cur={name:s[0],rows:[]};SECS.push(cur);}else if(cur){cur.rows.push(s);}}"
+"var gh='';for(var j=0;j<SECS.length;j++)"
+"gh+='<div class=tile onclick=\"openSec('+j+')\"><span class=ic>'+ico(SECS[j].name)+'</span><span class=nm>'+SECS[j].name+'</span></div>';"
+"document.getElementById('grid').innerHTML=gh;"
+"var ph='';for(var j=0;j<SECS.length;j++){ph+='<div class=panel id=pan'+j+'>"
+"<div class=phead><button class=back onclick=showGrid()>\\u2190</button><b>'+SECS[j].name+'</b></div>';"
+"for(var r=0;r<SECS[j].rows.length;r++)ph+=rowHtml(SECS[j].rows[r]);"
+"ph+='</div>';}"
+"document.getElementById('panels').innerHTML=ph;}"
+"function openSec(i){document.getElementById('grid').classList.add('hide');"
+"for(var j=0;j<SECS.length;j++)document.getElementById('pan'+j).classList.toggle('show',j==i);"
+"document.getElementById('savebar').classList.add('show');window.scrollTo(0,0);}"
+"function showGrid(){document.getElementById('grid').classList.remove('hide');"
+"for(var j=0;j<SECS.length;j++)document.getElementById('pan'+j).classList.remove('show');"
+"document.getElementById('savebar').classList.remove('show');"
+"document.getElementById('msg').textContent='';window.scrollTo(0,0);}"
+"function updStatus(){var m=document.getElementById('updmsg');if(!m)return;"
+"fetch('/api/update/status').then(r=>r.json()).then(j=>{"
+"m.textContent='Huidig: '+j.build+(j.available&&j.latest?(' \\u2192 nieuw: '+j.latest):'');});}"
+"function doUpd(){var b=document.getElementById('updbtn'),m=document.getElementById('updmsg');"
+"b.disabled=true;m.textContent='Updaten\\u2026 de Toon herstart zo.';"
+"fetch('/api/update',{method:'POST'}).then(r=>r.json()).then(j=>{"
+"m.textContent=j.ok?'Update gestart \\u2014 even geduld, de UI herstart.':'Fout bij starten update';"
+"if(!j.ok)b.disabled=false;}).catch(function(){m.textContent='Fout bij starten update';b.disabled=false;});}"
+"function load(){fetch('/api/settings').then(r=>r.json()).then(j=>{S=j;build();updStatus();});}"
+"function save(){var o={};for(var i=0;i<SCHEMA.length;i++){var s=SCHEMA[i];if(s[1]=='h')continue;"
+"var k=s[0],t=s[2],e=document.getElementById(k);if(!e)continue;"
+"o[k]=t=='b'?(e.checked?1:0):(t=='n'?parseInt(e.value||'0'):e.value);}"
+"fetch('/api/settings',{method:'POST',body:JSON.stringify(o)}).then(r=>r.json()).then(j=>{"
+"document.getElementById('msg').textContent=j.ok?'Saved. '+(j.note||''):'Error';});}"
+"load();"
+"</script></body></html>";
+
+static int handle_settings_page(int fd) {
+    size_t n = sizeof(SETTINGS_HTML) - 1;
+    char hdr[160];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+        "Content-Length: %zu\r\n\r\n", n);
+    if (sock_send_all(fd, hdr, hn) < 0) return -1;
+    return sock_send_all(fd, SETTINGS_HTML, n);
 }
 
 /* GET /api/update/status — current build + whether the background poll has
@@ -1746,6 +1905,10 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);
         if (!strcmp(path, "/api/settings"))      return handle_settings_get(fd);
         if (!strcmp(path, "/api/update/status")) return handle_update_status(fd);
+        /* The lightweight built-in settings page (no WASM build needed). Lives
+         * alongside the WASM slave UI at /ui/ — bare "/" still redirects there. */
+        if (!strcmp(path, "/settings") || !strcmp(path, "/settings.html"))
+            return handle_settings_page(fd);
         return serve_static(fd, path);
     }
     if (!strcmp(method, "POST")) {

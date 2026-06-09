@@ -12,16 +12,17 @@
  *   blind:  ...&switchcmd=Open|Close|Stop
  */
 
-#define DOMOTICZ_MAX_DEV 24
+#define DOMOTICZ_MAX_DEV 256   /* a busy Domoticz easily has 100s of used devices */
 
-enum { DZ_SWITCH = 0, DZ_DIMMER = 1, DZ_BLIND = 2 };
+enum { DZ_SWITCH = 0, DZ_DIMMER = 1, DZ_BLIND = 2, DZ_SELECTOR = 3 };
 
 typedef struct {
     int  idx;                 /* Domoticz device idx */
-    int  kind;                /* DZ_SWITCH / DZ_DIMMER / DZ_BLIND */
+    int  kind;                /* DZ_SWITCH / DZ_DIMMER / DZ_BLIND / DZ_SELECTOR */
     char name[40];
     volatile int on;          /* 0/1 (for blinds: 1 = open) */
-    volatile int level;       /* 0..100 dimmer/blind level, -1 if n/a */
+    volatile int level;       /* dimmer/blind 0..100; selector = level value (idx*10); -1 n/a */
+    char options[256];        /* selector: pipe-delimited option names ("Off|Weg|…") */
 } domoticz_dev_t;
 
 typedef struct {
@@ -32,6 +33,25 @@ typedef struct {
 
 extern domoticz_state_t domoticz_state;
 
+/* Energy read-out from Domoticz utility devices (selected per channel by idx in
+ * settings, ENERGY_SRC_DOMOTICZ). Filled by domoticz_poll_energy(); read by the
+ * home/dim energy dispatch the same way as ha_energy / hw_state. */
+typedef struct {
+    volatile int   connected;
+    volatile float power_w;        /* electricity device "Usage" (W) */
+    volatile float power_prod_w;   /* electricity device "UsageDeliv" (W) */
+    volatile float gas_m3;         /* gas device "Counter" total (m³) */
+    volatile float gas_hour_m3;    /* trailing-hour gas use (m³) */
+    volatile float water_m3;       /* water device "Counter" total (m³) */
+} domoticz_energy_t;
+extern domoticz_energy_t dz_energy;
+
+/* Poll the configured Domoticz energy device idxs (rate-limited internally).
+ * Called from the Domoticz client thread; no-op unless a channel uses Domoticz. */
+void domoticz_poll_energy(void);
+
+/* Start the WebSocket+HTTP client thread (live push over ws://host/json, data
+ * over the JSON API). Needs settings.domoticz_host. Returns 0 on success. */
 int  domoticz_start(void);
 
 /* Synchronous connection test for the Settings screen. Runs the same auth

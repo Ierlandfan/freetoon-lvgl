@@ -183,6 +183,18 @@ int stats_fetch(const char * logger_name, const char * rra,
         } else {
             series->year2[series->n][0] = 0;
         }
+        /* Real epoch for the screen's time-based bucketing (hour/day/week/...). */
+        series->ts[series->n] = 0;
+        {
+            int dd, mo, yy, hh = 0, mi = 0, ss = 0;
+            if (klen >= 10 &&
+                sscanf(dt, "%d-%d-%d %d:%d:%d", &dd, &mo, &yy, &hh, &mi, &ss) >= 3) {
+                struct tm tm; memset(&tm, 0, sizeof tm);
+                tm.tm_mday = dd; tm.tm_mon = mo - 1; tm.tm_year = yy - 1900;
+                tm.tm_hour = hh; tm.tm_min = mi; tm.tm_sec = ss; tm.tm_isdst = -1;
+                series->ts[series->n] = (long)mktime(&tm);
+            }
+        }
         if (!isnan(val)) {
             if (val < series->min) series->min = val;
             if (val > series->max) series->max = val;

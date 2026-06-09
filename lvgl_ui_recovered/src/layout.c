@@ -72,8 +72,12 @@ static const layout_tile_t DEFAULTS[] = {
     { LT_FAMILY,        0,   9,  2,  3, 2, 1, -1 },
     { LT_WATER,         0,   9,  4,  3, 2, 1, -1 },
     { LT_THERMOSTAT,    0,   0,  0,  7, 6, 1, -1 },
-    { LT_NEWS_TICKER,   0,   0,  6, 12, 1, 1, -1 },
-    { LT_FORECAST,      0,   0,  7, 12, 1, 1, -1 },
+    /* Ticker overlays the thermostat's bottom row (row 5); the forecast is a
+     * single-row bar across the bottom (row 6). The home-screen forecast
+     * scaler shrinks its 5 day-columns to fit one row, so it no longer needs
+     * the old 2-row height. */
+    { LT_NEWS_TICKER,   0,   0,  5,  7, 1, 1, -1 },
+    { LT_FORECAST,      0,   0,  6, 12, 1, 1, -1 },
     /* news-summary + calendar are NOT preplaced (the grid is full) — add them
      * on demand via the editor's "+ Tegel" button, which drops them in a free
      * cell. */
@@ -152,6 +156,11 @@ void layout_delete_preset(const char * name) {
     remove(layout_path(name, path, sizeof path));
 }
 
+/* Inset each tile by this many px on every side so neighbouring tiles don't
+ * touch (visible gap = 2*GAP between tiles, GAP at the screen edge) — matches
+ * the breathing room of the hard-coded default home layout. */
+#define LAYOUT_GAP (SCREEN_W / 160)   /* 5px on Toon1 (800), 6px on Toon2 (1024) */
+
 void layout_cell_px(int col, int row, int w, int h,
                     int * x, int * y, int * pw, int * ph) {
     /* Round so the right/bottom edges land exactly on the screen border
@@ -160,10 +169,10 @@ void layout_cell_px(int col, int row, int w, int h,
     int y0 = row * SCREEN_H / LAYOUT_ROWS;
     int x1 = (col + w) * SCREEN_W / LAYOUT_COLS;
     int y1 = (row + h) * SCREEN_H / LAYOUT_ROWS;
-    if (x)  *x  = x0;
-    if (y)  *y  = y0;
-    if (pw) *pw = x1 - x0;
-    if (ph) *ph = y1 - y0;
+    if (x)  *x  = x0 + LAYOUT_GAP;
+    if (y)  *y  = y0 + LAYOUT_GAP;
+    if (pw) *pw = x1 - x0 - 2 * LAYOUT_GAP;
+    if (ph) *ph = y1 - y0 - 2 * LAYOUT_GAP;
 }
 
 const layout_tile_t * layout_find(int type) {
@@ -311,8 +320,10 @@ int layout_reflow_push(layout_t * L, int moved) {
 void layout_type_min(int type, int * min_w, int * min_h) {
     /* {min_w, min_h} in grid cells. Height is the meaningful constraint: data
      * tiles that stack several rows of info need >=3 rows, so they can't be
-     * dropped into a 2-row "Half"/"Breed" tile; ticker/forecast are single-line
-     * strips. Tweak freely — purely a UI guard, not persisted. */
+     * dropped into a 2-row "Half"/"Breed" tile; ticker is a single-line strip;
+     * the forecast renders fine as a single-row bar (the home-screen forecast
+     * scaler shrinks its text to fit), so min_h=1. Tweak freely — purely a UI
+     * guard, not persisted. */
     int w = 2, h = 2;
     switch (type) {
         case LT_THERMOSTAT:   w = 5; h = 4; break;

@@ -85,11 +85,12 @@ unsigned int air_quality_color(int eco2, int tvoc) {
 }
 
 const char* program_label(void) {
-    /* activeState == -1 → manual override. Anything else → schedule is in
-     * the driver's seat and program_state holds the currently-active preset.
-     * UI surfaces it as "Scheduled: Home" so the *mode* (manual vs. on the
-     * schedule) is one tap away from being obvious. Returns a pointer into
-     * a static buffer; safe because LVGL copies labels on set_text. */
+    /* activeState == -1 → manual override. Anything else → the schedule is in
+     * the driver's seat and active_state holds the live comfort preset (NOT
+     * program_state — that's the scheme mode; mixing them up is the bug 4c1abaa
+     * fixed in the home/thermostat screens but missed here, so the dim screen
+     * showed the wrong program). Returns a pointer into a static string; safe
+     * because LVGL copies labels on set_text. */
     /* Short label suitable for ambient/dim use: just the active preset
      * name, or "Manual" when off the schedule. The home tile renders
      * the override-aware "(temp)" hint via its own logic next to the
@@ -99,7 +100,7 @@ const char* program_label(void) {
                                 temp_override_origin <= 3)
         origin = temp_override_origin;
     int preset_idx = (toon_state.active_state >= 0)
-                         ? toon_state.program_state : origin;
+                         ? toon_state.active_state : origin;
     if (preset_idx < 0) return "Manual";
     switch (preset_idx) {
         case 0: return "Comfort";
@@ -129,7 +130,12 @@ static char THERMD_UUID[96]   = "qb-000000000000-0000000000:happ_thermstat";
 
 static void bt_init_dev_uuids(void) {
     char hn[64] = {0};
-    if (gethostname(hn, sizeof hn - 1) == 0 && strncmp(hn, "qb-", 3) == 0)
+    /* Accept both "qb-..." (Toon 2 / nxt) and "eneco-..." (Toon 1 / qb2)
+     * hostnames as the BoxTalk UUID prefix -- without the eneco- case a
+     * Toon 1 keeps the dummy serial and every subscription (incl. the
+     * indoor-temperature dataset) silently fails. */
+    if (gethostname(hn, sizeof hn - 1) == 0 &&
+        (strncmp(hn, "qb-", 3) == 0 || strncmp(hn, "eneco-", 6) == 0))
         snprintf(dev_base, sizeof dev_base, "%s", hn);
     snprintf(OUR_UUID,     sizeof OUR_UUID,     "%s:toonui",      dev_base);
     snprintf(ZWAVE_UUID,   sizeof ZWAVE_UUID,   "%s:hdrv_zwave",  dev_base);
@@ -224,8 +230,6 @@ static void handle_notify(const char* xml) {
     if (!attr_value(xml, "serviceid", sid, sizeof(sid))) return;
     char src_uuid[64] = {0};
     attr_value(xml, "uuid", src_uuid, sizeof(src_uuid));
-    /* (quiet — was: fprintf notify log) */
-
     /* sid is full urn: extract the trailing part */
     const char* tail = strrchr(sid, ':');
     if (tail) tail++; else tail = sid;
@@ -310,6 +314,26 @@ static void handle_notify(const char* xml) {
         if (elem_text_float(xml, "CurrentElectricityFlow", &v)) {
             meteradapter_on_flow(v);
             toon_state.msg_count++;
+        }
+    } else if (strcmp(tail, "GasFlowMeter") == 0) {
+        /* Live gas flow rate (liters/hour) from happ_pwrusage. Drives the
+         * dim-screen gas bar. CurrentGasQuantity is in a separate service
+         * (GasQuantityMeter) — see the handler below. */
+        float v;
+        if (elem_text_float(xml, "CurrentGasFlow", &v)) {
+            meteradapter_on_gas_flow(v);
+            toon_state.msg_count++;
+        }
+    } else if (strcmp(tail, "GasQuantityMeter") == 0) {
+        /* Cumulative gas (dm3) from the same happ_pwrusage publisher.
+         * Separate service from GasFlowMeter — the QMF profile for
+         * GasFlowMeter only carries CurrentGasFlow, so we needed a
+         * second subscription to get the total. */
+        float v;
+        if (elem_text_float(xml, "CurrentGasQuantity", &v)) {
+            meteradapter_on_gas_qty(v);
+            toon_state.msg_count++;
+            fprintf(stderr, "[bxt] gas qty: %.0f m3 total\n", meter_state.gas_m3);
         }
     } else if (tile_slots_integration_by_service(tail) != NULL) {
         /* Marketplace integration — dispatched via the manifest's value_field
@@ -812,6 +836,20 @@ static void send_initial_handshake(void) {
         OUR_UUID);
     send_msg(buf);
 
+    /* subscribe to GasFlowMeter — live gas flow rate (liters/hour) from
+     * happ_pwrusage. Drives the dim-screen gas bar. */
+    snprintf(buf, sizeof(buf),
+        "<subscribe uuid=\"%s\" destuuid=\"\"><target uuid=\"\" serviceid=\"urn:hcb-hae-com:serviceId:GasFlowMeter\"></target></subscribe>",
+        OUR_UUID);
+    send_msg(buf);
+
+    /* subscribe to GasQuantityMeter — cumulative gas (dm3), separate QMF
+     * service from GasFlowMeter, same happ_pwrusage publisher. */
+    snprintf(buf, sizeof(buf),
+        "<subscribe uuid=\"%s\" destuuid=\"\"><target uuid=\"\" serviceid=\"urn:hcb-hae-com:serviceId:GasQuantityMeter\"></target></subscribe>",
+        OUR_UUID);
+    send_msg(buf);
+
     /* Subscribe to happ_thermstat's thermostatInfo dataset. This is how the
      * stock qt-gui gets the calibrated room temperature + humidity (verified
      * by sniffing qt-gui's BoxTalk traffic): happ_thermstat pushes an
@@ -1171,7 +1209,7 @@ static void note_temp_override(void) {
          * the schedule says is current now; we still want the
          * auto-resume behaviour. */
         int origin = (toon_state.active_state >= 0)
-                         ? toon_state.program_state
+                         ? toon_state.active_state
                          : schedule_program_now();
         if (origin < 0) return;   /* no schedule loaded — leave it manual */
         temp_override_origin = origin;

@@ -12,6 +12,7 @@
 #include "http.h"
 #include "notify.h"
 #include "settings.h"
+#include "domoticz.h"      /* unified Domoticz devices: DZ_* + control + state */
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,23 +109,82 @@ static int extract_str(const char * json, const char * key, char * out, size_t o
     return 1;
 }
 
-/* GET /api/states/<entity_id> with Bearer auth. Shells out to curl —
- * http.c's http_fetch doesn't take headers, and adding a header parameter
- * everywhere is more churn than just inlining popen here. */
-static int ha_get_state(const char * entity_id, char * out, size_t out_max) {
-    if (!g_token[0] || !ha_id_safe(entity_id)) return -1;
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "
-        "-H 'Authorization: Bearer %s' "
-        "'http://%s/api/states/%s' 2>/dev/null",
-        g_token, HA_HOST, entity_id);
-    FILE * p = popen(cmd, "r");
+/* Parse a JSON "options":["A","B","C"] array into a pipe-delimited string.
+ * Example output: "Open|Peek|Close". Truncates to outsz-1. */
+static void extract_options(const char * json, char * out, size_t outsz) {
+    out[0] = 0;
+    const char * p = strstr(json, "\"options\":[");
+    if (!p) return;
+    p += 10;
+    size_t olen = 0;
+    while (*p && *p != ']' && olen < outsz - 1) {
+        p = strchr(p, '"');
+        if (!p) break;
+        p++;
+        const char * e = strchr(p, '"');
+        if (!e) break;
+        size_t n = e - p;
+        if (n > outsz - olen - 2) n = outsz - olen - 2;
+        if (olen > 0) out[olen++] = '|';
+        memcpy(out + olen, p, n);
+        olen += n;
+        p = e + 1;
+    }
+    out[olen] = 0;
+}
+
+/* ---- HA read path: a WebSocket get_states snapshot ----
+ * One ws_get_states() round-trip fills ha_snapshot with the full states array
+ * (same entity objects REST /api/states returns). ha_get_state() then extracts
+ * a single entity's object from it — no curl, no per-entity request. The
+ * persistent ha_thread keeps the snapshot fresh from live state_changed events;
+ * ha_snapshot_refresh() re-pulls the whole set at seed/periodic/after-action. */
+static char ha_snapshot[768 * 1024];
+static int  ha_snapshot_valid = 0;
+static pthread_mutex_t ha_snap_lock = PTHREAD_MUTEX_INITIALIZER;
+static void ha_snapshot_refresh(void);   /* defined after the WS helpers below */
+
+/* Copy the states[] element whose entity_id == id into out. entity_id is the
+ * first key of each element, so the '{' just before it opens that object; we
+ * then brace-match (string-aware) to its close. 0 on success, -1 if absent. */
+static int snap_extract_entity(const char * snap, const char * id,
+                               char * out, size_t out_max) {
+    char needle[96];
+    int nl = snprintf(needle, sizeof needle, "\"entity_id\":\"%s\"", id);
+    if (nl <= 0 || nl >= (int)sizeof needle) return -1;
+    const char * p = strstr(snap, needle);
     if (!p) return -1;
-    size_t n = fread(out, 1, out_max - 1, p);
-    out[n] = 0;
-    int rc = pclose(p);
-    return (rc == 0 && n > 0) ? 0 : -1;
+    const char * start = p;
+    while (start > snap && *start != '{') start--;
+    if (*start != '{') return -1;
+    int depth = 0, instr = 0, esc = 0;
+    const char * q = start;
+    for (; *q; q++) {
+        char c = *q;
+        if (instr) {
+            if (esc) esc = 0;
+            else if (c == '\\') esc = 1;
+            else if (c == '"') instr = 0;
+        } else if (c == '"') instr = 1;
+        else if (c == '{') depth++;
+        else if (c == '}') { if (--depth == 0) { q++; break; } }
+    }
+    size_t len = (size_t)(q - start);
+    if (len >= out_max) len = out_max - 1;
+    memcpy(out, start, len);
+    out[len] = 0;
+    return 0;
+}
+
+/* Extract one entity's state object from the latest WS snapshot. Drop-in for
+ * the old per-entity REST GET — same body shape, so every parser is unchanged. */
+static int ha_get_state(const char * entity_id, char * out, size_t out_max) {
+    if (!ha_id_safe(entity_id)) return -1;
+    int rc;
+    pthread_mutex_lock(&ha_snap_lock);
+    rc = ha_snapshot_valid ? snap_extract_entity(ha_snapshot, entity_id, out, out_max) : -1;
+    pthread_mutex_unlock(&ha_snap_lock);
+    return rc;
 }
 
 /* GET /api/calendars/<entity>?start=&end= with Bearer auth — fills `out` with
@@ -149,63 +209,27 @@ int ha_fetch_calendar(const char * entity, const char * start_iso,
     return (rc == 0 && n > 0) ? 0 : -1;
 }
 
-/* POST /api/services/cover/<action>. Returns 0 on HTTP 2xx.
- * On failure, also fires a Toon-side notification so the user knows the
- * curtain button didn't actually do anything (cleared once HA recovers). */
-static int ha_call_cover_service(const char * action) {
-    if (!g_token[0] || !ha_id_safe(CURTAIN_GROUP)) return -1;
-    char cmd[1024], out[256];
-    snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "
-        "-X POST -H 'Authorization: Bearer %s' "
-        "-H 'Content-Type: application/json' "
-        "--data '{\"entity_id\":\"%s\"}' "
-        "'http://%s/api/services/cover/%s' 2>/dev/null",
-        g_token, CURTAIN_GROUP, HA_HOST, action);
-    FILE * p = popen(cmd, "r");
-    if (!p) {
-        notify_show("system", "ha_offline", "HA niet bereikbaar — gordijn-actie niet uitgevoerd");
-        return -1;
-    }
-    size_t n = fread(out, 1, sizeof(out) - 1, p);
-    out[n] = 0;
-    int rc = pclose(p);
-    fprintf(stderr, "[ha] cover.%s rc=%d body=%.60s\n", action, rc, out);
-    if (rc != 0 || n == 0)
-        notify_show("system", "ha_offline", "HA niet bereikbaar — gordijn-actie niet uitgevoerd");
-    else
-        notify_clear("system", "ha_offline");
-    return (rc == 0) ? 0 : -1;
+/* Call an HA service over the WebSocket (one-shot connect+auth+call_service).
+ * extra_json = ",\"brightness_pct\":50" (leading comma) or NULL. No curl. */
+static int ws_call_service(const char * domain, const char * service,
+                           const char * entity, const char * extra_json);
+static int ha_call_service(const char * domain, const char * service,
+                           const char * entity_id, const char * extra_json) {
+    if (!ha_id_safe(entity_id)) return -1;
+    int rc = ws_call_service(domain, service, entity_id, extra_json);
+    if (rc != 0) notify_show("system", "ha_offline", "HA niet bereikbaar — actie niet uitgevoerd");
+    else         notify_clear("system", "ha_offline");
+    return rc;
 }
 
-/* POST /api/services/light/<action> on a specific entity_id.
- * On failure, fires a Toon-side notification (same logic as the cover
- * helper) so users pressing the lights tile while HA is dead get a
- * visible signal rather than silent no-op. */
-static int ha_call_light_service(const char * action, const char * entity_id) {
-    if (!g_token[0] || !ha_id_safe(entity_id)) return -1;
-    char cmd[1024], out[256];
-    snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "
-        "-X POST -H 'Authorization: Bearer %s' "
-        "-H 'Content-Type: application/json' "
-        "--data '{\"entity_id\":\"%s\"}' "
-        "'http://%s/api/services/light/%s' 2>/dev/null",
-        g_token, entity_id, HA_HOST, action);
-    FILE * p = popen(cmd, "r");
-    if (!p) {
-        notify_show("system", "ha_offline", "HA niet bereikbaar — licht-actie niet uitgevoerd");
-        return -1;
-    }
-    size_t n = fread(out, 1, sizeof(out) - 1, p);
-    out[n] = 0;
-    int rc = pclose(p);
-    fprintf(stderr, "[ha] light.%s %s rc=%d\n", action, entity_id, rc);
-    if (rc != 0 || n == 0)
-        notify_show("system", "ha_offline", "HA niet bereikbaar — licht-actie niet uitgevoerd");
-    else
-        notify_clear("system", "ha_offline");
-    return (rc == 0) ? 0 : -1;
+/* Thin wrappers — keep the old signatures so existing callers don't change. */
+static int ha_call_cover_service_only(const char * action) {
+    if (!ha_id_safe(CURTAIN_GROUP)) return -1;
+    return ha_call_service("cover", action, CURTAIN_GROUP, NULL);
+}
+
+static int ha_call_light_service_only(const char * action, const char * entity_id) {
+    return ha_call_service("light", action, entity_id, NULL);
 }
 
 /* Room lights for the home Lights screen — loaded at runtime from
@@ -276,8 +300,8 @@ static void poll_lights(void) {
  * the new state within a few seconds. */
 static void * light_action_thread(void * arg) {
     char ** p = (char **)arg;       /* [action, entity_id] */
-    ha_call_light_service(p[0], p[1]);
-    poll_lights();
+    ha_call_light_service_only(p[0], p[1]);
+    ha_snapshot_refresh(); poll_lights();   /* authoritative read; event backstops */
     free(p[0]); free(p[1]); free(p);
     return NULL;
 }
@@ -302,6 +326,351 @@ void ha_light_toggle_async(const char * entity_id) {
 
 void ha_lights_all_on_async(void)  { fire_light_action("turn_on",  "light.all_lights"); }
 void ha_lights_all_off_async(void) { fire_light_action("turn_off", "light.all_lights"); }
+
+/* ======================= Unified dynamic device list =======================
+ * One user-managed list (lights, covers, switches, scripts, scenes) loaded
+ * from /mnt/data/ha_devices.conf. Replaces the old fixed cover slots; the
+ * Devices screen + home pinned-tiles render it. Control routes through the
+ * generic ha_call_service(), state through ha_get_state(). */
+#define HA_DEVICES_CONF "/mnt/data/ha_devices.conf"
+
+ha_device_t ha_devices[HA_DEVICE_MAX];
+int         ha_device_count = 0;
+
+const char * hadev_type_str(int type) {
+    switch (type) {
+        case HADEV_COVER:  return "cover";
+        case HADEV_SWITCH: return "switch";
+        case HADEV_SELECT: return "input_select";
+        case HADEV_SCRIPT: return "script";
+        case HADEV_SCENE:  return "scene";
+        default:           return "light";
+    }
+}
+int hadev_type_from_str(const char * s) {
+    if (!s)                    return HADEV_LIGHT;
+    if (!strcmp(s, "cover"))   return HADEV_COVER;
+    if (!strcmp(s, "switch"))  return HADEV_SWITCH;
+    if (!strcmp(s, "input_select")) return HADEV_SELECT;
+    if (!strcmp(s, "script"))  return HADEV_SCRIPT;
+    if (!strcmp(s, "scene"))   return HADEV_SCENE;
+    return HADEV_LIGHT;
+}
+
+void ha_devices_save(void) {
+    FILE * f = fopen(HA_DEVICES_CONF, "w");
+    if (!f) return;
+    fprintf(f, "# type|entity_id|Name|pin|backend   "
+               "(type=light|cover|switch|input_select|script|scene; backend 0=HA 1=Domoticz, entity 'dz:<idx>')\n");
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        fprintf(f, "%s|%s|%s|%d|%d\n", hadev_type_str(D->type),
+                D->entity_id, D->name, D->pin_home ? 1 : 0, D->backend);
+    }
+    fclose(f);
+}
+
+/* backend = HADEV_BE_HA | HADEV_BE_DZ. For Domoticz, `entity` is "dz:<idx>"
+ * and ha_id_safe() is skipped (the idx isn't an HA entity id). */
+static void devices_add_be(int type, const char * entity, const char * name,
+                           int pin, int backend) {
+    if (ha_device_count >= HA_DEVICE_MAX || !entity || !entity[0]) return;
+    if (backend == HADEV_BE_HA && !ha_id_safe(entity)) return;
+    ha_device_t * D = &ha_devices[ha_device_count++];
+    memset((void *)D, 0, sizeof *D);
+    D->type = type;
+    D->backend = backend;
+    snprintf(D->entity_id, sizeof D->entity_id, "%s", entity);
+    snprintf(D->name, sizeof D->name, "%s", (name && name[0]) ? name : entity);
+    D->pin_home   = pin ? 1 : 0;
+    D->brightness = -1;
+    D->position   = -1;
+    if (backend == HADEV_BE_DZ) {
+        const char * c = strchr(entity, ':');
+        D->dz_idx = c ? atoi(c + 1) : 0;
+    }
+}
+static void devices_add(int type, const char * entity, const char * name, int pin) {
+    devices_add_be(type, entity, name, pin, HADEV_BE_HA);
+}
+
+void ha_devices_load(void) {
+    ha_device_count = 0;
+    FILE * f = fopen(HA_DEVICES_CONF, "r");
+    if (f) {
+        char line[200];
+        while (fgets(line, sizeof line, f) && ha_device_count < HA_DEVICE_MAX) {
+            char * nl = strchr(line, '\n'); if (nl) *nl = 0;
+            char * cr = strchr(line, '\r'); if (cr) *cr = 0;
+            if (!line[0] || line[0] == '#') continue;
+            /* type | entity_id | name | pin | backend(optional) */
+            char * p_ent = strchr(line, '|'); if (!p_ent) continue; *p_ent++ = 0;
+            const char * name = ""; int pin = 0, backend = HADEV_BE_HA;
+            char * p_name = strchr(p_ent, '|');
+            if (p_name) {
+                *p_name++ = 0;
+                char * p_pin = strchr(p_name, '|');
+                if (p_pin) {
+                    *p_pin++ = 0;
+                    char * p_be = strchr(p_pin, '|');
+                    if (p_be) { *p_be++ = 0; backend = atoi(p_be); }
+                    pin = atoi(p_pin);
+                }
+                name = p_name;
+            }
+            devices_add_be(hadev_type_from_str(line), p_ent, name, pin, backend);
+        }
+        fclose(f);
+        fprintf(stderr, "[ha] loaded %d devices from " HA_DEVICES_CONF "\n", ha_device_count);
+        return;
+    }
+    /* No ha_devices.conf yet — migrate from the legacy ha_lights.conf and the
+     * old fixed curtain/blinds cover slots, then persist so future edits stick. */
+    ha_lights_load();
+    for (int i = 0; i < ha_light_count; i++)
+        devices_add(HADEV_LIGHT, ha_lights[i].entity_id, ha_lights[i].name, 0);
+    /* pin=0: devices are opt-in for the home quick-tiles (toggle "Home" per
+     * device in Settings -> Devices). Keeps the default home uncluttered; the
+     * full list is always one tap away on the Devices screen. */
+    if (settings.curtain_entity[0])
+        devices_add(HADEV_COVER, settings.curtain_entity, "Gordijnen",  0);
+    if (settings.blinds_entity[0])
+        devices_add(HADEV_COVER, settings.blinds_entity,  "Jaloezieen", 0);
+    if (ha_device_count > 0) ha_devices_save();
+    fprintf(stderr, "[ha] migrated %d devices to " HA_DEVICES_CONF "\n", ha_device_count);
+}
+
+/* Parse a state object into one device (by type). */
+static void apply_device(ha_device_t * D, const char * body) {
+    char st[24] = {0};
+    extract_str(body, "state", st, sizeof st);
+    if (D->type == HADEV_COVER) {
+        D->available = (st[0] && strcmp(st, "unavailable") && strcmp(st, "unknown"));
+        snprintf(D->state, sizeof D->state, "%s", st);
+        int v;
+        if (extract_int(body, "current_position", &v)) D->position = v;
+    } else if (D->type == HADEV_SELECT) {
+        snprintf(D->state, sizeof D->state, "%s", st[0] ? st : "?");
+        extract_options(body, D->options, sizeof D->options);
+        D->available = 1;
+    } else {                          /* light / switch */
+        if (!strcmp(st, "on"))        { D->available = 1; D->on = 1; }
+        else if (!strcmp(st, "off"))  { D->available = 1; D->on = 0; }
+        else                          { D->available = 0; D->on = 0; }
+        int v;
+        if (extract_int(body, "brightness", &v)) D->brightness = v;
+    }
+}
+
+/* Refresh every stateful device from the WS snapshot. Scripts/scenes are
+ * stateless and skipped. */
+static void poll_devices(void) {
+    char body[768];
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        if (D->backend == HADEV_BE_DZ) continue;   /* Domoticz: synced separately */
+        if (D->type == HADEV_SCRIPT || D->type == HADEV_SCENE) continue;
+        if (ha_get_state(D->entity_id, body, sizeof body) != 0) { D->available = 0; continue; }
+        apply_device(D, body);
+    }
+}
+
+/* Generic fire-and-forget service call + a quick re-poll so the screen
+ * reflects the result within a second instead of waiting for the next pass. */
+struct ha_svc_arg { char domain[12]; char service[24]; char entity[64]; };
+static void * ha_svc_thread(void * arg) {
+    struct ha_svc_arg * a = (struct ha_svc_arg *)arg;
+    ha_call_service(a->domain, a->service, a->entity, NULL);
+    ha_snapshot_refresh(); poll_devices();
+    free(a);
+    return NULL;
+}
+static void ha_service_async(const char * domain, const char * service, const char * entity) {
+    struct ha_svc_arg * a = malloc(sizeof *a);
+    if (!a) return;
+    snprintf(a->domain,  sizeof a->domain,  "%s", domain);
+    snprintf(a->service, sizeof a->service, "%s", service);
+    snprintf(a->entity,  sizeof a->entity,  "%s", entity);
+    pthread_t t;
+    if (pthread_create(&t, NULL, ha_svc_thread, a) != 0) { free(a); return; }
+    pthread_detach(t);
+}
+
+void ha_device_toggle_async(int type, const char * entity_id) {
+    ha_service_async(type == HADEV_SWITCH ? "switch" : "light", "toggle", entity_id);
+}
+void ha_device_cover_async(const char * entity_id, const char * cmd) {
+    const char * svc = !strcmp(cmd, "open")  ? "open_cover"
+                     : !strcmp(cmd, "close") ? "close_cover"
+                                             : "stop_cover";
+    ha_service_async("cover", svc, entity_id);
+}
+void ha_device_run_async(int type, const char * entity_id) {
+    ha_service_async(type == HADEV_SCENE ? "scene" : "script", "turn_on", entity_id);
+}
+
+/* input_select.select_option — extra JSON carries the option value.
+ * Re-polls devices so the UI reflects the new selection quickly. */
+struct select_opt_arg { char entity[64]; char option[64]; };
+static void * select_option_thread(void * arg) {
+    struct select_opt_arg * a = (struct select_opt_arg *)arg;
+    char extra[96];
+    snprintf(extra, sizeof(extra), ",\"option\":\"%s\"", a->option);
+    ha_call_service("input_select", "select_option", a->entity, extra);
+    ha_snapshot_refresh(); poll_devices();
+    free(a);
+    return NULL;
+}
+void ha_device_select_option_async(const char * entity_id, const char * option) {
+    struct select_opt_arg * a = malloc(sizeof *a);
+    if (!a) return;
+    snprintf(a->entity, sizeof a->entity, "%s", entity_id);
+    snprintf(a->option, sizeof a->option, "%s", option);
+    pthread_t t;
+    if (pthread_create(&t, NULL, select_option_thread, a) != 0) { free(a); return; }
+    pthread_detach(t);
+}
+
+/* Copy the n-th '|'-delimited token of s into out. */
+static void pipe_token(const char * s, int n, char * out, size_t osz) {
+    out[0] = 0;
+    int k = 0; const char * tok = s;
+    for (const char * p = s; ; p++) {
+        if (*p == '|' || *p == 0) {
+            if (k == n) {
+                size_t len = (size_t)(p - tok);
+                if (len >= osz) len = osz - 1;
+                memcpy(out, tok, len); out[len] = 0; return;
+            }
+            if (*p == 0) return;
+            k++; tok = p + 1;
+        }
+    }
+}
+/* Index of the token equal to `name`, or -1. */
+static int pipe_index(const char * s, const char * name) {
+    size_t nl = strlen(name);
+    int k = 0; const char * tok = s;
+    for (const char * p = s; ; p++) {
+        if (*p == '|' || *p == 0) {
+            if ((size_t)(p - tok) == nl && strncmp(tok, name, nl) == 0) return k;
+            if (*p == 0) return -1;
+            k++; tok = p + 1;
+        }
+    }
+}
+
+/* ---- backend-aware control by device index (HA WebSocket or Domoticz idx) ---- */
+void ha_dev_toggle(int idx) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_switch_async(D->dz_idx, "Toggle");
+    else                           ha_device_toggle_async(D->type, D->entity_id);
+}
+void ha_dev_cover(int idx, const char * cmd) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) {
+        const char * dz = !strcmp(cmd, "open") ? "Open"
+                        : !strcmp(cmd, "close") ? "Close" : "Stop";
+        domoticz_switch_async(D->dz_idx, dz);
+    } else ha_device_cover_async(D->entity_id, cmd);
+}
+void ha_dev_position(int idx, int pct) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_set_level_async(D->dz_idx, pct);
+    else                           ha_cover_set_position_async(D->entity_id, pct);
+}
+void ha_dev_brightness(int idx, int pct) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_set_level_async(D->dz_idx, pct);
+    else                           ha_light_set_brightness_async(D->entity_id, pct);
+}
+void ha_dev_run(int idx) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) domoticz_switch_async(D->dz_idx, "On");  /* Domoticz has no scripts */
+    else                           ha_device_run_async(D->type, D->entity_id);
+}
+void ha_dev_select_set(int idx, const char * option) {
+    if (idx < 0 || idx >= ha_device_count || !option) return;
+    ha_device_t * D = &ha_devices[idx];
+    if (D->backend == HADEV_BE_DZ) {
+        int oi = pipe_index(D->options, option);   /* Domoticz selector level = idx*10 */
+        if (oi >= 0) domoticz_set_level_async(D->dz_idx, oi * 10);
+    } else {
+        ha_device_select_option_async(D->entity_id, option);
+    }
+}
+
+/* Mirror live Domoticz state into the backend==DZ entries of ha_devices[]. */
+void ha_devices_sync_dz(void) {
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        if (D->backend != HADEV_BE_DZ) continue;
+        D->available = 0;
+        for (int j = 0; j < domoticz_state.count; j++) {
+            domoticz_dev_t * z = &domoticz_state.dev[j];
+            if (z->idx != D->dz_idx) continue;
+            D->available = 1;
+            D->on = z->on;
+            if (D->type == HADEV_COVER) {
+                D->position = (z->level >= 0) ? z->level : (z->on ? 100 : 0);
+                snprintf(D->state, sizeof D->state, "%s", z->on ? "open" : "closed");
+            } else if (D->type == HADEV_LIGHT) {
+                D->brightness = (z->level >= 0) ? z->level * 255 / 100 : (z->on ? 255 : 0);
+            } else if (D->type == HADEV_SELECT) {
+                snprintf(D->options, sizeof D->options, "%s", z->options);
+                pipe_token(z->options, (z->level > 0) ? z->level / 10 : 0,
+                           D->state, sizeof D->state);
+            }
+            break;
+        }
+    }
+}
+
+/* ---- list editing (settings device manager) ---- */
+int ha_device_add(int type, const char * entity_id, const char * name, int pin) {
+    int before = ha_device_count;
+    devices_add(type, entity_id, name, pin);
+    if (ha_device_count == before) return -1;   /* rejected: full / unsafe id */
+    ha_devices_save();
+    /* Poll the new device immediately so it shows state right away instead
+     * of waiting for the next WS event or reconnect. */
+    char body[768];
+    int idx = ha_device_count - 1;
+    ha_snapshot_refresh();
+    if (ha_get_state(entity_id, body, sizeof body) == 0)
+        apply_device(&ha_devices[idx], body);
+    return idx;
+}
+/* Add a Domoticz device to the managed list. kind = DZ_SWITCH/DZ_DIMMER/DZ_BLIND. */
+int ha_device_add_dz(int dz_kind, int dz_idx, const char * name, int pin) {
+    int type = (dz_kind == DZ_BLIND)    ? HADEV_COVER
+             : (dz_kind == DZ_DIMMER)   ? HADEV_LIGHT
+             : (dz_kind == DZ_SELECTOR) ? HADEV_SELECT : HADEV_SWITCH;
+    char entity[64];
+    snprintf(entity, sizeof entity, "dz:%d", dz_idx);
+    int before = ha_device_count;
+    devices_add_be(type, entity, name, pin, HADEV_BE_DZ);
+    if (ha_device_count == before) return -1;        /* list full / duplicate */
+    ha_devices_save();
+    ha_devices_sync_dz();                            /* show its state right away */
+    return ha_device_count - 1;
+}
+void ha_device_remove(int idx) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    for (int i = idx; i < ha_device_count - 1; i++) ha_devices[i] = ha_devices[i + 1];
+    ha_device_count--;
+    ha_devices_save();
+}
+void ha_device_set_pin(int idx, int pin) {
+    if (idx < 0 || idx >= ha_device_count) return;
+    ha_devices[idx].pin_home = pin ? 1 : 0;
+    ha_devices_save();
+}
 
 /* Strip leading/trailing whitespace in place. Returns the input pointer
  * (possibly advanced) so callers can chain. */
@@ -730,6 +1099,78 @@ static int ws_connect(void) {
     return fd;
 }
 
+/* ---- WebSocket request helpers (one-shot: connect+auth, do op, close) ----
+ * The persistent ha_thread WS carries live state_changed events; these
+ * short-lived connections do the request/response ops (get_states for the
+ * picker, call_service for control) so HA needs no curl and no MQTT. */
+static int ws_open_authed(void) {
+    if (!g_token[0]) return -1;
+    int fd = ws_connect();
+    if (fd < 0) return -1;
+    char m[2048];
+    if (ws_recv_msg(fd, m, sizeof m) < 0) { close(fd); return -1; }   /* auth_required */
+    char auth[320];
+    snprintf(auth, sizeof auth, "{\"type\":\"auth\",\"access_token\":\"%s\"}", g_token);
+    if (ws_send(fd, 0x1, (const unsigned char *)auth, strlen(auth)) < 0) { close(fd); return -1; }
+    if (ws_recv_msg(fd, m, sizeof m) < 0 || !strstr(m, "auth_ok")) { close(fd); return -1; }
+    return fd;
+}
+/* One-shot get_states -> raw JSON result into buf (same entity objects REST
+ * returns, wrapped in {"result":[...]}). 0 on success. */
+static int ws_get_states(char * buf, size_t bufsz) {
+    int fd = ws_open_authed();
+    if (fd < 0) return -1;
+    const char * req = "{\"id\":1,\"type\":\"get_states\"}";
+    int ok = -1;
+    if (ws_send(fd, 0x1, (const unsigned char *)req, strlen(req)) == 0) {
+        for (int t = 0; t < 5; t++) {
+            int n = ws_recv_msg(fd, buf, bufsz);
+            if (n < 0) break;
+            if (strstr(buf, "\"type\":\"result\"")) { ok = 0; break; }
+        }
+    }
+    ws_send(fd, 0x8, NULL, 0);
+    close(fd);
+    return ok;
+}
+/* One-shot call_service. extra_json is ",\"k\":v" (leading comma) or NULL. */
+static int ws_call_service(const char * domain, const char * service,
+                           const char * entity, const char * extra_json) {
+    int fd = ws_open_authed();
+    if (fd < 0) return -1;
+    char req[640];
+    if (extra_json && extra_json[0])
+        snprintf(req, sizeof req,
+            "{\"id\":1,\"type\":\"call_service\",\"domain\":\"%s\",\"service\":\"%s\","
+            "\"service_data\":{%s},\"target\":{\"entity_id\":\"%s\"}}",
+            domain, service, extra_json + 1, entity);
+    else
+        snprintf(req, sizeof req,
+            "{\"id\":1,\"type\":\"call_service\",\"domain\":\"%s\",\"service\":\"%s\","
+            "\"target\":{\"entity_id\":\"%s\"}}",
+            domain, service, entity);
+    int rc = ws_send(fd, 0x1, (const unsigned char *)req, strlen(req));
+    char m[1024]; ws_recv_msg(fd, m, sizeof m);    /* best-effort result ack */
+    ws_send(fd, 0x8, NULL, 0);
+    close(fd);
+    return rc;
+}
+/* Re-pull the whole states set into ha_snapshot (one WS round-trip). refresh_lock
+ * serializes refreshers (so the static tmp is single-writer); the brief memcpy
+ * under ha_snap_lock is all that blocks ha_get_state() readers. */
+static void ha_snapshot_refresh(void) {
+    static char tmp[768 * 1024];
+    static pthread_mutex_t refresh_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&refresh_lock);
+    if (ws_get_states(tmp, sizeof tmp) == 0) {
+        pthread_mutex_lock(&ha_snap_lock);
+        memcpy(ha_snapshot, tmp, sizeof ha_snapshot);
+        ha_snapshot_valid = 1;
+        pthread_mutex_unlock(&ha_snap_lock);
+    }
+    pthread_mutex_unlock(&refresh_lock);
+}
+
 /* Curtain battery (one of the two child sensors) — track both, show the min. */
 static int s_bat_a = 100, s_bat_b = 100;
 static void apply_curtain_bat(const char * ns, int side) {
@@ -741,12 +1182,167 @@ static void apply_curtain_bat(const char * ns, int side) {
     ha_state.curtain_battery = s_bat_a < s_bat_b ? s_bat_a : s_bat_b;
 }
 
+/* Blinds cover state — mirrors apply_curtain but writes ha_state.blinds_*. */
+static void apply_blinds(const char * body) {
+    ha_state.connected = 1;
+    extract_str(body, "state", ha_state.blinds_state, sizeof(ha_state.blinds_state));
+    int v;
+    if (extract_int(body, "current_position", &v)) ha_state.blinds_pos = v;
+    if (extract_int(body, "is_closed", &v))        ha_state.blinds_is_closed = v;
+}
+
+/* Blinds battery (one of the two child sensors). */
+static int s_blinds_bat_a = 100, s_blinds_bat_b = 100;
+static void apply_blinds_bat(const char * ns, int side) {
+    char st[16] = {0};
+    if (!extract_str(ns, "state", st, sizeof st)) return;
+    int p = atoi(st);
+    if (p <= 0) return;
+    if (side == 0) s_blinds_bat_a = p; else s_blinds_bat_b = p;
+    ha_state.blinds_battery = s_blinds_bat_a < s_blinds_bat_b ? s_blinds_bat_a : s_blinds_bat_b;
+}
+
+/* Poll blinds cover state + battery — mirrors poll_once(). */
+static void poll_blinds(void) {
+    if (!settings.blinds_entity[0]) return;
+    char body[1024];
+    if (ha_get_state(settings.blinds_entity, body, sizeof(body)) == 0)
+        apply_blinds(body);
+    int bat_min = 100;
+    for (const char * id = settings.blinds_bat_a; ; id = settings.blinds_bat_b) {
+        char b[512];
+        if (ha_get_state(id, b, sizeof(b)) == 0) {
+            char st[16];
+            if (extract_str(b, "state", st, sizeof(st))) {
+                int p = atoi(st);
+                if (p > 0 && p < bat_min) bat_min = p;
+            }
+        }
+        if (strcmp(id, settings.blinds_bat_b) == 0) break;
+    }
+    ha_state.blinds_battery = bat_min;
+}
+
+/* ---- HA energy sensor polling -------------------------------------------
+ * Periodically curls each configured energy sensor entity and parses its
+ * numeric state. Rate-limited internally to HA_POLL_S seconds; called from
+ * the WebSocket event loop so it piggybacks on the existing connection rhythm
+ * without needing its own timer thread. */
+ha_energy_state_t ha_energy = {0};
+
+#define HA_GAS_RING_N 64
+static struct { long t; float m3; } ha_gas_ring[HA_GAS_RING_N];
+static int  ha_gas_ring_head = 0, ha_gas_ring_count = 0;
+static long ha_gas_ring_last_t = 0;
+
+static void ha_gas_hour_update(float gas_now) {
+    if (gas_now <= 0) { ha_energy.gas_hour_m3 = 0; return; }
+    long now = time(NULL);
+    if (ha_gas_ring_last_t == 0 || now - ha_gas_ring_last_t >= 55) {
+        ha_gas_ring[ha_gas_ring_head].t  = now;
+        ha_gas_ring[ha_gas_ring_head].m3 = gas_now;
+        ha_gas_ring_head = (ha_gas_ring_head + 1) % HA_GAS_RING_N;
+        if (ha_gas_ring_count < HA_GAS_RING_N) ha_gas_ring_count++;
+        ha_gas_ring_last_t = now;
+    }
+    if (ha_gas_ring_count < 2) { ha_energy.gas_hour_m3 = 0; return; }
+    long midnight = now - (now % 86400);
+    long cutoff = now - 3600;
+    if (cutoff < midnight) cutoff = midnight;  /* daily reset — don't cross midnight */
+    int oldest = (ha_gas_ring_head - ha_gas_ring_count + HA_GAS_RING_N) % HA_GAS_RING_N;
+    int ref = oldest;
+    for (int k = 0; k < ha_gas_ring_count; k++) {
+        int i = (oldest + k) % HA_GAS_RING_N;
+        if (ha_gas_ring[i].t <= cutoff) ref = i; else break;
+    }
+    float delta = gas_now - ha_gas_ring[ref].m3;
+    if (delta < 0) delta = 0;
+    ha_energy.gas_hour_m3 = delta;
+}
+
+static float ha_parse_state_float(const char * json) {
+    const char * p = strstr(json, "\"state\"");
+    if (!p) return -1;
+    p = strchr(p, ':');
+    if (!p) return -1;
+    p++;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '"') {
+        p++;
+        if (!strncmp(p, "unavailable", 11)) return -1;
+        if (!strncmp(p, "unknown", 7)) return -1;
+    }
+    return strtof(p, NULL);
+}
+
+static void poll_ha_energy(void) {
+    static time_t last_s = 0;
+    time_t now = time(NULL);
+    if (now - last_s < HA_POLL_S) return;
+    last_s = now;
+
+    int any = 0;
+    char body[1024];
+
+    if (settings.energy_elec_source == ENERGY_SRC_HA && settings.energy_elec_ha_entity[0]) {
+        if (ha_get_state(settings.energy_elec_ha_entity, body, sizeof body) == 0) {
+            float v = ha_parse_state_float(body);
+            if (v >= 0) { ha_energy.power_w = v; any = 1; }
+        }
+    }
+    if (settings.energy_elec_source == ENERGY_SRC_HA && settings.energy_elec_prod_ha_entity[0]) {
+        if (ha_get_state(settings.energy_elec_prod_ha_entity, body, sizeof body) == 0) {
+            float v = ha_parse_state_float(body);
+            if (v >= 0) { ha_energy.power_prod_w = v; any = 1; }
+        }
+    }
+    if (settings.energy_gas_source == ENERGY_SRC_HA && settings.energy_gas_ha_entity[0]) {
+        if (ha_get_state(settings.energy_gas_ha_entity, body, sizeof body) == 0) {
+            float v = ha_parse_state_float(body);
+            if (v >= 0) { ha_energy.gas_m3 = v; ha_gas_hour_update(v); any = 1; }
+        }
+    }
+    if (settings.energy_water_source == ENERGY_SRC_HA && settings.energy_water_ha_entity[0]) {
+        if (ha_get_state(settings.energy_water_ha_entity, body, sizeof body) == 0) {
+            float v = ha_parse_state_float(body);
+            if (v >= 0) { ha_energy.water_m3 = v; any = 1; }
+        }
+    }
+
+    ha_energy.connected = any ? 1 : 0;
+}
+
 /* Seed all watched state once over REST (events carry only future changes). */
 static void seed_all(void) {
+    ha_snapshot_refresh();   /* one WS get_states; the pollers extract from it */
     poll_once();        /* curtain group + battery */
+    poll_blinds();      /* blinds cover + battery */
     poll_lights();
+    poll_devices();     /* unified device list */
     poll_life360();
     poll_doorbell();    /* arms the trigger edge-detector */
+    poll_ha_energy();   /* seed the energy sensors from the snapshot */
+}
+
+/* Route an energy sensor's state object (a get_states element or a WS
+ * new_state) into ha_energy, so energy tracks live state_changed events
+ * instead of being polled. ent is the entity id, json its state object. */
+static void route_energy(const char * ent, const char * json) {
+    int matched = 0;
+    if (settings.energy_elec_source == ENERGY_SRC_HA && settings.energy_elec_ha_entity[0]
+        && !strcmp(ent, settings.energy_elec_ha_entity)) {
+        float v = ha_parse_state_float(json); if (v >= 0) ha_energy.power_w = v; matched = 1;
+    } else if (settings.energy_elec_source == ENERGY_SRC_HA && settings.energy_elec_prod_ha_entity[0]
+        && !strcmp(ent, settings.energy_elec_prod_ha_entity)) {
+        float v = ha_parse_state_float(json); if (v >= 0) ha_energy.power_prod_w = v; matched = 1;
+    } else if (settings.energy_gas_source == ENERGY_SRC_HA && settings.energy_gas_ha_entity[0]
+        && !strcmp(ent, settings.energy_gas_ha_entity)) {
+        float v = ha_parse_state_float(json); if (v >= 0) { ha_energy.gas_m3 = v; ha_gas_hour_update(v); } matched = 1;
+    } else if (settings.energy_water_source == ENERGY_SRC_HA && settings.energy_water_ha_entity[0]
+        && !strcmp(ent, settings.energy_water_ha_entity)) {
+        float v = ha_parse_state_float(json); if (v >= 0) ha_energy.water_m3 = v; matched = 1;
+    }
+    if (matched) ha_energy.connected = 1;
 }
 
 /* Route a state_changed event to the right apply_*. Scopes parsing to the
@@ -757,16 +1353,30 @@ static void dispatch_event(const char * msg) {
     if (!ent[0]) return;
     const char * ns = strstr(msg, "\"new_state\"");
     if (!ns) return;
-    if (CURTAIN_GROUP[0] && !strcmp(ent, CURTAIN_GROUP)) { apply_curtain(ns); return; }
-    if (CURTAIN_LEFT[0]  && !strcmp(ent, CURTAIN_LEFT))  { apply_curtain_bat(ns, 0); return; }
-    if (CURTAIN_RIGHT[0] && !strcmp(ent, CURTAIN_RIGHT)) { apply_curtain_bat(ns, 1); return; }
-    if (settings.life360_a_entity[0] && !strcmp(ent, settings.life360_a_entity)) {
-        apply_life360(ns, ha_state.loc_a, sizeof ha_state.loc_a, &ha_state.lat_a, &ha_state.lon_a, 0); return; }
-    if (settings.life360_b_entity[0] && !strcmp(ent, settings.life360_b_entity)) {
-        apply_life360(ns, ha_state.loc_b, sizeof ha_state.loc_b, &ha_state.lat_b, &ha_state.lon_b, 1); return; }
-    if (settings.doorbell_entity[0] && !strcmp(ent, settings.doorbell_entity)) { apply_doorbell(ns); return; }
+    /* Legacy fixed slots (curtain/blinds state+battery, life360, doorbell).
+     * else-if: these are mutually exclusive by entity. No early return — the
+     * device loops below still run so a curtain that's also a pinned cover
+     * device updates both its tile and its Devices-screen row. */
+    if      (CURTAIN_GROUP[0] && !strcmp(ent, CURTAIN_GROUP)) apply_curtain(ns);
+    else if (CURTAIN_LEFT[0]  && !strcmp(ent, CURTAIN_LEFT))  apply_curtain_bat(ns, 0);
+    else if (CURTAIN_RIGHT[0] && !strcmp(ent, CURTAIN_RIGHT)) apply_curtain_bat(ns, 1);
+    else if (settings.blinds_entity[0] && !strcmp(ent, settings.blinds_entity)) apply_blinds(ns);
+    else if (settings.blinds_bat_a[0]  && !strcmp(ent, settings.blinds_bat_a))  apply_blinds_bat(ns, 0);
+    else if (settings.blinds_bat_b[0]  && !strcmp(ent, settings.blinds_bat_b))  apply_blinds_bat(ns, 1);
+    else if (settings.life360_a_entity[0] && !strcmp(ent, settings.life360_a_entity))
+        apply_life360(ns, ha_state.loc_a, sizeof ha_state.loc_a, &ha_state.lat_a, &ha_state.lon_a, 0);
+    else if (settings.life360_b_entity[0] && !strcmp(ent, settings.life360_b_entity))
+        apply_life360(ns, ha_state.loc_b, sizeof ha_state.loc_b, &ha_state.lat_b, &ha_state.lon_b, 1);
+    else if (settings.doorbell_entity[0] && !strcmp(ent, settings.doorbell_entity))
+        apply_doorbell(ns);
+    /* Unified device list (light/cover/switch). */
+    for (int i = 0; i < ha_device_count; i++)
+        if (!strcmp(ent, ha_devices[i].entity_id)) { apply_device(&ha_devices[i], ns); break; }
+    /* Legacy ha_lights array (old Lights screen — kept until migrated). */
     for (int i = 0; i < ha_light_count; i++)
-        if (!strcmp(ent, ha_lights[i].entity_id)) { apply_light(&ha_lights[i], ns); return; }
+        if (!strcmp(ent, ha_lights[i].entity_id)) { apply_light(&ha_lights[i], ns); break; }
+    /* Energy sensors (P1 power/gas/water) — live, no separate poll. */
+    route_energy(ent, ns);
 }
 
 /* Doorbell live footage runs on its own thread so it never blocks the event
@@ -789,6 +1399,8 @@ static void * ha_thread(void * arg) {
     srand((unsigned)time(NULL) ^ (unsigned)getpid());
     static char msg[64 * 1024];
     while (1) {
+        /* No token → nothing the WS can do; wait for the user to set one. */
+        if (!g_token[0]) { sleep(15); continue; }
         int fd = ws_connect();
         if (fd < 0) { ha_state.connected = 0; sleep(8); continue; }
         /* auth_required → auth → auth_ok */
@@ -803,17 +1415,22 @@ static void * ha_thread(void * arg) {
         const char * sub = "{\"id\":1,\"type\":\"subscribe_events\",\"event_type\":\"state_changed\"}";
         if (ws_send(fd, 0x1, (unsigned char *)sub, strlen(sub)) < 0) { close(fd); continue; }
         fprintf(stderr, "[ha] WebSocket connected + subscribed to state_changed\n");
-        time_t last_ping = time(NULL);
+        time_t last_ping = time(NULL), last_reseed = time(NULL);
         while (1) {
             fd_set rs; FD_ZERO(&rs); FD_SET(fd, &rs);
             struct timeval tv = { .tv_sec = 20, .tv_usec = 0 };
             int s = select(fd + 1, &rs, NULL, NULL, &tv);
             if (s < 0) { if (errno == EINTR) continue; break; }
-            if (s == 0) { if (ws_send(fd, 0x9, NULL, 0) < 0) break; last_ping = time(NULL); continue; }
-            int n = ws_recv_msg(fd, msg, sizeof msg);
-            if (n < 0) break;
-            if (strstr(msg, "state_changed")) dispatch_event(msg);
-            if (time(NULL) - last_ping > 40) { if (ws_send(fd, 0x9, NULL, 0) < 0) break; last_ping = time(NULL); }
+            if (s > 0) {
+                int n = ws_recv_msg(fd, msg, sizeof msg);
+                if (n < 0) break;
+                if (strstr(msg, "state_changed")) dispatch_event(msg);
+            }
+            time_t now = time(NULL);
+            if (now - last_ping > 40) { if (ws_send(fd, 0x9, NULL, 0) < 0) break; last_ping = now; }
+            /* Belt-and-suspenders: a full re-pull every 60s recovers anything a
+             * missed event left stale (the snapshot drives all the pollers). */
+            if (now - last_reseed > 60) { seed_all(); last_reseed = now; }
         }
         close(fd);
         ha_state.connected = 0;
@@ -824,10 +1441,10 @@ static void * ha_thread(void * arg) {
 
 static void * cover_action_thread(void * arg) {
     char * action = (char *)arg;
-    ha_call_cover_service(action);
+    ha_call_cover_service_only(action);
     /* Speed up the next poll so the tile reflects the new state quickly
      * instead of waiting up to HA_POLL_S seconds. */
-    poll_once();
+    ha_snapshot_refresh(); poll_once();
     free(action);
     return NULL;
 }
@@ -847,6 +1464,164 @@ void ha_curtain_open_async(void)  { fire_cover_action("open_cover");  }
 void ha_curtain_close_async(void) { fire_cover_action("close_cover"); }
 void ha_curtain_stop_async(void)  { fire_cover_action("stop_cover");  }
 
+/* --- brightness setter --------------------------------------------------- */
+struct brightness_arg { char entity_id[48]; int pct; };
+static void * brightness_action_thread(void * arg) {
+    struct brightness_arg * a = (struct brightness_arg *)arg;
+    if (a->pct <= 0)
+        ha_call_service("light", "turn_off", a->entity_id, NULL);
+    else {
+        char extra[32];
+        snprintf(extra, sizeof(extra), ",\"brightness_pct\":%d", a->pct);
+        ha_call_service("light", "turn_on", a->entity_id, extra);
+    }
+    ha_snapshot_refresh(); poll_lights();
+    free(a);
+    return NULL;
+}
+
+void ha_light_set_brightness_async(const char * entity_id, int brightness_pct) {
+    struct brightness_arg * a = malloc(sizeof *a);
+    if (!a) return;
+    snprintf(a->entity_id, sizeof a->entity_id, "%s", entity_id);
+    a->pct = brightness_pct;
+    pthread_t t;
+    if (pthread_create(&t, NULL, brightness_action_thread, a) != 0) { free(a); return; }
+    pthread_detach(t);
+}
+
+/* --- cover position setter ----------------------------------------------- */
+struct cover_pos_arg { char entity_id[64]; int pos; };
+static void * cover_position_thread(void * arg) {
+    struct cover_pos_arg * a = (struct cover_pos_arg *)arg;
+    char extra[32];
+    snprintf(extra, sizeof(extra), ",\"position\":%d", a->pos);
+    ha_call_service("cover", "set_cover_position", a->entity_id, extra);
+    ha_snapshot_refresh(); poll_once();
+    free(a);
+    return NULL;
+}
+
+void ha_cover_set_position_async(const char * entity_id, int position_pct) {
+    struct cover_pos_arg * a = malloc(sizeof *a);
+    if (!a) return;
+    snprintf(a->entity_id, sizeof a->entity_id, "%s", entity_id);
+    a->pos = position_pct;
+    pthread_t t;
+    if (pthread_create(&t, NULL, cover_position_thread, a) != 0) { free(a); return; }
+    pthread_detach(t);
+}
+
+/* Generic cover stop — same fire-and-forget pattern as the curtain stop
+ * but takes an entity_id so blinds can use it too. */
+struct cover_stop_arg { char entity_id[64]; };
+static void * cover_stop_thread(void * arg) {
+    struct cover_stop_arg * a = (struct cover_stop_arg *)arg;
+    ha_call_service("cover", "stop_cover", a->entity_id, NULL);
+    ha_snapshot_refresh(); poll_once();
+    free(a);
+    return NULL;
+}
+void ha_cover_stop_async(const char * entity_id) {
+    struct cover_stop_arg * a = malloc(sizeof *a);
+    if (!a) return;
+    snprintf(a->entity_id, sizeof a->entity_id, "%s", entity_id);
+    pthread_t t;
+    if (pthread_create(&t, NULL, cover_stop_thread, a) != 0) { free(a); return; }
+    pthread_detach(t);
+}
+
+/* --- entity discovery --------------------------------------------------- */
+int ha_discover_entities(const char * domain_prefix,
+                          ha_discovered_t * out, int * count, int max) {
+    *count = 0;
+    if (!domain_prefix || !domain_prefix[0]) return -1;
+
+    /* HA-over-WebSocket: get_states returns the same entity objects as REST
+     * /api/states (wrapped in {"result":[...]}), so the parser below works
+     * unchanged — one WS round-trip, no curl, no token on a command line.
+     * 2 MB so a large install's full state isn't truncated before the tail
+     * entities (e.g. a freshly-added P1 integration) are parsed. */
+    static char body[2 * 1024 * 1024];
+    if (ws_get_states(body, sizeof body) != 0) {
+        fprintf(stderr, "[ha] ws discover: get_states failed (token set? HA reachable?)\n");
+        return -1;
+    }
+    fprintf(stderr, "[ha] ws discover: get_states %zu bytes, domain '%s'\n",
+            strlen(body), domain_prefix);
+
+    /* … search loop as before … */
+    char id_key[32];
+    snprintf(id_key, sizeof id_key, "\"entity_id\"");
+    size_t id_key_len = strlen(id_key);
+
+    int found = 0;
+    const char * pos = body;
+    while (found < max) {
+        const char * hit = strstr(pos, id_key);
+        if (!hit) break;
+        pos = hit + id_key_len;
+
+        /* Skip colon + optional whitespace + opening quote */
+        const char * p2 = pos;
+        while (*p2 == ' ' || *p2 == '\t' || *p2 == '\n' || *p2 == '\r') p2++;
+        if (*p2 != ':') continue;
+        p2++;
+        while (*p2 == ' ' || *p2 == '\t' || *p2 == '\n' || *p2 == '\r') p2++;
+        if (*p2 != '"') continue;
+        p2++;
+
+        /* Check domain prefix + dot, e.g. "sensor." */
+        size_t dlen = strlen(domain_prefix);
+        if (strncmp(p2, domain_prefix, dlen) != 0 || p2[dlen] != '.') continue;
+        p2 += dlen + 1;   /* skip "domain." -> at entity name start */
+
+        /* Extract entity name (up to closing quote) */
+        char ent[64];
+        snprintf(ent, sizeof(ent), "%s.", domain_prefix);
+        size_t elen = strlen(ent);
+        const char * ep = p2;
+        while (*ep && *ep != '"' && elen < sizeof(ent) - 1)
+            ent[elen++] = *ep++;
+        ent[elen] = 0;
+
+        /* Walk forward to find "friendly_name" (tolerating spaces after colon) */
+        char fn[64] = "";
+        const char * fnp = strstr(pos, "\"friendly_name\"");
+        if (fnp) {
+            fnp += 15;   /* skip "friendly_name" */
+            while (*fnp == ' ' || *fnp == '\t' || *fnp == '\n' || *fnp == '\r') fnp++;
+            if (*fnp == ':') fnp++;
+            while (*fnp == ' ' || *fnp == '\t' || *fnp == '\n' || *fnp == '\r') fnp++;
+            if (*fnp == '"') {
+                fnp++;
+                size_t fni = 0;
+                while (*fnp && *fnp != '"' && fni < sizeof(fn) - 1)
+                    fn[fni++] = *fnp++;
+                fn[fni] = 0;
+            }
+        }
+
+        if (ent[0] && ha_id_safe(ent)) {
+            if (found < 5)
+                fprintf(stderr, "[ha] discover:   #%d entity='%s' friendly='%s'\n",
+                        found, ent, fn[0] ? fn : "(none)");
+            snprintf(out[found].entity_id, sizeof(out[found].entity_id), "%s", ent);
+            if (fn[0])
+                snprintf(out[found].friendly_name, sizeof(out[found].friendly_name),
+                         "%s", fn);
+            else
+                snprintf(out[found].friendly_name, sizeof(out[found].friendly_name),
+                         "%s", ent);
+            found++;
+        }
+    }
+    *count = found;
+    fprintf(stderr, "[ha] discover: domain='%s' returned %d entities (max=%d)\n",
+            domain_prefix, found, max);
+    return (found > 0) ? 0 : -1;
+}
+
 int ha_start(void) {
     if (!settings.enable_ha) {
         fprintf(stderr, "[ha] integration disabled — not starting poller\n");
@@ -858,6 +1633,7 @@ int ha_start(void) {
     }
     load_token();
     ha_lights_load();
+    ha_devices_load();
     if (!g_token[0]) {
         fprintf(stderr, "[ha] no token at " HA_TOKEN_PATH " — HA tile will stay disconnected\n");
     }

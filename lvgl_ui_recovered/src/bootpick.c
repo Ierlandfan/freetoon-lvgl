@@ -19,8 +19,14 @@
 #include <string.h>
 #include <unistd.h>
 
-#define BP_HOR 1024
-#define BP_VER 600
+/* Render at the panel's NATIVE resolution. display.h already resolves this
+ * per target via #ifdef TOON1: 800x480 on Toon 1, 1024x600 on Toon 2. The
+ * picker was hard-coded to 1024x600, which scrambled it on Toon 1's 800x480
+ * panel. Colour depth needs nothing here — LV_COLOR_DEPTH is compile-time
+ * (16bpp on Toon 1, 32bpp on Toon 2), so lv_color_t + fbdev_flush are already
+ * the right pixel format. */
+#define BP_HOR DISP_HOR
+#define BP_VER DISP_VER
 #define BP_DRAW_LINES 100
 #define BP_COUNTDOWN_S 10
 

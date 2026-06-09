@@ -21,6 +21,7 @@
 #include "display.h"
 #include "settings.h"
 #include "boxtalk.h"
+#include "meteradapter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,9 @@
 #define COL_OK       0x2e6e3a
 #define COL_WARN     0x6e3a3a
 #define COL_OFF      0x3a4658
+#define COL_GREEN    0x36c46b
+#define COL_RED      0xd4574f
+#define COL_AMBER    0xd9a23a
 
 #include "screen_zwave.h"
 
@@ -56,6 +60,14 @@ static int      g_inc_active = 0;
 static int      g_exc_active = 0;
 static char     g_status[192] = "";
 static int      g_poll_ticks = 0;
+
+/* ---- Meteradapter (Z-Wave smart meter) ------------------------------ */
+static lv_obj_t * lbl_met_state = NULL;
+static lv_obj_t * lbl_met_sub   = NULL;
+static lv_obj_t * btn_pair_lbl  = NULL;
+static int        g_met_found   = 0;     /* HAE_METER node present in Z-Wave list */
+static int        g_pair_active = 0;     /* Z-Wave inclusion window open */
+static lv_obj_t * g_met_confirm = NULL;  /* pair confirm dialog */
 
 /* ===================================================================== */
 /* XML helpers                                                           */
@@ -121,6 +133,110 @@ static void parse_devices(void) {
         if (d->uuid[0]) g_dev_count++;
         scan = d1 + strlen("</device>");
     }
+}
+
+/* ===================================================================== */
+/* Meteradapter — status + actions                                       */
+/* ===================================================================== */
+static void scan_met_found(void) {
+    if (!zwave_response_ready) return;
+    g_met_found = (strstr(zwave_response_buf, "HAE_METER") != NULL);
+}
+
+static void update_meter_labels(void) {
+    if (!lbl_met_state || !lbl_met_sub) return;
+    int online = meter_state.connected;
+    uint32_t col = online ? COL_GREEN : (g_met_found ? COL_AMBER : COL_RED);
+    lv_obj_set_style_text_color(lbl_met_state, lv_color_hex(col), 0);
+
+    if (online)
+        lv_label_set_text_fmt(lbl_met_state, "Online  -  %.0f W", (double)meter_state.power_w);
+    else if (g_met_found)
+        lv_label_set_text(lbl_met_state, "Found - no live data");
+    else
+        lv_label_set_text(lbl_met_state, "Not found");
+
+    if (g_pair_active)
+        lv_label_set_text(lbl_met_sub,
+            "Z-Wave inclusion active - press the button on the meter (auto-stops in 60 s).");
+    else if (online)
+        lv_label_set_text(lbl_met_sub, "Z-Wave smart meter - publishing on ElectricityFlowMeter.");
+    else if (g_met_found)
+        lv_label_set_text(lbl_met_sub, "Meter is paired but not sending. Check the P1/meter cable.");
+    else
+        lv_label_set_text(lbl_met_sub, "No HAE_METER node paired. Tap \"Pair via Z-Wave\" to add it.");
+}
+
+static void on_met_test(lv_event_t * e) {
+    (void)e;
+    boxtalk_zwave_get_devices();
+    g_poll_ticks = 2;
+    if (lbl_met_sub)
+        lv_label_set_text(lbl_met_sub, "Querying Z-Wave + live flow...");
+}
+
+/* --- pair (Z-Wave inclusion for the meter) with confirm --------------- */
+static void met_confirm_close(void) {
+    if (g_met_confirm) { lv_obj_del(g_met_confirm); g_met_confirm = NULL; }
+}
+static void on_met_confirm_cancel(lv_event_t * e) { (void)e; met_confirm_close(); }
+static void on_met_confirm_pair(lv_event_t * e) {
+    (void)e;
+    met_confirm_close();
+    g_pair_active = 1;
+    boxtalk_zwave_include(1);
+    g_poll_ticks = 1;
+}
+static void on_pair_clicked(lv_event_t * e) {
+    (void)e;
+    if (g_pair_active) {
+        boxtalk_zwave_include(0);
+        g_pair_active = 0;
+        return;
+    }
+    if (!scr_root) return;
+    g_met_confirm = lv_obj_create(scr_root);
+    lv_obj_set_size(g_met_confirm, DISP_HOR, DISP_VER);
+    lv_obj_set_pos(g_met_confirm, 0, 0);
+    lv_obj_set_style_bg_color(g_met_confirm, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(g_met_confirm, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(g_met_confirm, 0, 0);
+    lv_obj_clear_flag(g_met_confirm, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * card = lv_obj_create(g_met_confirm);
+    lv_obj_set_size(card, SX(640), SY(280));
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * t = lv_label_create(card);
+    lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(t, SF(22), 0);
+    lv_obj_set_width(t, SX(600));
+    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(t,
+        "Start Z-Wave inclusion?\n\n"
+        "This opens a 60 s window to pair the smart meter. Trigger inclusion on "
+        "the meter itself. Existing devices are not affected.");
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(16), SY(14));
+
+    lv_obj_t * go = lv_btn_create(card);
+    lv_obj_set_size(go, SX(180), SY(52));
+    lv_obj_align(go, LV_ALIGN_BOTTOM_RIGHT, SX(-12), SY(-12));
+    lv_obj_set_style_bg_color(go, lv_color_hex(COL_OK), 0);
+    lv_obj_set_style_radius(go, 10, 0);
+    lv_obj_add_event_cb(go, on_met_confirm_pair, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * gl = lv_label_create(go); lv_label_set_text(gl, "Start"); lv_obj_center(gl);
+
+    lv_obj_t * ca = lv_btn_create(card);
+    lv_obj_set_size(ca, SX(180), SY(52));
+    lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, SX(12), SY(-12));
+    lv_obj_set_style_bg_color(ca, lv_color_hex(COL_OFF), 0);
+    lv_obj_set_style_radius(ca, 10, 0);
+    lv_obj_add_event_cb(ca, on_met_confirm_cancel, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cl = lv_label_create(ca); lv_label_set_text(cl, "Cancel"); lv_obj_center(cl);
 }
 
 /* ===================================================================== */
@@ -316,6 +432,9 @@ static void build_rows(void) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    /* Meteradapter: scan for HAE_METER in the Z-Wave device list. */
+    scan_met_found();
+
     /* Poll for a pending GetDevices response. */
     if (zwave_response_ready) {
         parse_devices();
@@ -334,6 +453,11 @@ static void refresh_cb(lv_timer_t * t) {
     } else {
         g_poll_ticks--;
     }
+
+    /* Meteradapter labels + pair button. */
+    if (btn_pair_lbl)
+        lv_label_set_text(btn_pair_lbl, g_pair_active ? "Stop pairing" : "Pair via Z-Wave");
+    update_meter_labels();
 
     /* Status + control-gated widgets. */
     if (lbl_status)
@@ -358,9 +482,9 @@ static void refresh_cb(lv_timer_t * t) {
 static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) {
     (void)e;
-    /* Leave no inclusion/exclusion window open behind us. */
     if (g_inc_active) { boxtalk_zwave_include(0); g_inc_active = 0; }
     if (g_exc_active) { boxtalk_zwave_exclude(0); g_exc_active = 0; }
+    if (g_pair_active) { boxtalk_zwave_include(0); g_pair_active = 0; }
     lv_async_call(back_async, NULL);
 }
 
@@ -398,7 +522,7 @@ lv_obj_t * screen_zwave_create(void) {
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
-    lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(scr_root, LV_DIR_VER);
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_LOADED,   NULL);
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_UNLOADED, NULL);
 
@@ -427,6 +551,72 @@ lv_obj_t * screen_zwave_create(void) {
     lv_label_set_text(lbl_ctrl, "querying...");
     lv_obj_align(lbl_ctrl, LV_ALIGN_TOP_LEFT, SX(300), SY(34));
 
+    /* ---- Meteradapter card ------------------------------------------- */
+    {
+        lv_obj_t * card = lv_obj_create(scr_root);
+        lv_obj_set_size(card, SX(980), SY(190));
+        lv_obj_align(card, LV_ALIGN_TOP_LEFT, SX(22), SY(86));
+        lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
+        lv_obj_set_style_border_width(card, 0, 0);
+        lv_obj_set_style_radius(card, 14, 0);
+        lv_obj_set_style_pad_all(card, SX(16), 0);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t * tt = lv_label_create(card);
+        lv_obj_set_style_text_color(tt, lv_color_hex(COL_TEXT_HI), 0);
+        lv_obj_set_style_text_font(tt, SF(22), 0);
+        lv_label_set_text(tt, "Meteradapter");
+        lv_obj_align(tt, LV_ALIGN_TOP_LEFT, 0, 0);
+
+        lv_obj_t * kd = lv_label_create(card);
+        lv_obj_set_style_text_color(kd, lv_color_hex(COL_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(kd, SF(14), 0);
+        lv_label_set_text(kd, "Smart meter - Z-Wave");
+        lv_obj_align(kd, LV_ALIGN_TOP_LEFT, SX(2), SY(34));
+
+        lbl_met_state = lv_label_create(card);
+        lv_obj_set_style_text_font(lbl_met_state, SF(22), 0);
+        lv_obj_set_style_text_color(lbl_met_state, lv_color_hex(COL_TEXT_DIM), 0);
+        lv_label_set_text(lbl_met_state, "...");
+        lv_obj_align(lbl_met_state, LV_ALIGN_TOP_LEFT, 0, SY(64));
+
+        lbl_met_sub = lv_label_create(card);
+        lv_obj_set_style_text_font(lbl_met_sub, SF(14), 0);
+        lv_obj_set_style_text_color(lbl_met_sub, lv_color_hex(COL_TEXT_DIM), 0);
+        lv_obj_set_width(lbl_met_sub, SX(700));
+        lv_label_set_long_mode(lbl_met_sub, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(lbl_met_sub, "");
+        lv_obj_align(lbl_met_sub, LV_ALIGN_TOP_LEFT, 0, SY(104));
+
+        /* Buttons: Test + Pair via Z-Wave */
+        lv_obj_t * tbtn = lv_btn_create(card);
+        lv_obj_set_size(tbtn, SX(200), SY(48));
+        lv_obj_align(tbtn, LV_ALIGN_TOP_RIGHT, 0, 0);
+        lv_obj_set_style_bg_color(tbtn, lv_color_hex(0x2a4060), 0);
+        lv_obj_set_style_radius(tbtn, 10, 0);
+        lv_obj_set_ext_click_area(tbtn, 8);
+        lv_obj_add_event_cb(tbtn, on_met_test, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * tl = lv_label_create(tbtn);
+        lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(tl, SF(20), 0);
+        lv_label_set_text(tl, "Test");
+        lv_obj_center(tl);
+
+        lv_obj_t * pbtn = lv_btn_create(card);
+        lv_obj_set_size(pbtn, SX(220), SY(48));
+        lv_obj_align(pbtn, LV_ALIGN_TOP_RIGHT, 0, SY(56));
+        lv_obj_set_style_bg_color(pbtn, lv_color_hex(COL_OK), 0);
+        lv_obj_set_style_radius(pbtn, 10, 0);
+        lv_obj_set_ext_click_area(pbtn, 8);
+        lv_obj_add_event_cb(pbtn, on_pair_clicked, LV_EVENT_CLICKED, NULL);
+        btn_pair_lbl = lv_label_create(pbtn);
+        lv_obj_set_style_text_color(btn_pair_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(btn_pair_lbl, SF(20), 0);
+        lv_label_set_text(btn_pair_lbl, "Pair via Z-Wave");
+        lv_obj_center(btn_pair_lbl);
+    }
+
+    /* ---- Z-Wave device controls -------------------------------------- */
     lv_obj_t * en_lbl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(en_lbl, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(en_lbl, SF(18), 0);
@@ -440,7 +630,7 @@ lv_obj_t * screen_zwave_create(void) {
 
     bar_actions = lv_obj_create(scr_root);
     lv_obj_set_size(bar_actions, SX(980), SY(76));
-    lv_obj_align(bar_actions, LV_ALIGN_TOP_LEFT, SX(22), SY(70));
+    lv_obj_align(bar_actions, LV_ALIGN_TOP_LEFT, SX(22), SY(294));
     lv_obj_set_style_bg_opa(bar_actions, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(bar_actions, 0, 0);
     lv_obj_set_style_pad_all(bar_actions, 0, 0);
@@ -457,11 +647,11 @@ lv_obj_t * screen_zwave_create(void) {
     lv_label_set_long_mode(lbl_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_status,
         settings.enable_zwave ? "Control enabled." : "Enable control to manage devices.");
-    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(22), SY(152));
+    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(22), SY(376));
 
     list_box = lv_obj_create(scr_root);
-    lv_obj_set_size(list_box, SX(980), SY(388));
-    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, SX(22), SY(188));
+    lv_obj_set_size(list_box, SX(980), SY(240));
+    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, SX(22), SY(412));
     lv_obj_set_style_bg_opa(list_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list_box, 0, 0);
     lv_obj_set_style_pad_all(list_box, 4, 0);
@@ -470,6 +660,8 @@ lv_obj_t * screen_zwave_create(void) {
     lv_obj_set_scroll_dir(list_box, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(list_box, LV_SCROLLBAR_MODE_AUTO);
     build_rows();
+
+    update_meter_labels();
 
     refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;

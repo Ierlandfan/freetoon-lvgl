@@ -26,6 +26,10 @@ int mqtt_test_connection(const char * host, int port,
                          const char * user, const char * pass,
                          char * err, size_t errsz);
 
+/* One-shot publish (connect → PUBLISH QoS0 → disconnect) to the broker in
+ * settings. For device control (HA command topic / domoticz/in). 0 = ok. */
+int mqtt_publish(const char * topic, const char * payload);
+
 /* Synchronous topic discovery: connect, subscribe to `wildcard` (e.g.
  * "#" or "home/#"), collect unique topics for `duration_ms`, return them
  * via `cb` (called once per unique topic). Disconnects. Returns count

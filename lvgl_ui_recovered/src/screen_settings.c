@@ -25,10 +25,12 @@
 #include "icons.h"
 #include "tile_slots.h"
 #include "news.h"
+#include "wastecollection.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <ifaddrs.h>
@@ -37,13 +39,17 @@
 #include <net/if.h>
 #include <stdlib.h>
 
+#include "i18n.h"
+
 static lv_obj_t * scr_root = NULL;
 
 /* ---- modal state ---- */
-static lv_obj_t *   cur_modal     = NULL;   /* backdrop of the open category modal */
+static lv_obj_t *   cur_modal     = NULL;   /* backdrop of the topmost open modal */
+static lv_obj_t *   parent_modal  = NULL;   /* backdrop underneath cur_modal when nested */
 static lv_obj_t *   confirm_box   = NULL;   /* boiler-type confirm dialog (child of cur_modal) */
 static lv_timer_t * modal_timer   = NULL;   /* live refresh for Heating/About modals */
 static void       (*modal_tick_fn)(void) = NULL;
+static void       (*modal_cleanup_fn)(void) = NULL;  /* called before modal is async-deleted */
 
 /* ---- per-control widget pointers (valid only while a modal is open) ---- */
 static lv_obj_t * sw_enable;
@@ -56,6 +62,14 @@ static lv_obj_t * sw_dim_wx;
 static lv_obj_t * sl_forecast_mode, * lbl_forecast_mode;
 static lv_obj_t * sw_dim_waste;
 static lv_obj_t * sw_dim_bars, * sw_dim_bars_swap;
+/* Night-mode modal widgets. */
+static lv_obj_t * sw_night;
+static lv_obj_t * sw_night_src;
+static lv_obj_t * sl_night_start, * lbl_night_start, * row_night_start;
+static lv_obj_t * sl_night_end,   * lbl_night_end,   * row_night_end;
+static lv_obj_t * sl_night_pct,   * lbl_night_pct,   * row_night_pct;
+static lv_obj_t * lbl_night_hint;
+static lv_obj_t * lbl_night_summary;   /* on/off label shown in the Display modal */
 static lv_obj_t * sl_waste_lead, * lbl_waste_lead;
 static lv_obj_t * sl_offset,   * lbl_offset_val;
 static lv_obj_t * sw_boiler;
@@ -285,7 +299,7 @@ static void ta_kb_event(lv_event_t * e) {
             lv_obj_set_size(g_kb, LV_HOR_RES, SY(240));
             lv_obj_align(g_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
             lv_obj_add_event_cb(g_kb, kb_event, LV_EVENT_ALL, NULL);
-            lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, kb_num_map, kb_num_ctrl);
+            lv_keyboard_set_map(g_kb, LV_KEYBOARD_MODE_NUMBER, (const char **)kb_num_map, kb_num_ctrl);
         }
         lv_keyboard_set_textarea(g_kb, ta);
         lv_keyboard_set_mode(g_kb, lv_obj_get_user_data(ta) == KB_NUMERIC
@@ -316,26 +330,50 @@ static void settings_attach_kb_async(void * panel) { settings_attach_kb_tree((lv
 /* ============================ modal infra ============================ */
 
 static void modal_timer_cb(lv_timer_t * t) { (void)t; if (modal_tick_fn) modal_tick_fn(); }
+static void energy_save_textareas(void);  /* forward — defined in the integrations modal section */
 
 static void modal_close(lv_event_t * e) {
     (void)e;
     if (confirm_box) { lv_obj_del_async(confirm_box); confirm_box = NULL; }
     if (modal_timer) { lv_timer_del(modal_timer); modal_timer = NULL; }
     modal_tick_fn = NULL;
+    energy_save_textareas();          /* flush WHILE the textareas are still valid —
+                                         must run before modal_cleanup_fn() NULLs them */
     if (cur_modal) {
         lv_obj_t * m = cur_modal;
-        cur_modal = NULL;
+        cur_modal = parent_modal;     /* restore the modal underneath, if any */
+        parent_modal = NULL;
+        if (modal_cleanup_fn) { modal_cleanup_fn(); modal_cleanup_fn = NULL; }
         lv_obj_del_async(m);          /* async: we're inside a descendant's event */
     }
+    if (e) lv_event_stop_bubbling(e); /* prevent the click from bubbling to the
+                                         backdrop and firing modal_close twice */
     settings_save();                  /* persist whatever the modal changed */
+}
+
+/* Tear down the whole open settings-modal stack. These modals live on the top
+ * layer (lv_layer_top), which renders above EVERY screen — so anything that
+ * changes the screen underneath (navigating to a full screen, or the idle
+ * auto-home / auto-dim) must dismiss them, or they stay stuck in front of home
+ * / the dim clock. Public so ui_stack can call it on idle. (modal_close pops
+ * one level and is NULL-event safe.) */
+void settings_close_all_modals(void) {
+    while (cur_modal) modal_close(NULL);
 }
 
 /* Build a dimmed full-screen backdrop + centred panel. Returns the panel;
    caller positions its content below y≈64 (title + close button live there). */
 static lv_obj_t * modal_open(const char * title, int panel_h) {
-    /* Parent on the currently-active screen, not the settings screen's root —
-     * the tile-slots picker can be opened from the home screen too. */
-    cur_modal = lv_obj_create(lv_scr_act());
+    /* Parent on the TOP LAYER, not lv_scr_act(): the Settings grid scrolls, and
+     * a backdrop parented to the scrolled screen sits at content-(0,0) — i.e.
+     * above the viewport once you've scrolled down to a low tile (e.g. Agenda),
+     * so the centered panel's top runs off-screen ("scroll the whole screen up
+     * to see it"). The top layer is a fixed full-screen overlay that's never
+     * scrolled, so the panel always centers on the real screen — and it still
+     * works when a modal is opened from the home screen too. */
+    if (cur_modal) parent_modal = cur_modal;  /* nesting: save the modal underneath */
+    modal_cleanup_fn = NULL;                   /* each modal sets its own cleanup */
+    cur_modal = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(cur_modal);
     lv_obj_set_size(cur_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(cur_modal, 0, 0);
@@ -346,13 +384,23 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_add_event_cb(cur_modal, modal_close, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * panel = lv_obj_create(cur_modal);
-    lv_obj_set_size(panel, SX(860), SY(panel_h));
+    /* Clamp height to screen minus margin so the panel doesn't run off the
+     * bottom. Always enable vertical scrolling — even when content nominally
+     * fits — to stop scroll events propagating to the scrollable settings
+     * screen behind the backdrop (especially on Toon 1 at 480px). */
+    int h = SY(panel_h);
+    if (h > DISP_VER - SUNI(20))
+        h = DISP_VER - SUNI(20);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(panel, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(panel, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_size(panel, SX(860), h);
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_radius(panel, 18, 0);
     lv_obj_set_style_pad_all(panel, 20, 0);
-    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_bottom(panel, SUNI(40), 0);
     lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);              /* stop taps reaching backdrop */
 
     lv_obj_t * t = lv_label_create(panel);
@@ -508,6 +556,125 @@ static void about_tick(void) {
 
 /* ============================ category modals ============================ */
 
+/* ---------------------------- Night mode modal --------------------------- */
+static const char * night_hhmm(int minutes, char * buf, size_t n) {
+    if (minutes < 0) minutes = 0;
+    minutes %= 1440;
+    snprintf(buf, n, "%02d:%02d", minutes / 60, minutes % 60);
+    return buf;
+}
+
+/* Live hint (refreshed by the modal timer): in sunset mode show the fetched
+ * sunrise/sunset in LOCAL time, or a fetching note until they land. */
+static void night_tick(void) {
+    if (!lbl_night_hint || settings.night_source != 1) return;
+    long sr = 0, ss = 0;
+    backlight_sun_times(&sr, &ss);
+    if (!sr || !ss) {
+        lv_label_set_text(lbl_night_hint, "Fetching sunrise/sunset...");
+        return;
+    }
+    char a[8], bb[8];
+    time_t tsr = (time_t)sr, tss = (time_t)ss;
+    struct tm lt;
+    localtime_r(&tsr, &lt); snprintf(a,  sizeof a,  "%02d:%02d", lt.tm_hour, lt.tm_min);
+    localtime_r(&tss, &lt); snprintf(bb, sizeof bb, "%02d:%02d", lt.tm_hour, lt.tm_min);
+    lv_label_set_text_fmt(lbl_night_hint, "Sunrise %s    Sunset %s", a, bb);
+}
+
+/* Show the Start/End time pickers only for the fixed-range trigger. In sunset
+ * mode hide them and float the brightness row up right under the trigger (no
+ * gap), with the location hint where the time pickers were. */
+static void night_update_vis(void) {
+    int timerange = (settings.night_source == 0);
+    if (row_night_start && row_night_end) {
+        if (timerange) {
+            lv_obj_clear_flag(row_night_start, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(row_night_end,   LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(row_night_start, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(row_night_end,   LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    int pct_y = timerange ? 398 : 234;   /* below the times, or under the trigger */
+    if (row_night_pct)
+        lv_obj_align(row_night_pct, LV_ALIGN_TOP_LEFT, SX(4), SY(pct_y));
+    if (lbl_night_hint) {
+        lv_obj_align(lbl_night_hint, LV_ALIGN_TOP_LEFT, SX(8), SY(pct_y + 82));
+        if (timerange) lv_obj_add_flag(lbl_night_hint, LV_OBJ_FLAG_HIDDEN);
+        else           lv_obj_clear_flag(lbl_night_hint, LV_OBJ_FLAG_HIDDEN);
+    }
+    night_tick();   /* fill the hint with the sun times right away in sunset mode */
+}
+
+static void on_night_enable(lv_event_t * e) {
+    settings.night_mode = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    if (lbl_night_summary)
+        lv_label_set_text(lbl_night_summary, settings.night_mode ? "on" : "off");
+}
+static void on_night_src(lv_event_t * e) {
+    settings.night_source =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    night_update_vis();
+}
+static void on_night_start(lv_event_t * e) {
+    settings.night_start = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    char b[8]; lv_label_set_text(lbl_night_start, night_hhmm(settings.night_start, b, sizeof b));
+}
+static void on_night_end(lv_event_t * e) {
+    settings.night_end = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    char b[8]; lv_label_set_text(lbl_night_end, night_hhmm(settings.night_end, b, sizeof b));
+}
+static void on_night_pct(lv_event_t * e) {
+    settings.night_pct = lv_slider_get_value(lv_event_get_target(e));
+    lv_label_set_text_fmt(lbl_night_pct, "%d%%", settings.night_pct);
+}
+
+/* Night mode: dim the screen to a % of the day brightness during night hours,
+ * triggered either by a fixed local time range or by sunset->sunrise. */
+static void open_night_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Night mode", 560);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
+    char b[8];
+    lv_obj_t * r;
+
+    r = panel_row(p, 70, "Enable night mode", NULL);
+    sw_night = row_switch(r, settings.night_mode, on_night_enable);
+
+    /* Trigger switch: ON = sunset -> sunrise, OFF = fixed time range. */
+    r = panel_row(p, 152, "Use sunset/sunrise", NULL);
+    sw_night_src = row_switch(r, settings.night_source, on_night_src);
+
+    row_night_start = panel_row(p, 234, "Start", &lbl_night_start);
+    lv_label_set_text(lbl_night_start, night_hhmm(settings.night_start, b, sizeof b));
+    sl_night_start = row_slider(row_night_start, 0, 95, settings.night_start / 15, on_night_start);
+
+    row_night_end = panel_row(p, 316, "End", &lbl_night_end);
+    lv_label_set_text(lbl_night_end, night_hhmm(settings.night_end, b, sizeof b));
+    sl_night_end = row_slider(row_night_end, 0, 95, settings.night_end / 15, on_night_end);
+
+    /* Brightness row + hint are repositioned by night_update_vis(): right under
+       the trigger in sunset mode, below the time pickers in range mode. */
+    row_night_pct = panel_row(p, 398, "Brightness (% of day)", &lbl_night_pct);
+    lv_label_set_text_fmt(lbl_night_pct, "%d%%", settings.night_pct);
+    sl_night_pct = row_slider(row_night_pct, 5, 100, settings.night_pct, on_night_pct);
+
+    lbl_night_hint = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_night_hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lbl_night_hint, SF(18), 0);
+    lv_label_set_text(lbl_night_hint, "Sunset/sunrise uses the Weather location.");
+
+    /* Live-refresh the sun-times hint while the modal is open (the fetch is
+       async, so the times may land a moment after sunset mode is enabled). */
+    modal_tick_fn = night_tick;
+    modal_timer = lv_timer_create(modal_timer_cb, 1000, NULL);
+
+    night_update_vis();
+}
+
 static void open_display_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("Display", 560);
@@ -546,10 +713,18 @@ static void open_display_modal(lv_event_t * e) {
     sl_dim = row_slider(r, 0, 400, settings.dim_brightness, on_dim_change);
     y += 82;
 
-    /* Auto-brightness — follow the LTR-303 ambient sensor (Toon 2). When on, the
-       active backlight tracks the room between the dim and active values above. */
+#ifndef TOON1
+    /* Toon 2 only: continuous ambient-light auto-brightness (LTR-303 sensor). */
     r = panel_row(p, y, "Auto-brightness (light sensor)", NULL);
     row_switch(r, settings.auto_brightness, on_auto_brightness_change);
+    y += 82;
+#endif
+
+    /* Night mode — dims the screen to a % of day brightness during night hours
+       (fixed time range or sunset). Tapping the row opens its own modal. */
+    r = panel_row(p, y, "Night mode", &lbl_night_summary);
+    lv_label_set_text(lbl_night_summary, settings.night_mode ? "on" : "off");
+    lv_obj_add_event_cb(r, open_night_modal, LV_EVENT_CLICKED, NULL);
     y += 82;
 
     /* Usage bars flanking the dim clock: energy now (W) + gas hourly (m³),
@@ -585,10 +760,10 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl_city, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_city, SF(22), 0);
     lv_label_set_text(lbl_city, "City:");
-    lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_wx_city = lv_textarea_create(p);
     lv_obj_set_size(ta_wx_city, SX(380), SY(44));
-    lv_obj_align(ta_wx_city, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_align(ta_wx_city, LV_ALIGN_TOP_LEFT, SX(240), SY(y - 4));
     lv_textarea_set_one_line(ta_wx_city, true);
     lv_textarea_set_text(ta_wx_city, settings.weather_location);
     y += 60;
@@ -597,10 +772,10 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl_id, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_id, SF(22), 0);
     lv_label_set_text(lbl_id, "Buienradar id:");
-    lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_wx_id = lv_textarea_create(p);
     lv_obj_set_size(ta_wx_id, SX(380), SY(44));
-    lv_obj_align(ta_wx_id, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_align(ta_wx_id, LV_ALIGN_TOP_LEFT, SX(240), SY(y - 4));
     lv_textarea_set_one_line(ta_wx_id, true);
     lv_textarea_set_accepted_chars(ta_wx_id, "0123456789");
     char id_str[16]; snprintf(id_str, sizeof id_str, "%d",
@@ -616,12 +791,12 @@ static void open_weather_modal(lv_event_t * e) {
         "Find your city's id in the URL on buienradar.nl/weer/<city>/nl/<ID>\n"
         "(e.g. Medemblik = 2751073, De Bilt = 2757783). Plain KNMI codes\n"
         "won't work — these are GeoNames ids.");
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 70;
 
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, SX(200), SY(50));
-    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_weather_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
@@ -633,7 +808,7 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl_wx_status, lv_color_hex(0x9fc4e6), 0);
     lv_obj_set_style_text_font(lbl_wx_status, SF(18), 0);
     lv_label_set_text(lbl_wx_status, "");
-    lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, SX(220), y + 12);
+    lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, SX(220), SY(y + 12));
 }
 
 static lv_obj_t * lbl_waste_status = NULL;
@@ -704,6 +879,9 @@ static void on_waste_apply(lv_event_t * e) {
     if (ta_waste_city)  snprintf(settings.waste_city,    sizeof settings.waste_city,    "%s", lv_textarea_get_text(ta_waste_city));
     if (ta_waste_ics)   snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url, "%s", lv_textarea_get_text(ta_waste_ics));
     settings_save();
+    waste_state.wake_fetch = 1;   /* wake the background fetcher so the
+                                     "refreshes within a few seconds" status
+                                     below is actually true (else up to 4h). */
     if (lbl_waste_status)
         lv_label_set_text(lbl_waste_status,
             "Saved - the calendar refreshes within a few seconds.");
@@ -715,13 +893,10 @@ static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lb
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, lbl);
-    /* Scale horizontally so fields fit the narrower 800px panel, but keep the
-     * vertical layout in design space — the modal panel scrolls, so preserving
-     * the proven row rhythm avoids labels/fields colliding on the short panel. */
-    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(x), y);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(x), SY(y));
     lv_obj_t * ta = lv_textarea_create(p);
-    lv_obj_set_size(ta, SX(w), 44);
-    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(x), y + 26);
+    lv_obj_set_size(ta, SX(w), SY(44));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(x), SY(y + 26));
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, val ? val : "");
     return ta;
@@ -754,11 +929,11 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, "Afvalverwerker (provider):");
-    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     waste_load_providers();
     dd_waste_prov = lv_dropdown_create(p);
     lv_obj_set_width(dd_waste_prov, SX(720));
-    lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, SX(4), y + 30);
+    lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 30));
     if (g_prov_count) {
         lv_dropdown_set_options(dd_waste_prov, g_prov_opts);
         for (int i = 0; i < g_prov_count; i++)
@@ -783,7 +958,7 @@ static void open_waste_modal(lv_event_t * e) {
 
     lv_obj_t * apply = lv_btn_create(p);
     lv_obj_set_size(apply, SX(200), SY(50));
-    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(apply, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(apply, on_waste_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, "Opslaan"); lv_obj_center(al);
@@ -794,7 +969,7 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_waste_status, SX(736));
     lv_label_set_long_mode(lbl_waste_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_waste_status, "Kies een provider en vul de velden die deze nodig heeft.");
-    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, SX(220), y + 8);
+    lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, SX(220), SY(y + 8));
 }
 
 static void open_heating_modal(lv_event_t * e) {
@@ -811,7 +986,7 @@ static void open_heating_modal(lv_event_t * e) {
     /* boiler control type */
     lv_obj_t * box = lv_obj_create(p);
     lv_obj_set_size(box, SX(800), SY(200));
-    lv_obj_align(box, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(box, lv_color_hex(0x1f3050), 0);
     lv_obj_set_style_border_width(box, 0, 0);
     lv_obj_set_style_radius(box, 12, 0);
@@ -1075,8 +1250,7 @@ static void on_restart_yes(lv_event_t * e) {
     (void)e;
     settings_save();
     fprintf(stderr, "[settings] user requested UI restart — exiting\n");
-    fflush(NULL);
-    _exit(0);
+    ui_request_restart();
 }
 static void open_restart_confirm(lv_event_t * e) {
     (void)e;
@@ -1124,8 +1298,9 @@ static void open_adapters(lv_event_t * e) {
     ui_push(screen_adapters_create());
 }
 
-/* On-device Domoticz config — host/user/enable can now be set on the Toon
- * itself (previously PWA-only). "View lights/blinds" opens the device list. */
+/* On-device Domoticz config — host / user / enable. Domoticz talks over its
+ * WebSocket (live push, ws://host/json) + JSON API (data + control) to
+ * domoticz_host; no MQTT broker involved. */
 static lv_obj_t * ta_domoticz_host = NULL;
 static lv_obj_t * ta_domoticz_user = NULL;
 static lv_obj_t * lbl_domoticz_result = NULL;
@@ -1136,6 +1311,10 @@ static void on_domoticz_enabled_change(lv_event_t * e) {
 }
 static void on_domoticz_view_click(lv_event_t * e) {
     (void)e;
+    /* Dismiss the modal first — modals live on lv_layer_top (above every
+     * screen), so pushing a screen without closing it leaves the new screen
+     * stuck behind the modal ("opens in the background"). */
+    settings_close_all_modals();
     ui_push(screen_domoticz_create());
 }
 static void on_domoticz_apply_click(lv_event_t * e) {
@@ -1146,47 +1325,40 @@ static void on_domoticz_apply_click(lv_event_t * e) {
     snprintf(settings.domoticz_user, sizeof(settings.domoticz_user), "%s", u ? u : "");
     settings_save();
     extern int domoticz_start(void);
-    domoticz_start();    /* (re)connect with the new host */
+    domoticz_start();
     if (!lbl_domoticz_result) return;
-    if (!settings.domoticz_host[0]) { lv_label_set_text(lbl_domoticz_result, "Vul eerst de host in (ip:poort)."); return; }
-
-    /* Real connection test via domoticz_probe(): it runs the exact auth ladder
-     * the live client uses — DMZSID session login (modern / "Login Page" mode)
-     * with an HTTP Basic fallback ("Basic Authentication" mode) — so the result
-     * reflects what the tile will actually do, instead of a Basic-only GET that
-     * falsely fails against a session-mode Domoticz. */
+    if (!settings.domoticz_host[0]) {
+        lv_label_set_text(lbl_domoticz_result, "Vul eerst de host in (ip:poort)."); return;
+    }
     lv_label_set_text(lbl_domoticz_result, "Bezig met testen...");
     lv_refr_now(NULL);
     extern int domoticz_probe(void);
     int rc = domoticz_probe();
-    if (rc >= 1) {
-        lv_label_set_text_fmt(lbl_domoticz_result, "Verbonden - %d apparaten", rc);
-    } else if (rc == 0) {
-        lv_label_set_text(lbl_domoticz_result, "Verbonden - geen licht/blind-apparaten gevonden.");
-    } else if (rc == DZ_PROBE_AUTH) {
-        lv_label_set_text(lbl_domoticz_result, "Fout: inloggen vereist (gebruiker/wachtwoord).");
-    } else {
-        lv_label_set_text(lbl_domoticz_result, "Fout: geen verbinding - controleer host/poort.");
-    }
+    if (rc >= 1)                  lv_label_set_text_fmt(lbl_domoticz_result, "Verbonden - %d apparaten", rc);
+    else if (rc == 0)             lv_label_set_text(lbl_domoticz_result, "Verbonden - geen licht/blind-apparaten gevonden.");
+    else if (rc == DZ_PROBE_AUTH) lv_label_set_text(lbl_domoticz_result, "Fout: inloggen vereist (gebruiker/wachtwoord).");
+    else                          lv_label_set_text(lbl_domoticz_result, "Fout: geen verbinding - controleer host/poort.");
 }
+
+static void on_manage_devices_dz(lv_event_t * e);   /* defined with on_manage_devices below */
 
 static void open_domoticz(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Domoticz", 430);
+    lv_obj_t * p = modal_open("Domoticz", 540);
     int y = 70;
 
     lv_obj_t * r_en = panel_row(p, y, "Domoticz enabled", NULL);
     row_switch(r_en, settings.enable_domoticz, on_domoticz_enabled_change);
-    y += 82;
+    y += 92;
 
     lv_obj_t * lh = lv_label_create(p);
     lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
     lv_label_set_text(lh, "Host (ip:port):");
-    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_domoticz_host = lv_textarea_create(p); ta_make_numeric(ta_domoticz_host);
     lv_obj_set_size(ta_domoticz_host, SX(420), SY(44));
-    lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, SX(260), SY(y - 4));
     lv_textarea_set_one_line(ta_domoticz_host, true);
     lv_textarea_set_text(ta_domoticz_host, settings.domoticz_host);
     y += 60;
@@ -1195,27 +1367,27 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, "User (opt):");
-    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_domoticz_user = lv_textarea_create(p);
     lv_obj_set_size(ta_domoticz_user, SX(420), SY(44));
-    lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, SX(260), SY(y - 4));
     lv_textarea_set_one_line(ta_domoticz_user, true);
     lv_textarea_set_text(ta_domoticz_user, settings.domoticz_user);
     y += 64;
 
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(220), SY(50));
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_domoticz_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, "Save + connect"); lv_obj_center(la);
 
     lv_obj_t * b_view = lv_btn_create(p);
     lv_obj_set_size(b_view, SX(240), SY(50));
-    lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(244), y);
+    lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(244), SY(y));
     lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_view, on_domoticz_view_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, "View lights/blinds"); lv_obj_center(lv);
+    lv_obj_t * lvw = lv_label_create(b_view); lv_label_set_text(lvw, "View lights/blinds"); lv_obj_center(lvw);
     y += 64;
 
     lbl_domoticz_result = lv_label_create(p);
@@ -1223,8 +1395,20 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_set_style_text_font(lbl_domoticz_result, SF(18), 0);
     lv_obj_set_width(lbl_domoticz_result, SX(770));
     lv_label_set_long_mode(lbl_domoticz_result, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_domoticz_result, "Set the Domoticz host, then Save + connect.");
+    lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    lv_label_set_text(lbl_domoticz_result,
+        "Set the Domoticz host, then Save + connect. Live updates use the\n"
+        "Domoticz WebSocket; no MQTT broker needed.");
+    y += 64;
+
+    /* Manage devices: the same unified list as Settings -> Devices, but here
+     * the +add offers Domoticz devices. */
+    lv_obj_t * b_mng = lv_btn_create(p);
+    lv_obj_set_size(b_mng, SX(300), SY(50));
+    lv_obj_align(b_mng, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    lv_obj_set_style_bg_color(b_mng, lv_color_hex(0x2e7e5a), 0);
+    lv_obj_add_event_cb(b_mng, on_manage_devices_dz, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lm = lv_label_create(b_mng); lv_label_set_text(lm, "Manage devices..."); lv_obj_center(lm);
 }
 
 /* Client mode: this Toon mirrors a master Toon over its PWA API. */
@@ -1684,19 +1868,45 @@ static void open_uimode_modal(lv_event_t * e) {
     lv_obj_center(bsw_l);
 }
 
+static void open_stats(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_stats_create());
+}
+
 /* ==================== Integrations modal ====================
- * Runtime on/off switches for the optional integrations. Toggles persist
- * to /mnt/data/toonui.cfg via modal_close → settings_save, but the
- * pollers only re-check the flags on (re)start, so the modal warns the
- * user that flipping a switch needs a toonui restart to fully take
- * effect (killing the proc → inittab respawns it cleanly). */
+ * Per-resource energy/water source selection with conditional UI:
+ * dropdowns for Electricity, Gas, Water — each showing the right config
+ * fields (HA entity picker, P1 host) based on the chosen source. */
 static lv_obj_t * lbl_integ_hint;
-static lv_obj_t * sw_int_p1_elec;
-static lv_obj_t * sw_int_p1_water;
 static lv_obj_t * sw_int_vent;
 static lv_obj_t * sw_int_ha;
 static lv_obj_t * sw_int_hide_offline;
-static lv_obj_t * sw_int_energy_src;
+
+/* Energy dropdowns and conditional rows */
+static lv_obj_t * dd_elec_src, * dd_gas_src, * dd_water_src;
+static lv_obj_t * row_elec_ha_cons, * ta_elec_ha_cons;
+static lv_obj_t * row_elec_ha_prod, * ta_elec_ha_prod;
+static lv_obj_t * row_elec_hw_host, * ta_elec_hw_host;
+static lv_obj_t * row_gas_ha, * ta_gas_ha;
+static lv_obj_t * row_gas_hw_note;
+static lv_obj_t * row_water_ha, * ta_water_ha;
+static lv_obj_t * row_water_hw_host, * ta_water_hw_host;
+static lv_obj_t * row_elec_dz,      * ta_elec_dz_idx;   /* Domoticz device idx fields */
+static lv_obj_t * row_elec_dz_prod, * ta_elec_dz_prod_idx;
+static lv_obj_t * row_gas_dz,       * ta_gas_dz_idx;
+static lv_obj_t * row_water_dz, * ta_water_dz_idx;
+static lv_obj_t * lbl_gas_header;    /* "Gas source:" label — repositioned on elec change */
+static lv_obj_t * lbl_water_header;  /* "Water source:" label */
+static lv_obj_t * toggle_vent_row;   /* first toggle row after the energy section */
+static lv_obj_t * toggle_ha_row;
+static lv_obj_t * toggle_hide_row;
+static lv_obj_t * btn_ha_entities;   /* "Configure HA entities..." button */
+
+/* Same order for all three so the dropdown index == ENERGY_SRC_* constant.
+ * (Z-Wave is inert for water — its dispatch falls through to "off".) */
+static const char * elec_src_opts  = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter\nDomoticz";
+static const char * gas_src_opts   = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter\nDomoticz";
+static const char * water_src_opts = "Off\nHome Assistant\nHomeWizard P1\nZ-Wave adapter\nDomoticz";
 
 static void integ_dirty_hint(void) {
     if (!lbl_integ_hint) return;
@@ -1706,68 +1916,671 @@ static void integ_dirty_hint(void) {
     lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0xffcc66), 0);
 }
 
-static void on_int_p1_elec(lv_event_t * e) {
-    settings.enable_p1_elec  = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
-    integ_dirty_hint();
-}
-static void on_int_p1_water(lv_event_t * e) {
-    settings.enable_p1_water = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
-    integ_dirty_hint();
-}
 static void on_int_vent(lv_event_t * e) {
-    settings.enable_vent     = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings.enable_vent = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     integ_dirty_hint();
 }
 static void on_int_ha(lv_event_t * e) {
-    settings.enable_ha       = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings.enable_ha = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     integ_dirty_hint();
 }
-/* Hide-offline-tiles toggle. Takes effect on the next refresh tick — no
- * restart needed because apply_offline_tile_visibility() reads the flag
- * fresh every time. Doesn't dirty the integ_hint (no restart required). */
 static void on_int_hide_offline(lv_event_t * e) {
     settings.hide_offline_tiles =
         lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
-/* Energy source: OFF = meteradapter (Toon's own meter, default), ON = HomeWizard
- * P1. Live — both pollers always run, the Energy tile just reads the chosen one,
- * so no restart needed (persist it though). */
-static void on_int_energy_src(lv_event_t * e) {
-    settings.energy_source =
-        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+
+/* Helper: safely get text from a textarea that may have been async-deleted
+ * by a previous modal. Returns "" if the pointer is NULL or the object is
+ * no longer valid (use-after-free guard). */
+static const char * safe_ta_text(lv_obj_t * ta) {
+    if (!ta || !lv_obj_is_valid(ta)) return "";
+    return lv_textarea_get_text(ta);
+}
+
+/* Copy a textarea's text into a settings field, but ONLY when the textarea is
+ * still a live object. Critical: the energy-modal cleanup NULLs these pointers,
+ * and energy_save_textareas() also runs on *every* modal close — so writing ""
+ * for a NULL/dead textarea would wipe the saved entity/host on the next close. */
+static void ta_flush(lv_obj_t * ta, char * dst, size_t dsz) {
+    if (ta && lv_obj_is_valid(ta))
+        snprintf(dst, dsz, "%s", lv_textarea_get_text(ta));
+}
+static void ta_flush_int(lv_obj_t * ta, int * dst) {
+    if (ta && lv_obj_is_valid(ta))
+        *dst = atoi(lv_textarea_get_text(ta));
+}
+
+/* Flush the energy textareas to settings. Skips fields whose textarea isn't
+ * currently shown (NULL/freed), so it never clobbers a previously-saved value. */
+static void energy_save_textareas(void) {
+    ta_flush(ta_elec_ha_cons, settings.energy_elec_ha_entity,      sizeof settings.energy_elec_ha_entity);
+    ta_flush(ta_elec_ha_prod, settings.energy_elec_prod_ha_entity, sizeof settings.energy_elec_prod_ha_entity);
+    ta_flush(ta_elec_hw_host, settings.p1_elec_host,               sizeof settings.p1_elec_host);
+    ta_flush(ta_gas_ha,       settings.energy_gas_ha_entity,       sizeof settings.energy_gas_ha_entity);
+    ta_flush(ta_water_ha,     settings.energy_water_ha_entity,     sizeof settings.energy_water_ha_entity);
+    ta_flush(ta_water_hw_host, settings.p1_water_host,             sizeof settings.p1_water_host);
+    ta_flush_int(ta_elec_dz_idx,      &settings.energy_elec_dz_idx);
+    ta_flush_int(ta_elec_dz_prod_idx, &settings.energy_elec_prod_dz_idx);
+    ta_flush_int(ta_gas_dz_idx,       &settings.energy_gas_dz_idx);
+    ta_flush_int(ta_water_dz_idx, &settings.energy_water_dz_idx);
+}
+
+/* Show/hide conditional rows for electricity based on dropdown selection. */
+static void energy_elec_update_vis(void) {
+    int src = lv_dropdown_get_selected(dd_elec_src);
+    settings.energy_elec_source = src;
+    energy_save_textareas();
+    if (row_elec_ha_cons) {
+        if (src == ENERGY_SRC_HA) lv_obj_clear_flag(row_elec_ha_cons, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_elec_ha_cons, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_elec_ha_prod) {
+        if (src == ENERGY_SRC_HA) lv_obj_clear_flag(row_elec_ha_prod, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_elec_ha_prod, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_elec_hw_host) {
+        if (src == ENERGY_SRC_HW_P1) lv_obj_clear_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_elec_dz) {
+        if (src == ENERGY_SRC_DOMOTICZ) lv_obj_clear_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_elec_dz_prod) {
+        if (src == ENERGY_SRC_DOMOTICZ) lv_obj_clear_flag(row_elec_dz_prod, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_elec_dz_prod, LV_OBJ_FLAG_HIDDEN);
+    }
     settings_save();
+}
+static void energy_gas_update_vis(void) {
+    int src = lv_dropdown_get_selected(dd_gas_src);
+    settings.energy_gas_source = src;
+    energy_save_textareas();
+    if (row_gas_ha) {
+        if (src == ENERGY_SRC_HA) lv_obj_clear_flag(row_gas_ha, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_gas_ha, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_gas_hw_note) {
+        if (src == ENERGY_SRC_HW_P1) lv_obj_clear_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_gas_dz) {
+        if (src == ENERGY_SRC_DOMOTICZ) lv_obj_clear_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
+    }
+    settings_save();
+}
+static void energy_water_update_vis(void) {
+    int src = lv_dropdown_get_selected(dd_water_src);
+    settings.energy_water_source = src;
+    energy_save_textareas();
+    if (row_water_ha) {
+        if (src == ENERGY_SRC_HA) lv_obj_clear_flag(row_water_ha, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_water_ha, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_water_dz) {
+        if (src == ENERGY_SRC_DOMOTICZ) lv_obj_clear_flag(row_water_dz, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_water_dz, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (row_water_hw_host) {
+        if (src == ENERGY_SRC_HW_P1) lv_obj_clear_flag(row_water_hw_host, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(row_water_hw_host, LV_OBJ_FLAG_HIDDEN);
+    }
+    settings_save();
+}
+
+/* Lay out the whole energy section top-to-bottom, sizing each source block by
+ * how many conditional rows it actually shows, so nothing overlaps regardless
+ * of the Off/HA/P1 selections. This is the single source of truth for the
+ * positions of everything below the (fixed) electricity header; the builder's
+ * initial aligns are overwritten here. */
+static void energy_relayout(void) {
+    if (!lbl_gas_header || !dd_elec_src) return;
+
+    const int DD_OFF = 28;   /* source header label -> dropdown top */
+    const int DD_H   = 48;   /* dropdown top -> first row / next-section top */
+    const int ROW_H  = 70;   /* one conditional field row (66 box + 4 gap) */
+    const int NOTE_H = 48;   /* the gas one-line HomeWizard note */
+    const int GAP    = 16;   /* gap between source sections */
+
+    /* ---- Electricity (header + dropdown are fixed at y=70 by the builder) ---- */
+    int y = 70;
+    int row_y = y + DD_OFF + DD_H;          /* first elec conditional row top */
+    int src = lv_dropdown_get_selected(dd_elec_src);
+    if (src == ENERGY_SRC_HA) {
+        lv_obj_set_pos(row_elec_ha_cons, SX(4), SY(row_y));
+        lv_obj_set_pos(row_elec_ha_prod, SX(4), SY(row_y + ROW_H));
+        y = row_y + 2 * ROW_H;
+    } else if (src == ENERGY_SRC_HW_P1) {
+        lv_obj_set_pos(row_elec_hw_host, SX(4), SY(row_y));
+        y = row_y + ROW_H;
+    } else if (src == ENERGY_SRC_DOMOTICZ) {
+        lv_obj_set_pos(row_elec_dz, SX(4), SY(row_y));
+        lv_obj_set_pos(row_elec_dz_prod, SX(4), SY(row_y + ROW_H));
+        y = row_y + 2 * ROW_H;
+    } else {
+        y = y + DD_OFF + DD_H;
+    }
+    y += GAP;
+
+    /* ---- Gas ---- */
+    lv_obj_set_pos(lbl_gas_header, SX(4), SY(y));
+    lv_obj_set_pos(dd_gas_src,     SX(4), SY(y + DD_OFF));
+    row_y = y + DD_OFF + DD_H;
+    src = lv_dropdown_get_selected(dd_gas_src);
+    if (src == ENERGY_SRC_HA) {
+        lv_obj_set_pos(row_gas_ha, SX(4), SY(row_y));
+        y = row_y + ROW_H;
+    } else if (src == ENERGY_SRC_HW_P1) {
+        lv_obj_set_pos(row_gas_hw_note, SX(4), SY(row_y));
+        y = row_y + NOTE_H;
+    } else if (src == ENERGY_SRC_DOMOTICZ) {
+        lv_obj_set_pos(row_gas_dz, SX(4), SY(row_y));
+        y = row_y + ROW_H;
+    } else {
+        y = y + DD_OFF + DD_H;
+    }
+    y += GAP;
+
+    /* ---- Water ---- */
+    lv_obj_set_pos(lbl_water_header, SX(4), SY(y));
+    lv_obj_set_pos(dd_water_src,     SX(4), SY(y + DD_OFF));
+    row_y = y + DD_OFF + DD_H;
+    src = lv_dropdown_get_selected(dd_water_src);
+    if (src == ENERGY_SRC_HA) {
+        lv_obj_set_pos(row_water_ha, SX(4), SY(row_y));
+        y = row_y + ROW_H;
+    } else if (src == ENERGY_SRC_HW_P1) {
+        lv_obj_set_pos(row_water_hw_host, SX(4), SY(row_y));
+        y = row_y + ROW_H;
+    } else if (src == ENERGY_SRC_DOMOTICZ) {
+        lv_obj_set_pos(row_water_dz, SX(4), SY(row_y));
+        y = row_y + ROW_H;
+    } else {
+        y = y + DD_OFF + DD_H;
+    }
+    y += 24;             /* spacing before toggle section */
+
+    /* ---- Toggles + button (only present in the integrations modal) ---- */
+    if (toggle_vent_row) { lv_obj_set_pos(toggle_vent_row, SX(4), SY(y)); y += 84; }
+    if (toggle_ha_row)   { lv_obj_set_pos(toggle_ha_row,   SX(4), SY(y)); y += 84; }
+    if (toggle_hide_row) { lv_obj_set_pos(toggle_hide_row, SX(4), SY(y)); y += 92; }
+    if (lbl_integ_hint)  { lv_obj_set_pos(lbl_integ_hint,  SX(4), SY(y)); y += 60; }
+    if (btn_ha_entities) { lv_obj_set_pos(btn_ha_entities, SX(4), SY(y)); }
+}
+
+static void on_elec_src_change(lv_event_t * e) { (void)e; energy_elec_update_vis(); energy_relayout(); }
+static void on_gas_src_change(lv_event_t * e)  { (void)e; energy_gas_update_vis(); energy_relayout(); }
+static void on_water_src_change(lv_event_t * e){ (void)e; energy_water_update_vis(); energy_relayout(); }
+
+/* Browse-button callback for energy sensor pickers. */
+struct energy_browse_ctx {
+    lv_obj_t * ta;
+    char       domain[16];
+};
+static void on_energy_browse(lv_event_t * e) {
+    struct energy_browse_ctx * ctx = lv_event_get_user_data(e);
+    screen_ha_picker_open(ctx->domain, ctx->ta);
+    free(ctx);
+}
+
+static lv_obj_t * energy_browse_btn(lv_obj_t * parent, lv_obj_t * ta, const char * domain) {
+    lv_obj_t * btn = lv_btn_create(parent);
+    lv_obj_set_size(btn, SX(60), SY(38));
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_radius(btn, 8, 0);
+    lv_obj_t * bl = lv_label_create(btn);
+    lv_label_set_text(bl, "...");
+    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(bl);
+    struct energy_browse_ctx * ctx = malloc(sizeof *ctx);
+    if (ctx) { ctx->ta = ta; snprintf(ctx->domain, sizeof ctx->domain, "%s", domain); }
+    lv_obj_add_event_cb(btn, on_energy_browse, LV_EVENT_CLICKED, ctx);
+    return btn;
+}
+
+/* Small labelled text field + optional browse button inside a panel row.
+ * Returns the textarea. */
+static lv_obj_t * energy_field(lv_obj_t * p, int x, int y, int w,
+                                const char * lbl, const char * val,
+                                int browse, const char * domain) {
+    lv_obj_t * label = lv_label_create(p);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xc0d0e0), 0);
+    lv_obj_set_style_text_font(label, SF(16), 0);
+    lv_label_set_text(label, lbl);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, SX(x), SY(y));
+    int ta_x = browse ? x + w - 300 : x;
+    int ta_w = browse ? 232 : w;
+    lv_obj_t * ta = lv_textarea_create(p);
+    lv_obj_set_size(ta, SX(ta_w), SY(38));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(ta_x), SY(y + 20));
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_text(ta, val ? val : "");
+    if (browse) {
+        lv_obj_t * btn = energy_browse_btn(p, ta, domain);
+        lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(ta_x + ta_w + 8), SY(y + 20));
+    }
+    return ta;
+}
+
+/* A Domoticz-device-idx row (numeric). Returns the row; *out_ta = its textarea.
+ * Position is set by energy_relayout(); the initial align is a placeholder. */
+static lv_obj_t * make_dz_row(lv_obj_t * p, const char * lbl, int idx, lv_obj_t ** out_ta) {
+    lv_obj_t * r = lv_obj_create(p);
+    lv_obj_set_size(r, SX(824), SY(66));
+    lv_obj_set_style_bg_color(r, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(r, 0, 0);
+    lv_obj_set_style_radius(r, 8, 0);
+    lv_obj_set_style_pad_all(r, 6, 0);
+    lv_obj_clear_flag(r, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(r, LV_ALIGN_TOP_LEFT, SX(4), SY(80));
+    char b[16]; if (idx > 0) snprintf(b, sizeof b, "%d", idx); else b[0] = 0;
+    *out_ta = energy_field(r, 4, -6, 760, lbl, b, 0, NULL);
+    ta_make_numeric(*out_ta);
+    return r;
+}
+
+static void open_ha_entities_modal(lv_event_t * e);
+
+/* =========================== Energy Sources modal ========================== *
+ * Dedicated modal for electricity / gas / water source selection. Extracted
+ * from the old catch-all integrations modal so the Energy Sources tile has its
+ * own focused UI. Shares widget pointers with open_integrations_modal (only one
+ * modal is open at a time). */
+static void energy_modal_cleanup(void) {
+    dd_elec_src = NULL; dd_gas_src = NULL; dd_water_src = NULL;
+    row_elec_ha_cons = NULL; ta_elec_ha_cons = NULL;
+    row_elec_ha_prod = NULL; ta_elec_ha_prod = NULL;
+    row_elec_hw_host = NULL; ta_elec_hw_host = NULL;
+    row_gas_ha = NULL; ta_gas_ha = NULL;
+    row_gas_hw_note = NULL;
+    row_water_ha = NULL; ta_water_ha = NULL;
+    row_water_hw_host = NULL; ta_water_hw_host = NULL;
+    row_elec_dz = NULL; ta_elec_dz_idx = NULL;
+    row_elec_dz_prod = NULL; ta_elec_dz_prod_idx = NULL;
+    row_gas_dz  = NULL; ta_gas_dz_idx  = NULL;
+    row_water_dz = NULL; ta_water_dz_idx = NULL;
+    lbl_gas_header = NULL; lbl_water_header = NULL;
+}
+
+static void open_energy_sources_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Energy sources", 510);
+    modal_cleanup_fn = energy_modal_cleanup;
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
+    int y = 70;
+
+    /* ---- Electricity ---- */
+    lv_obj_t * le = lv_label_create(p);
+    lv_obj_set_style_text_color(le, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(le, SF(22), 0);
+    lv_label_set_text(le, "Electricity source:");
+    lv_obj_align(le, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    dd_elec_src = lv_dropdown_create(p);
+    lv_obj_align(dd_elec_src, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_obj_set_width(dd_elec_src, SX(340));
+    lv_dropdown_set_options(dd_elec_src, elec_src_opts);
+    lv_dropdown_set_selected(dd_elec_src, settings.energy_elec_source);
+    lv_obj_add_event_cb(dd_elec_src, on_elec_src_change, LV_EVENT_VALUE_CHANGED, NULL);
+
+    row_elec_ha_cons = lv_obj_create(p);
+    lv_obj_set_size(row_elec_ha_cons, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_ha_cons, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_ha_cons, 0, 0);
+    lv_obj_set_style_radius(row_elec_ha_cons, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_ha_cons, 6, 0);
+    lv_obj_clear_flag(row_elec_ha_cons, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_ha_cons, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_elec_ha_cons = energy_field(row_elec_ha_cons, 4, -6, 760,
+        "HA consumption sensor (W):", settings.energy_elec_ha_entity, 1, "sensor");
+    if (settings.energy_elec_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_elec_ha_cons, LV_OBJ_FLAG_HIDDEN);
+
+    row_elec_ha_prod = lv_obj_create(p);
+    lv_obj_set_size(row_elec_ha_prod, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_ha_prod, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_ha_prod, 0, 0);
+    lv_obj_set_style_radius(row_elec_ha_prod, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_ha_prod, 6, 0);
+    lv_obj_clear_flag(row_elec_ha_prod, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_ha_prod, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 144));
+    ta_elec_ha_prod = energy_field(row_elec_ha_prod, 4, -6, 760,
+        "HA production/solar sensor (W, optional):", settings.energy_elec_prod_ha_entity, 1, "sensor");
+    if (settings.energy_elec_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_elec_ha_prod, LV_OBJ_FLAG_HIDDEN);
+
+    row_elec_hw_host = lv_obj_create(p);
+    lv_obj_set_size(row_elec_hw_host, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_hw_host, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_hw_host, 0, 0);
+    lv_obj_set_style_radius(row_elec_hw_host, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_hw_host, 6, 0);
+    lv_obj_clear_flag(row_elec_hw_host, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_hw_host, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_elec_hw_host = energy_field(row_elec_hw_host, 4, -6, 760,
+        "HomeWizard P1 host (shared with gas):", settings.p1_elec_host, 0, NULL);
+    ta_make_numeric(ta_elec_hw_host);
+    if (settings.energy_elec_source != ENERGY_SRC_HW_P1)
+        lv_obj_add_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
+
+    row_elec_dz = make_dz_row(p, "Domoticz device idx (P1 electricity):",
+                              settings.energy_elec_dz_idx, &ta_elec_dz_idx);
+    if (settings.energy_elec_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+
+    row_elec_dz_prod = lv_obj_create(p);
+    lv_obj_set_size(row_elec_dz_prod, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_dz_prod, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_dz_prod, 0, 0);
+    lv_obj_set_style_radius(row_elec_dz_prod, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_dz_prod, 6, 0);
+    lv_obj_clear_flag(row_elec_dz_prod, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_dz_prod, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 144));
+    {   char b[16];
+        if (settings.energy_elec_prod_dz_idx > 0)
+            snprintf(b, sizeof b, "%d", settings.energy_elec_prod_dz_idx);
+        else b[0] = 0;
+        ta_elec_dz_prod_idx = energy_field(row_elec_dz_prod, 4, -6, 760,
+            "Domoticz production/solar idx (optional):", b, 0, NULL);
+        ta_make_numeric(ta_elec_dz_prod_idx);
+    }
+    if (settings.energy_elec_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_elec_dz_prod, LV_OBJ_FLAG_HIDDEN);
+
+    y += 214;
+
+    /* ---- Gas ---- */
+    lbl_gas_header = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_gas_header, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_gas_header, SF(22), 0);
+    lv_label_set_text(lbl_gas_header, "Gas source:");
+    lv_obj_align(lbl_gas_header, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    dd_gas_src = lv_dropdown_create(p);
+    lv_obj_align(dd_gas_src, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_obj_set_width(dd_gas_src, SX(340));
+    lv_dropdown_set_options(dd_gas_src, gas_src_opts);
+    lv_dropdown_set_selected(dd_gas_src, settings.energy_gas_source);
+    lv_obj_add_event_cb(dd_gas_src, on_gas_src_change, LV_EVENT_VALUE_CHANGED, NULL);
+
+    row_gas_ha = lv_obj_create(p);
+    lv_obj_set_size(row_gas_ha, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_gas_ha, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_gas_ha, 0, 0);
+    lv_obj_set_style_radius(row_gas_ha, 8, 0);
+    lv_obj_set_style_pad_all(row_gas_ha, 6, 0);
+    lv_obj_clear_flag(row_gas_ha, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_gas_ha, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_gas_ha = energy_field(row_gas_ha, 4, -6, 760,
+        "HA gas sensor (m3):", settings.energy_gas_ha_entity, 1, "sensor");
+    if (settings.energy_gas_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_gas_ha, LV_OBJ_FLAG_HIDDEN);
+
+    row_gas_hw_note = lv_obj_create(p);
+    lv_obj_set_size(row_gas_hw_note, SX(824), SY(40));
+    lv_obj_set_style_bg_color(row_gas_hw_note, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_gas_hw_note, 0, 0);
+    lv_obj_set_style_radius(row_gas_hw_note, 8, 0);
+    lv_obj_set_style_pad_all(row_gas_hw_note, 6, 0);
+    lv_obj_clear_flag(row_gas_hw_note, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_gas_hw_note, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    lv_obj_t * ghn = lv_label_create(row_gas_hw_note);
+    lv_obj_set_style_text_color(ghn, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(ghn, SF(16), 0);
+    lv_label_set_text(ghn, "Uses the same HomeWizard P1 host as electricity.");
+    lv_obj_align(ghn, LV_ALIGN_TOP_LEFT, SX(4), SY(0));
+    if (settings.energy_gas_source != ENERGY_SRC_HW_P1)
+        lv_obj_add_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
+
+    row_gas_dz = make_dz_row(p, "Domoticz device idx (gas meter):",
+                             settings.energy_gas_dz_idx, &ta_gas_dz_idx);
+    if (settings.energy_gas_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
+
+    y += 138;
+
+    /* ---- Water ---- */
+    lbl_water_header = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_water_header, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_water_header, SF(22), 0);
+    lv_label_set_text(lbl_water_header, "Water source:");
+    lv_obj_align(lbl_water_header, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    dd_water_src = lv_dropdown_create(p);
+    lv_obj_align(dd_water_src, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_obj_set_width(dd_water_src, SX(340));
+    lv_dropdown_set_options(dd_water_src, water_src_opts);
+    lv_dropdown_set_selected(dd_water_src, settings.energy_water_source);
+    lv_obj_add_event_cb(dd_water_src, on_water_src_change, LV_EVENT_VALUE_CHANGED, NULL);
+
+    row_water_ha = lv_obj_create(p);
+    lv_obj_set_size(row_water_ha, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_water_ha, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_water_ha, 0, 0);
+    lv_obj_set_style_radius(row_water_ha, 8, 0);
+    lv_obj_set_style_pad_all(row_water_ha, 6, 0);
+    lv_obj_clear_flag(row_water_ha, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_water_ha, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_water_ha = energy_field(row_water_ha, 4, -6, 760,
+        "HA water sensor (m3):", settings.energy_water_ha_entity, 1, "sensor");
+    if (settings.energy_water_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_water_ha, LV_OBJ_FLAG_HIDDEN);
+
+    row_water_hw_host = lv_obj_create(p);
+    lv_obj_set_size(row_water_hw_host, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_water_hw_host, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_water_hw_host, 0, 0);
+    lv_obj_set_style_radius(row_water_hw_host, 8, 0);
+    lv_obj_set_style_pad_all(row_water_hw_host, 6, 0);
+    lv_obj_clear_flag(row_water_hw_host, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_water_hw_host, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_water_hw_host = energy_field(row_water_hw_host, 4, -6, 760,
+        "HomeWizard HWE-WTR host:", settings.p1_water_host, 0, NULL);
+    ta_make_numeric(ta_water_hw_host);
+    if (settings.energy_water_source != ENERGY_SRC_HW_P1)
+        lv_obj_add_flag(row_water_hw_host, LV_OBJ_FLAG_HIDDEN);
+
+    row_water_dz = make_dz_row(p, "Domoticz device idx (water meter):",
+                               settings.energy_water_dz_idx, &ta_water_dz_idx);
+    if (settings.energy_water_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_water_dz, LV_OBJ_FLAG_HIDDEN);
+
+    energy_relayout();
 }
 
 static void open_integrations_modal(lv_event_t * e) {
     (void)e;
-    /* Five panel_rows × 84 + 92 + 100 (hint label) ≈ 612. Bump the modal
-     * height so the hide-offline switch + hint actually fit. */
-    lv_obj_t * p = modal_open("Integrations", 710);
+    /* Energy source section (3 dropdowns + conditional fields) + 3 switches
+     * + hint + HA button. Modal height bumped to fit everything. */
+    lv_obj_t * p = modal_open("Integrations", 1100);
+    modal_cleanup_fn = energy_modal_cleanup;
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
-    lv_obj_t * r;
-    r = panel_row(p, y, "Energy source: ON = HomeWizard P1, OFF = meteradapter", NULL);
-    sw_int_energy_src = row_switch(r, settings.energy_source, on_int_energy_src);
+    /* ---- Electricity ---- */
+    lv_obj_t * le = lv_label_create(p);
+    lv_obj_set_style_text_color(le, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(le, SF(22), 0);
+    lv_label_set_text(le, "Electricity source:");
+    lv_obj_align(le, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    dd_elec_src = lv_dropdown_create(p);
+    lv_obj_align(dd_elec_src, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_obj_set_width(dd_elec_src, SX(340));
+    lv_dropdown_set_options(dd_elec_src, elec_src_opts);
+    lv_dropdown_set_selected(dd_elec_src, settings.energy_elec_source);
+    lv_obj_add_event_cb(dd_elec_src, on_elec_src_change, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* HA consumption sensor row */
+    row_elec_ha_cons = lv_obj_create(p);
+    lv_obj_set_size(row_elec_ha_cons, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_ha_cons, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_ha_cons, 0, 0);
+    lv_obj_set_style_radius(row_elec_ha_cons, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_ha_cons, 6, 0);
+    lv_obj_clear_flag(row_elec_ha_cons, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_ha_cons, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_elec_ha_cons = energy_field(row_elec_ha_cons, 4, -6, 760,
+        "HA consumption sensor (W):", settings.energy_elec_ha_entity, 1, "sensor");
+    if (settings.energy_elec_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_elec_ha_cons, LV_OBJ_FLAG_HIDDEN);
+
+    /* HA production sensor row */
+    row_elec_ha_prod = lv_obj_create(p);
+    lv_obj_set_size(row_elec_ha_prod, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_ha_prod, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_ha_prod, 0, 0);
+    lv_obj_set_style_radius(row_elec_ha_prod, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_ha_prod, 6, 0);
+    lv_obj_clear_flag(row_elec_ha_prod, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_ha_prod, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 144));
+    ta_elec_ha_prod = energy_field(row_elec_ha_prod, 4, -6, 760,
+        "HA production/solar sensor (W, optional):", settings.energy_elec_prod_ha_entity, 1, "sensor");
+    if (settings.energy_elec_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_elec_ha_prod, LV_OBJ_FLAG_HIDDEN);
+
+    /* HW P1 host row */
+    row_elec_hw_host = lv_obj_create(p);
+    lv_obj_set_size(row_elec_hw_host, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_hw_host, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_hw_host, 0, 0);
+    lv_obj_set_style_radius(row_elec_hw_host, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_hw_host, 6, 0);
+    lv_obj_clear_flag(row_elec_hw_host, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_hw_host, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_elec_hw_host = energy_field(row_elec_hw_host, 4, -6, 760,
+        "HomeWizard P1 host (shared with gas):", settings.p1_elec_host, 0, NULL);
+    ta_make_numeric(ta_elec_hw_host);
+    if (settings.energy_elec_source != ENERGY_SRC_HW_P1)
+        lv_obj_add_flag(row_elec_hw_host, LV_OBJ_FLAG_HIDDEN);
+
+    row_elec_dz = make_dz_row(p, "Domoticz device idx (P1 electricity):",
+                              settings.energy_elec_dz_idx, &ta_elec_dz_idx);
+    if (settings.energy_elec_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_elec_dz, LV_OBJ_FLAG_HIDDEN);
+
+    row_elec_dz_prod = lv_obj_create(p);
+    lv_obj_set_size(row_elec_dz_prod, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_elec_dz_prod, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_elec_dz_prod, 0, 0);
+    lv_obj_set_style_radius(row_elec_dz_prod, 8, 0);
+    lv_obj_set_style_pad_all(row_elec_dz_prod, 6, 0);
+    lv_obj_clear_flag(row_elec_dz_prod, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_elec_dz_prod, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 144));
+    {   char b[16];
+        if (settings.energy_elec_prod_dz_idx > 0)
+            snprintf(b, sizeof b, "%d", settings.energy_elec_prod_dz_idx);
+        else b[0] = 0;
+        ta_elec_dz_prod_idx = energy_field(row_elec_dz_prod, 4, -6, 760,
+            "Domoticz production/solar idx (optional):", b, 0, NULL);
+        ta_make_numeric(ta_elec_dz_prod_idx);
+    }
+    if (settings.energy_elec_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_elec_dz_prod, LV_OBJ_FLAG_HIDDEN);
+
+    y += 214;
+
+    /* ---- Gas ---- */
+    lbl_gas_header = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_gas_header, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_gas_header, SF(22), 0);
+    lv_label_set_text(lbl_gas_header, "Gas source:");
+    lv_obj_align(lbl_gas_header, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    dd_gas_src = lv_dropdown_create(p);
+    lv_obj_align(dd_gas_src, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_obj_set_width(dd_gas_src, SX(340));
+    lv_dropdown_set_options(dd_gas_src, gas_src_opts);
+    lv_dropdown_set_selected(dd_gas_src, settings.energy_gas_source);
+    lv_obj_add_event_cb(dd_gas_src, on_gas_src_change, LV_EVENT_VALUE_CHANGED, NULL);
+
+    row_gas_ha = lv_obj_create(p);
+    lv_obj_set_size(row_gas_ha, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_gas_ha, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_gas_ha, 0, 0);
+    lv_obj_set_style_radius(row_gas_ha, 8, 0);
+    lv_obj_set_style_pad_all(row_gas_ha, 6, 0);
+    lv_obj_clear_flag(row_gas_ha, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_gas_ha, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_gas_ha = energy_field(row_gas_ha, 4, -6, 760,
+        "HA gas sensor (m3):", settings.energy_gas_ha_entity, 1, "sensor");
+    if (settings.energy_gas_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_gas_ha, LV_OBJ_FLAG_HIDDEN);
+
+    row_gas_hw_note = lv_obj_create(p);
+    lv_obj_set_size(row_gas_hw_note, SX(824), SY(40));
+    lv_obj_set_style_bg_color(row_gas_hw_note, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_gas_hw_note, 0, 0);
+    lv_obj_set_style_radius(row_gas_hw_note, 8, 0);
+    lv_obj_set_style_pad_all(row_gas_hw_note, 6, 0);
+    lv_obj_clear_flag(row_gas_hw_note, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_gas_hw_note, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    lv_obj_t * ghn = lv_label_create(row_gas_hw_note);
+    lv_obj_set_style_text_color(ghn, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(ghn, SF(16), 0);
+    lv_label_set_text(ghn, "Uses the same HomeWizard P1 host as electricity.");
+    lv_obj_align(ghn, LV_ALIGN_TOP_LEFT, SX(4), SY(0));
+    if (settings.energy_gas_source != ENERGY_SRC_HW_P1)
+        lv_obj_add_flag(row_gas_hw_note, LV_OBJ_FLAG_HIDDEN);
+
+    row_gas_dz = make_dz_row(p, "Domoticz device idx (gas meter):",
+                             settings.energy_gas_dz_idx, &ta_gas_dz_idx);
+    if (settings.energy_gas_source != ENERGY_SRC_DOMOTICZ)
+        lv_obj_add_flag(row_gas_dz, LV_OBJ_FLAG_HIDDEN);
+
+    y += 138;
+
+    /* ---- Water ---- */
+    lbl_water_header = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_water_header, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_water_header, SF(22), 0);
+    lv_label_set_text(lbl_water_header, "Water source:");
+    lv_obj_align(lbl_water_header, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    dd_water_src = lv_dropdown_create(p);
+    lv_obj_align(dd_water_src, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_obj_set_width(dd_water_src, SX(340));
+    lv_dropdown_set_options(dd_water_src, water_src_opts);
+    lv_dropdown_set_selected(dd_water_src, settings.energy_water_source);
+    lv_obj_add_event_cb(dd_water_src, on_water_src_change, LV_EVENT_VALUE_CHANGED, NULL);
+
+    row_water_ha = lv_obj_create(p);
+    lv_obj_set_size(row_water_ha, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_water_ha, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_water_ha, 0, 0);
+    lv_obj_set_style_radius(row_water_ha, 8, 0);
+    lv_obj_set_style_pad_all(row_water_ha, 6, 0);
+    lv_obj_clear_flag(row_water_ha, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_water_ha, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_water_ha = energy_field(row_water_ha, 4, -6, 760,
+        "HA water sensor (m3):", settings.energy_water_ha_entity, 1, "sensor");
+    if (settings.energy_water_source != ENERGY_SRC_HA)
+        lv_obj_add_flag(row_water_ha, LV_OBJ_FLAG_HIDDEN);
+
+    row_water_hw_host = lv_obj_create(p);
+    lv_obj_set_size(row_water_hw_host, SX(824), SY(66));
+    lv_obj_set_style_bg_color(row_water_hw_host, lv_color_hex(0x1a2d45), 0);
+    lv_obj_set_style_border_width(row_water_hw_host, 0, 0);
+    lv_obj_set_style_radius(row_water_hw_host, 8, 0);
+    lv_obj_set_style_pad_all(row_water_hw_host, 6, 0);
+    lv_obj_clear_flag(row_water_hw_host, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(row_water_hw_host, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 74));
+    ta_water_hw_host = energy_field(row_water_hw_host, 4, -6, 760,
+        "HomeWizard HWE-WTR host:", settings.p1_water_host, 0, NULL);
+    ta_make_numeric(ta_water_hw_host);
+    if (settings.energy_water_source != ENERGY_SRC_HW_P1)
+        lv_obj_add_flag(row_water_hw_host, LV_OBJ_FLAG_HIDDEN);
+
+    /* ---- Remaining integration toggles ---- */
+    toggle_vent_row = panel_row(p, y, "Itho ventilation", NULL);
+    sw_int_vent = row_switch(toggle_vent_row, settings.enable_vent, on_int_vent);
     y += 84;
 
-    r = panel_row(p, y, "HomeWizard P1 (electricity + gas)", NULL);
-    sw_int_p1_elec = row_switch(r, settings.enable_p1_elec, on_int_p1_elec);
+    toggle_ha_row = panel_row(p, y, "Home Assistant (curtains, Life360)", NULL);
+    sw_int_ha = row_switch(toggle_ha_row, settings.enable_ha, on_int_ha);
     y += 84;
 
-    r = panel_row(p, y, "HomeWizard HWE-WTR (water)", NULL);
-    sw_int_p1_water = row_switch(r, settings.enable_p1_water, on_int_p1_water);
-    y += 84;
-
-    r = panel_row(p, y, "Itho ventilation", NULL);
-    sw_int_vent = row_switch(r, settings.enable_vent, on_int_vent);
-    y += 84;
-
-    r = panel_row(p, y, "Home Assistant (curtains, Life360)", NULL);
-    sw_int_ha = row_switch(r, settings.enable_ha, on_int_ha);
-    y += 84;
-
-    r = panel_row(p, y, "Hide offline tiles entirely", NULL);
-    sw_int_hide_offline = row_switch(r, settings.hide_offline_tiles, on_int_hide_offline);
+    toggle_hide_row = panel_row(p, y, "Hide offline tiles entirely", NULL);
+    sw_int_hide_offline = row_switch(toggle_hide_row, settings.hide_offline_tiles, on_int_hide_offline);
     y += 92;
 
     lbl_integ_hint = lv_label_create(p);
@@ -1780,6 +2593,271 @@ static void open_integrations_modal(lv_event_t * e) {
         "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
         "Toggle a switch then restart toonui.");
     lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+
+    btn_ha_entities = lv_btn_create(p);
+    lv_obj_set_size(btn_ha_entities, SX(420), SY(50));
+    lv_obj_align(btn_ha_entities, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
+    lv_obj_set_style_bg_color(btn_ha_entities, lv_color_hex(0x335577), 0);
+    lv_obj_add_event_cb(btn_ha_entities, open_ha_entities_modal, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bhl = lv_label_create(btn_ha_entities);
+    lv_obj_set_style_text_color(bhl, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(bhl, "Configure HA entities...");
+    lv_obj_center(bhl);
+
+    /* Correct layout immediately so the initial positions match the
+     * current source selections rather than the creation-time defaults. */
+    energy_relayout();
+}
+
+/* ============== HA entity configuration modal ============== */
+static lv_obj_t * ta_ha_host            = NULL;
+static lv_obj_t * ta_curtain_entity     = NULL;
+static lv_obj_t * ta_curtain_bat_a      = NULL;
+static lv_obj_t * ta_curtain_bat_b      = NULL;
+static lv_obj_t * ta_blinds_entity      = NULL;
+static lv_obj_t * ta_blinds_bat_a       = NULL;
+static lv_obj_t * ta_blinds_bat_b       = NULL;
+static lv_obj_t * ta_doorbell_entity    = NULL;
+static lv_obj_t * ta_doorbell_camera    = NULL;
+static lv_obj_t * ta_doorbell_seconds   = NULL;
+static lv_obj_t * ta_doorbell_stream    = NULL;
+static lv_obj_t * ta_life360_a_entity   = NULL;
+static lv_obj_t * ta_life360_a_name     = NULL;
+static lv_obj_t * ta_life360_b_entity   = NULL;
+static lv_obj_t * ta_life360_b_name     = NULL;
+static lv_obj_t * ta_calendar_ha_entity = NULL;
+
+static void ha_entities_modal_cleanup(void) {
+    ta_ha_host            = NULL;
+    ta_curtain_entity     = NULL;
+    ta_curtain_bat_a      = NULL;
+    ta_curtain_bat_b      = NULL;
+    ta_blinds_entity      = NULL;
+    ta_blinds_bat_a       = NULL;
+    ta_blinds_bat_b       = NULL;
+    ta_doorbell_entity    = NULL;
+    ta_doorbell_camera    = NULL;
+    ta_doorbell_seconds   = NULL;
+    ta_doorbell_stream    = NULL;
+    ta_life360_a_entity   = NULL;
+    ta_life360_a_name     = NULL;
+    ta_life360_b_entity   = NULL;
+    ta_life360_b_name     = NULL;
+    ta_calendar_ha_entity = NULL;
+}
+
+/* Browse-button context — heap-allocated, freed in the callback. */
+struct ha_browse_ctx {
+    lv_obj_t * ta;
+    char       domain[32];
+};
+
+static void on_ha_browse(lv_event_t * e) {
+    struct ha_browse_ctx * ctx = lv_event_get_user_data(e);
+    screen_ha_picker_open(ctx->domain, ctx->ta);
+    free(ctx);
+}
+
+/* Helper: add a labelled textarea row to the modal panel. Returns the
+ * y position for the next row. If `domain` is non-NULL a small [🔍]
+ * browse button is placed next to the textarea — tapping it opens the
+ * HA entity picker filtered to that domain. */
+static int ha_field_row(lv_obj_t * p, int y, const char * label,
+                        const char * value, const char * placeholder,
+                        int width, lv_obj_t ** ta_out,
+                        const char * domain) {
+    lv_obj_t * lb = lv_label_create(p);
+    lv_obj_set_style_text_color(lb, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lb, SF(18), 0);
+    lv_label_set_text(lb, label);
+    lv_obj_align(lb, LV_ALIGN_TOP_LEFT, SX(4), y + 4);
+
+    lv_obj_t * ta = lv_textarea_create(p);
+    lv_obj_set_size(ta, width, SY(36));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(260), y);
+    lv_textarea_set_one_line(ta, true);
+    if (placeholder) lv_textarea_set_placeholder_text(ta, placeholder);
+    if (value && value[0]) lv_textarea_set_text(ta, value);
+    *ta_out = ta;
+
+    /* Browse button for entity fields */
+    if (domain) {
+        struct ha_browse_ctx * ctx = malloc(sizeof(*ctx));
+        if (ctx) {
+            ctx->ta = ta;
+            snprintf(ctx->domain, sizeof(ctx->domain), "%s", domain);
+            lv_obj_t * b = lv_btn_create(p);
+            lv_obj_set_size(b, SY(36), SY(36));
+            lv_obj_align(b, LV_ALIGN_TOP_LEFT,
+                         SX(260) + width + SX(6), y);
+            lv_obj_set_style_radius(b, 6, 0);
+            lv_obj_t * bl = lv_label_create(b);
+            lv_label_set_text(bl, "...");
+            lv_obj_center(bl);
+            lv_obj_add_event_cb(b, on_ha_browse, LV_EVENT_CLICKED, ctx);
+        }
+    }
+    return y + 44;
+}
+
+static void on_ha_entities_save(lv_event_t * e) {
+    (void)e;
+    if (ta_ha_host) {
+        const char * v = lv_textarea_get_text(ta_ha_host);
+        snprintf(settings.ha_host, sizeof settings.ha_host, "%s", v ? v : "");
+    }
+    #define SAVE_TA(ta, field) do { \
+        if (ta) { const char * v = lv_textarea_get_text(ta); \
+                  snprintf(field, sizeof field, "%s", v ? v : ""); } \
+    } while(0)
+    SAVE_TA(ta_curtain_entity,     settings.curtain_entity);
+    SAVE_TA(ta_curtain_bat_a,      settings.curtain_bat_a);
+    SAVE_TA(ta_curtain_bat_b,      settings.curtain_bat_b);
+    SAVE_TA(ta_blinds_entity,      settings.blinds_entity);
+    SAVE_TA(ta_blinds_bat_a,       settings.blinds_bat_a);
+    SAVE_TA(ta_blinds_bat_b,       settings.blinds_bat_b);
+    SAVE_TA(ta_doorbell_entity,    settings.doorbell_entity);
+    SAVE_TA(ta_doorbell_camera,    settings.doorbell_camera);
+    SAVE_TA(ta_doorbell_stream,    settings.doorbell_stream_url);
+    SAVE_TA(ta_life360_a_entity,   settings.life360_a_entity);
+    SAVE_TA(ta_life360_a_name,     settings.life360_a_name);
+    SAVE_TA(ta_life360_b_entity,   settings.life360_b_entity);
+    SAVE_TA(ta_life360_b_name,     settings.life360_b_name);
+    SAVE_TA(ta_calendar_ha_entity, settings.calendar_ha_entity);
+    if (ta_doorbell_seconds) {
+        const char * v = lv_textarea_get_text(ta_doorbell_seconds);
+        int iv = v ? atoi(v) : 30;
+        if (iv < 3) iv = 3;
+        if (iv > 300) iv = 300;
+        settings.doorbell_seconds = iv;
+    }
+    #undef SAVE_TA
+    modal_close(e);                       /* persists settings, closes sub-modal, restores parent */
+}
+
+/* Open the dynamic device manager (add/remove/pin lights, covers, switches,
+ * scripts, scenes). It's a full SCREEN, which renders under the top-layer
+ * Settings modals — so dismiss the "HA entities" + "Integrations" modals first,
+ * or the manager opens hidden behind them. Closing them also makes popping back
+ * land cleanly on Settings (no stale modals), and the manager is a destination,
+ * not a sub-dialog you bounce out of. */
+static void on_manage_devices(lv_event_t * e) {
+    (void)e;
+    settings_close_all_modals();
+    screen_ha_devices_set_add_mode(0);   /* HA section → offer HA add-buttons */
+    ui_push(screen_ha_devices_create());
+}
+/* Same unified manager, opened from the Domoticz section → offer only the
+ * Domoticz add-button (the device list itself shows both backends). */
+static void on_manage_devices_dz(lv_event_t * e) {
+    (void)e;
+    settings_close_all_modals();
+    screen_ha_devices_set_add_mode(1);
+    ui_push(screen_ha_devices_create());
+}
+
+static void open_ha_entities_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("HA entities", 720);
+    modal_cleanup_fn = ha_entities_modal_cleanup;
+    int y = 70;
+    const int tw = SX(480);
+
+    /* HA host */
+    lv_obj_t * lh = lv_label_create(p);
+    lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lh, SF(22), 0);
+    lv_label_set_text(lh, "HA host (ip:port):");
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
+    ta_ha_host = lv_textarea_create(p);
+    lv_obj_set_size(ta_ha_host, tw, SY(44));
+    lv_obj_align(ta_ha_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_textarea_set_one_line(ta_ha_host, true);
+    lv_textarea_set_placeholder_text(ta_ha_host, "192.168.1.10:8123");
+    lv_textarea_set_text(ta_ha_host, settings.ha_host);
+    y += 56;
+
+    /* ── Devices ── (dynamic list: lights, covers, switches, scripts, scenes) */
+    lv_obj_t * lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Devices \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    {
+        lv_obj_t * hint = lv_label_create(p);
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(hint, SF(18), 0);
+        lv_label_set_text(hint, "Lights, covers, switches, scripts and scenes —\n"
+                                "shown behind the home Devices button.");
+        lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+        y += 52;
+        lv_obj_t * bm = lv_btn_create(p);
+        lv_obj_set_size(bm, SX(300), SY(48));
+        lv_obj_align(bm, LV_ALIGN_TOP_LEFT, SX(4), y);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(0x2e5e8a), 0);
+        lv_obj_set_style_radius(bm, 8, 0);
+        lv_obj_add_event_cb(bm, on_manage_devices, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * bml = lv_label_create(bm);
+        lv_obj_set_style_text_color(bml, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(bml, SF(20), 0);
+        lv_label_set_text(bml, "Manage devices...");
+        lv_obj_center(bml);
+        y += 60;
+    }
+
+    /* ── Doorbell ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Doorbell \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Trigger entity:", settings.doorbell_entity, "binary_sensor.deurbel", tw, &ta_doorbell_entity, "binary_sensor");
+    y = ha_field_row(p, y, "Camera entity:", settings.doorbell_camera, "camera.voordeur", tw, &ta_doorbell_camera, "camera");
+    y = ha_field_row(p, y, "Show seconds (3-300):", NULL, "30", SX(120), &ta_doorbell_seconds, NULL);
+    if (ta_doorbell_seconds) {
+        char sec_str[8];
+        snprintf(sec_str, sizeof(sec_str), "%d", settings.doorbell_seconds);
+        lv_textarea_set_text(ta_doorbell_seconds, sec_str);
+    }
+    y = ha_field_row(p, y, "MJPEG stream URL:", settings.doorbell_stream_url, "http://.../stream.mjpeg", tw, &ta_doorbell_stream, NULL);
+    y += 8;
+
+    /* ── Family / Life360 ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Family \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "Person A entity:", settings.life360_a_entity, "device_tracker.life360_alice", tw, &ta_life360_a_entity, "device_tracker");
+    y = ha_field_row(p, y, "Person A name:", settings.life360_a_name, "Alice", tw, &ta_life360_a_name, NULL);
+    y = ha_field_row(p, y, "Person B entity:", settings.life360_b_entity, "device_tracker.life360_bob", tw, &ta_life360_b_entity, "device_tracker");
+    y = ha_field_row(p, y, "Person B name:", settings.life360_b_name, "Bob", tw, &ta_life360_b_name, NULL);
+    y += 8;
+
+    /* ── Calendar ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Calendar \xE2\x94\x80\xE2\x94\x80");
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    y = ha_field_row(p, y, "HA calendar entity:", settings.calendar_ha_entity, "calendar.gezin", tw, &ta_calendar_ha_entity, "calendar");
+    y += 16;
+
+    /* Save button */
+    lv_obj_t * b_save = lv_btn_create(p);
+    lv_obj_set_size(b_save, SX(240), SY(50));
+    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_radius(b_save, 8, 0);
+    lv_obj_add_event_cb(b_save, on_ha_entities_save, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bsl = lv_label_create(b_save);
+    lv_obj_set_style_text_color(bsl, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(bsl, "Save & close");
+    lv_obj_center(bsl);
 }
 
 /* ==================== Tile slots modal ====================
@@ -1997,7 +3075,7 @@ static lv_obj_t * lbl_apply_warning;
 /* Latest async-test results (set by background thread, read by ui timer). */
 static char       g_test_result_buf[200]  = "";
 static char       g_check_result_buf[200] = "";
-static char       g_ket_result_buf[256]   = "";
+static char       g_ket_result_buf[512]   = "";  /* fits the longest FAIL msg + detail */
 static volatile int g_test_pending  = 0;
 static volatile int g_check_pending = 0;
 static volatile int g_ket_pending   = 0;
@@ -2826,6 +3904,18 @@ static lv_obj_t * lbl_topics[16] = {NULL};
 static int        cb_count = 0;
 static lv_obj_t * topics_container = NULL;
 
+static void mqtt_modal_cleanup(void) {
+    ta_mqtt_host = NULL;
+    ta_mqtt_port = NULL;
+    ta_mqtt_user = NULL;
+    ta_mqtt_pass = NULL;
+    lbl_mqtt_result = NULL;
+    topics_container = NULL;
+    memset(cb_topics, 0, sizeof cb_topics);
+    memset(lbl_topics, 0, sizeof lbl_topics);
+    cb_count = 0;
+}
+
 static int topic_is_subscribed(const char * t) {
     for (int i = 0; i < settings.mqtt_topic_count; i++)
         if (!strcmp(settings.mqtt_topics[i], t)) return 1;
@@ -2919,7 +4009,7 @@ static void rebuild_topic_checkboxes(void) {
     /* Snapshot to a local array so we hold the mutex briefly. */
     char snap[16][96];
     for (int i = 0; i < n; i++)
-        snprintf(snap[i], sizeof(snap[0]), "%s", g_disc_topics[i]);
+        snprintf(snap[i], sizeof(snap[0]), "%.*s", (int)sizeof(snap[0]) - 1, g_disc_topics[i]);
     pthread_mutex_unlock(&g_disc_mtx);
 
     int y = 0;
@@ -3010,6 +4100,7 @@ static void on_mqtt_enabled_change(lv_event_t * e) {
 static void open_mqtt_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("MQTT", 760);
+    modal_cleanup_fn = mqtt_modal_cleanup;
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
@@ -3135,14 +4226,379 @@ static void open_mqtt_modal(lv_event_t * e) {
     modal_timer = lv_timer_create(modal_timer_cb, 500, NULL);
 }
 
+/* =========================== language ============================ */
+
+static void on_lang_change(lv_event_t * e) {
+    int sel = lv_dropdown_get_selected(lv_event_get_target(e));
+    settings.lang = sel;
+    settings_save();
+    ui_request_restart();
+}
+
+/* =========================== sub-page tile helper =========================== */
+
+/* Like make_tile() but on an arbitrary parent — used inside category sub-pages
+ * that push onto the screen stack. */
+#define SUB_TILE_W 485
+#define SUB_TILE_H 110
+static lv_obj_t * make_sub_tile(lv_obj_t * parent, int x, int y,
+                                const char * sym, const char * title,
+                                const char * caption, lv_event_cb_t cb) {
+    lv_obj_t * tile = lv_btn_create(parent);
+    lv_obj_set_size(tile, SX(SUB_TILE_W), SY(SUB_TILE_H));
+    lv_obj_set_pos(tile, x, y);
+    lv_obj_set_style_bg_color(tile, lv_color_hex(0x1a2a44), 0);
+    lv_obj_set_style_bg_color(tile, lv_color_hex(0x24385c), LV_STATE_PRESSED);
+    lv_obj_set_style_radius(tile, SUNI(12), 0);
+    lv_obj_set_style_pad_all(tile, 6, 0);
+    lv_obj_add_event_cb(tile, cb, LV_EVENT_CLICKED, NULL);
+
+    if (sym) {
+        lv_obj_t * s = lv_label_create(tile);
+        lv_obj_set_style_text_font(s, SF(28), 0);
+        lv_obj_set_style_text_color(s, lv_color_hex(0x9fc4e6), 0);
+        lv_label_set_text(s, sym);
+        lv_obj_align(s, LV_ALIGN_TOP_LEFT, SX(12), SY(10));
+    }
+
+    lv_obj_t * t = lv_label_create(tile);
+    lv_obj_set_style_text_font(t, SF(22), 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(t, title);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(sym ? 48 : 12), SY(10));
+
+    lv_obj_t * c = lv_label_create(tile);
+    lv_obj_set_style_text_font(c, SF(14), 0);
+    lv_obj_set_style_text_color(c, lv_color_hex(0x7d97b5), 0);
+    lv_obj_set_width(c, SX(SUB_TILE_W - 24));
+    lv_label_set_long_mode(c, LV_LABEL_LONG_DOT);
+    lv_label_set_text(c, caption);
+    lv_obj_align(c, LV_ALIGN_BOTTOM_MID, 0, SY(-8));
+
+    return tile;
+}
+
+/* =========================== Ventilation modal ============================ */
+static void open_vent_modal(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_vent_remote_create());
+}
+
+/* =========================== Update Check modal ============================ */
+static lv_obj_t * sw_update_check;
+static lv_obj_t * dd_update_channel;
+static lv_obj_t * sw_auto_update;
+static lv_obj_t * sl_update_hour, * lbl_update_hour;
+
+static void on_update_check_change(lv_event_t * e) {
+    settings.update_check_enabled =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_update_channel_change(lv_event_t * e) {
+    settings.update_channel = lv_dropdown_get_selected(lv_event_get_target(e));
+}
+static void on_auto_update_change(lv_event_t * e) {
+    settings.auto_update_enabled =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_update_hour_change(lv_event_t * e) {
+    settings.auto_update_hour = lv_slider_get_value(lv_event_get_target(e));
+    if (lbl_update_hour)
+        lv_label_set_text_fmt(lbl_update_hour, "%d:00", settings.auto_update_hour);
+}
+
+static void open_update_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Update check", 370);
+    lv_obj_t * r;
+    int y = 70;
+
+    r = panel_row(p, y, "Check for updates", NULL);
+    sw_update_check = row_switch(r, settings.update_check_enabled,
+                                 on_update_check_change);
+    y += 82;
+
+    r = panel_row(p, y, "Update channel", NULL);
+    dd_update_channel = lv_dropdown_create(p);
+    lv_obj_align(dd_update_channel, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_obj_set_width(dd_update_channel, SX(340));
+    lv_dropdown_set_options(dd_update_channel, "Stable\nBeta/Dev");
+    lv_dropdown_set_selected(dd_update_channel, settings.update_channel);
+    lv_obj_add_event_cb(dd_update_channel, on_update_channel_change,
+                        LV_EVENT_VALUE_CHANGED, NULL);
+    y += 82;
+
+    r = panel_row(p, y, "Auto-update", NULL);
+    sw_auto_update = row_switch(r, settings.auto_update_enabled,
+                                on_auto_update_change);
+    y += 82;
+
+    r = panel_row(p, y, "Auto-update hour", &lbl_update_hour);
+    lv_label_set_text_fmt(lbl_update_hour, "%d:00", settings.auto_update_hour);
+    sl_update_hour = row_slider(r, 0, 23, settings.auto_update_hour,
+                                on_update_hour_change);
+}
+
+/* =========================== Dim Content modal ============================ */
+static lv_obj_t * sw_dimc_wx;
+static lv_obj_t * sw_dimc_waste;
+static lv_obj_t * sw_dimc_bars;
+static lv_obj_t * sw_dimc_metrics;
+static lv_obj_t * sw_dimc_swap;
+static lv_obj_t * sl_dimc_lead, * lbl_dimc_lead;
+
+static void on_dimc_wx(lv_event_t * e) {
+    settings.show_dim_weather =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_dimc_waste(lv_event_t * e) {
+    settings.show_dim_waste =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_dimc_bars(lv_event_t * e) {
+    settings.show_dim_bars =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_dimc_metrics(lv_event_t * e) {
+    settings.show_dim_metrics =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_dimc_swap(lv_event_t * e) {
+    settings.dim_bars_swap =
+        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+static void on_dimc_lead(lv_event_t * e) {
+    settings.dim_waste_lead_days = lv_slider_get_value(lv_event_get_target(e));
+    if (lbl_dimc_lead)
+        lv_label_set_text_fmt(lbl_dimc_lead, "%d days",
+                              settings.dim_waste_lead_days);
+}
+
+static void open_dim_content_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Dim screen content", 460);
+    lv_obj_t * r;
+    int y = 70;
+
+    r = panel_row(p, y, "Show weather on dim screen", NULL);
+    sw_dimc_wx = row_switch(r, settings.show_dim_weather, on_dimc_wx);
+    y += 82;
+
+    r = panel_row(p, y, "Show waste pickup on dim screen", NULL);
+    sw_dimc_waste = row_switch(r, settings.show_dim_waste, on_dimc_waste);
+    y += 82;
+
+    r = panel_row(p, y, "Show usage bars on dim screen", NULL);
+    sw_dimc_bars = row_switch(r, settings.show_dim_bars, on_dimc_bars);
+    y += 82;
+
+    r = panel_row(p, y, "Show metrics (TVOC/eCO2/CH)", NULL);
+    sw_dimc_metrics = row_switch(r, settings.show_dim_metrics, on_dimc_metrics);
+    y += 82;
+
+    r = panel_row(p, y, "Bars: swap (energy left / gas right)", NULL);
+    sw_dimc_swap = row_switch(r, settings.dim_bars_swap, on_dimc_swap);
+    y += 82;
+
+    r = panel_row(p, y, "Waste lead days", &lbl_dimc_lead);
+    lv_label_set_text_fmt(lbl_dimc_lead, "%d days", settings.dim_waste_lead_days);
+    sl_dimc_lead = row_slider(r, 0, 7, settings.dim_waste_lead_days,
+                              on_dimc_lead);
+}
+
+/* =========================== Itho Ventilation modal ============================ */
+static lv_obj_t * sw_itho_vent;
+static lv_obj_t * ta_itho_vent_host;
+
+static void on_itho_vent_apply(lv_event_t * e) {
+    (void)e;
+    settings.enable_vent =
+        lv_obj_has_state(sw_itho_vent, LV_STATE_CHECKED) ? 1 : 0;
+    snprintf(settings.vent_host, sizeof(settings.vent_host),
+             "%s", lv_textarea_get_text(ta_itho_vent_host));
+    settings_save();
+}
+
+static void open_itho_vent_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Itho ventilation", 260);
+    int y = 70;
+
+    lv_obj_t * r = panel_row(p, y, "Enabled", NULL);
+    sw_itho_vent = row_switch(r, settings.enable_vent, NULL);
+    y += 82;
+
+    lv_obj_t * lbl_h = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_h, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_h, SF(22), 0);
+    lv_label_set_text(lbl_h, "Ventilation host (ip:port):");
+    lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    ta_itho_vent_host = lv_textarea_create(p);
+    lv_obj_set_size(ta_itho_vent_host, SX(380), SY(44));
+    lv_obj_align(ta_itho_vent_host, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 28));
+    lv_textarea_set_one_line(ta_itho_vent_host, true);
+    lv_textarea_set_text(ta_itho_vent_host, settings.vent_host);
+    y += 80;
+
+    lv_obj_t * btn = lv_btn_create(p);
+    lv_obj_set_size(btn, SX(200), SY(50));
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_add_event_cb(btn, on_itho_vent_apply, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bl = lv_label_create(btn);
+    lv_label_set_text(bl, "Apply");
+    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(bl);
+}
+
+/* =========================== category sub-pages ============================ */
+
+static void cat_back(lv_event_t * e) { (void)e; ui_pop(); }
+
+/* Build a category sub-page with a 2-column tile grid matching the Toon
+ * design language. Each tile: symbol, title, subtitle → dedicated modal. */
+static lv_obj_t * screen_settings_category_create(char cat) {
+    lv_obj_t * scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_add_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(scr, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_AUTO);
+
+    /* Back button */
+    lv_obj_t * btn_back = lv_btn_create(scr);
+    lv_obj_set_size(btn_back, SX(140), SY(80));
+    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
+    lv_obj_set_style_bg_color(btn_back, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_radius(btn_back, 14, 0);
+    lv_obj_set_ext_click_area(btn_back, 20);
+    lv_obj_add_event_cb(btn_back, cat_back, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * back_lbl = lv_label_create(btn_back);
+    lv_label_set_text(back_lbl, TR(I18N_BACK));
+    lv_obj_set_style_text_color(back_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(back_lbl, SF(22), 0);
+    lv_obj_center(back_lbl);
+
+    /* Title */
+    const char * cat_title;
+    switch (cat) {
+    case 'A': cat_title = TR(I18N_CLIMATE_HEATING); break;
+    case 'B': cat_title = TR(I18N_SMART_HOME);      break;
+    case 'C': cat_title = TR(I18N_DISPLAY_LAYOUT);  break;
+    case 'D': cat_title = TR(I18N_APPS_EXTENSIONS); break;
+    case 'E': cat_title = TR(I18N_SYSTEM_NETWORK);  break;
+    default:  cat_title = "?"; break;
+    }
+    lv_obj_t * title = lv_label_create(scr);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(title, SF(28), 0);
+    lv_label_set_text(title, cat_title);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(30));
+
+    /* 2-column tile grid. Left column at X=20, right at X=20+TW+GAP. */
+    #define TW SX(SUB_TILE_W)
+    #define TH SY(SUB_TILE_H)
+    #define GX(c) (SX(20) + (c) * (TW + SX(14)))
+    #define GY(r) (SY(112) + (r) * (TH + SY(10)))
+    int n = 0;
+    #define TILE(sym, tkey, dkey, cb) do { \
+        make_sub_tile(scr, GX((n)&1), GY((n)/2), sym, TR(tkey), TR(dkey), cb); n++; \
+    } while(0)
+
+    switch (cat) {
+    /* ---- A: Climate & Heating ---- */
+    case 'A':
+        TILE(LV_SYMBOL_SETTINGS, I18N_HEATING_CONFIG, I18N_HEATING_CONFIG_DESC, open_heating_modal);
+        TILE(LV_SYMBOL_CHARGE,  I18N_BOILER_ADAPTER, I18N_BOILER_ADAPTER_DESC, open_adapters);
+        TILE(LV_SYMBOL_GPS,     I18N_OT_BRIDGE,      I18N_OT_BRIDGE_DESC,      open_otbridge_modal);
+        TILE(LV_SYMBOL_LIST,    I18N_PRESETS,         I18N_PRESETS_DESC,         open_presets_modal);
+        break;
+
+    /* ---- B: Smart Home & Integrations ---- */
+    case 'B':
+        TILE(LV_SYMBOL_CHARGE,   I18N_ENERGY_SOURCES,  I18N_ENERGY_SOURCES_DESC,  open_energy_sources_modal);
+        TILE(LV_SYMBOL_HOME,     I18N_HA_DEVICES,      I18N_HA_DEVICES_DESC,      open_ha_entities_modal);
+        TILE(LV_SYMBOL_HOME,     I18N_DOMOTICZ,        I18N_DOMOTICZ_DESC,        open_domoticz);
+        TILE(LV_SYMBOL_WIFI,     I18N_MQTT_BROKER,     I18N_MQTT_BROKER_DESC,     open_mqtt_modal);
+        TILE(LV_SYMBOL_SETTINGS, I18N_ZWAVE_DEVICES,   I18N_ZWAVE_DEVICES_DESC,   open_zwave);
+        TILE(LV_SYMBOL_LIST,     I18N_ITHO_VENT,       I18N_ITHO_VENT_DESC,       open_itho_vent_modal);
+        break;
+
+    /* ---- C: Display & Layout ---- */
+    case 'C':
+        TILE(LV_SYMBOL_EYE_OPEN, I18N_DISPLAY,        I18N_DISPLAY_DESC,        open_display_modal);
+        TILE(LV_SYMBOL_HOME,     I18N_TILE_SLOTS,     I18N_TILE_SLOTS_DESC,     open_tile_slots_modal);
+        TILE(LV_SYMBOL_EDIT,     I18N_LAYOUT_EDITOR,  I18N_LAYOUT_EDITOR_DESC,  open_layout_editor);
+        TILE(LV_SYMBOL_LOOP,     I18N_AUTO_ROTATE,    I18N_AUTO_ROTATE_DESC,    open_rotate_modal);
+        TILE(LV_SYMBOL_EYE_CLOSE,I18N_CLEAN,          I18N_CLEAN_DESC,          open_clean_modal);
+        TILE(LV_SYMBOL_LIST,     I18N_DIM_CONTENT,    I18N_DIM_CONTENT_DESC,    open_dim_content_modal);
+        break;
+
+    /* ---- D: Apps & Extensions ---- */
+    case 'D':
+        TILE(LV_SYMBOL_DOWNLOAD, I18N_MARKETPLACE,     I18N_MARKETPLACE_DESC,     open_marketplace);
+        TILE(LV_SYMBOL_LIST,     I18N_CRYPTO,          I18N_CRYPTO_DESC,          open_crypto_picker);
+        TILE(LV_SYMBOL_LIST,     I18N_NEWSREADER,      I18N_NEWSREADER_DESC,      open_news_modal);
+        TILE(LV_SYMBOL_LIST,     I18N_CALENDAR,        I18N_CALENDAR_DESC,        open_calendar_modal);
+        TILE(LV_SYMBOL_TRASH,    I18N_WASTE_COLLECTION,I18N_WASTE_COLLECTION_DESC,open_waste_modal);
+        TILE(LV_SYMBOL_LIST,     I18N_WEATHER,         I18N_WEATHER_DESC,         open_weather_modal);
+        TILE(LV_SYMBOL_CHARGE,   I18N_STATISTICS,      I18N_STATISTICS_DESC,      open_stats);
+        if (settings.enable_vent)
+            TILE(LV_SYMBOL_LIST, I18N_VENTILATION,     I18N_VENTILATION_DESC,     open_vent_modal);
+        break;
+
+    /* ---- E: System & Network ---- */
+    case 'E':
+        TILE(LV_SYMBOL_WIFI,     I18N_WIFI,           I18N_WIFI_DESC,           open_wifi);
+        TILE(LV_SYMBOL_HOME,     I18N_WEB_ACCESS,     I18N_WEB_ACCESS_DESC,     open_web_modal);
+        TILE(LV_SYMBOL_OK,       I18N_PIN_CODE,       I18N_PIN_CODE_DESC,       open_pin_settings_modal);
+        TILE(LV_SYMBOL_COPY,     I18N_CLIENT_MODE,    I18N_CLIENT_MODE_DESC,    open_client_modal);
+        TILE(LV_SYMBOL_POWER,    I18N_UI_MODE,        I18N_UI_MODE_DESC,        open_uimode_modal);
+        TILE(LV_SYMBOL_LIST,     I18N_UPDATE_CHECK,   I18N_UPDATE_CHECK_DESC,   open_update_modal);
+        TILE(LV_SYMBOL_LIST,     I18N_ABOUT,          I18N_ABOUT_DESC,          open_about_modal);
+        TILE(LV_SYMBOL_REFRESH,  I18N_RESTART_UI,     I18N_RESTART_UI_DESC,     open_restart_confirm);
+
+        /* Language selector — top-right in the free area next to the title. */
+        {
+            lv_obj_t * lang_label = lv_label_create(scr);
+            lv_obj_set_style_text_color(lang_label, lv_color_hex(0xa8c4dc), 0);
+            lv_obj_set_style_text_font(lang_label, SF(20), 0);
+            lv_label_set_text(lang_label, TR(I18N_LANGUAGE));
+            lv_obj_align(lang_label, LV_ALIGN_TOP_RIGHT, SX(-200), SY(18));
+
+            lv_obj_t * dd_lang = lv_dropdown_create(scr);
+            char lang_opts[32];
+            snprintf(lang_opts, sizeof lang_opts, "%s\n%s",
+                     TR(I18N_ENGLISH), TR(I18N_DUTCH));
+            lv_dropdown_set_options(dd_lang, lang_opts);
+            lv_dropdown_set_selected(dd_lang, settings.lang);
+            lv_obj_set_width(dd_lang, SX(180));
+            lv_obj_align(dd_lang, LV_ALIGN_TOP_RIGHT, SX(-12), SY(16));
+            lv_obj_add_event_cb(dd_lang, on_lang_change,
+                               LV_EVENT_VALUE_CHANGED, NULL);
+        }
+        break;
+    }
+    #undef TILE
+    #undef GX
+    #undef GY
+    #undef TW
+    #undef TH
+
+    return scr;
+}
+
+/* Category forward decls — used by screen_settings_create below. */
+static void open_cat_a(lv_event_t * e) { (void)e; ui_push(screen_settings_category_create('A')); }
+static void open_cat_b(lv_event_t * e) { (void)e; ui_push(screen_settings_category_create('B')); }
+static void open_cat_c(lv_event_t * e) { (void)e; ui_push(screen_settings_category_create('C')); }
+static void open_cat_d(lv_event_t * e) { (void)e; ui_push(screen_settings_category_create('D')); }
+static void open_cat_e(lv_event_t * e) { (void)e; ui_push(screen_settings_category_create('E')); }
+
 lv_obj_t * screen_settings_create(void) {
     if (scr_root) return scr_root;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
-    /* Used to be SCROLLABLE-cleared. Row 3 already overflows the 600 px
-     * viewport; adding the Integrations tile pushes content further, so
-     * we enable vertical scroll and a thin scrollbar on the screen itself. */
     lv_obj_add_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(scr_root, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(scr_root, LV_SCROLLBAR_MODE_AUTO);
@@ -3156,7 +4612,7 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_set_ext_click_area(btn_back, 20);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * back_lbl = lv_label_create(btn_back);
-    lv_label_set_text(back_lbl, "< Back");
+    lv_label_set_text(back_lbl, TR(I18N_BACK));
     lv_obj_set_style_text_color(back_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(back_lbl, SF(22), 0);
     lv_obj_center(back_lbl);
@@ -3164,72 +4620,30 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_label_set_text(title, "Settings");
+    lv_label_set_text(title, TR(I18N_SETTINGS));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(30));
 
-    /* Category tiles in a compact 4-column grid. 232x104 each, so 4 rows
-     * of 4 (13 tiles) fit in ~4 rows starting below the header — the first
-     * ~3.5 rows are on-screen and the rest is a short scroll. Placement is
-     * index-driven via the GX macro so adding a tile doesn't need manual
-     * row/column arithmetic. */
-    const int COLS = 4, MX = 20, TOP = 112, GAPX = 14, GAPY = 12;
-    #define GX(i) (SX(MX + ((i) % COLS) * (SETT_TILE_W + GAPX)))
-    #define GY(i) (SY(TOP + ((i) / COLS) * (SETT_TILE_H + GAPY)))
-    int n = 0;
-    make_tile(GX(n), GY(n), &icon_wx_sun, NULL, "Display",
-              "dim, timeout, brightness", open_display_modal); n++;
-    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, "Weather",
-              "weather on dim", open_weather_modal); n++;
-    make_tile(GX(n), GY(n), &icon_trash, NULL, "Waste",
-              "pickup alerts", open_waste_modal); n++;
-    make_tile(GX(n), GY(n), &icon_flame, NULL, "Heating",
-              "offset, boiler type", open_heating_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
-              "off / proxy / wireless", open_otbridge_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "MQTT",
-              "broker + topics", open_mqtt_modal); n++;
-    make_tile(GX(n), GY(n), &icon_radiator, NULL, "Presets",
-              "scheme setpoints", open_presets_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "About",
-              "status & diagnostics", open_about_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, "Clean",
-              "30 s screen lock", open_clean_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, "Integrations",
-              "P1 / water / vent / HA", open_integrations_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, "UI mode",
-              "freetoon vs qt-gui", open_uimode_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
-              "install integrations", open_marketplace); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Crypto",
-              "kies munten", open_crypto_picker); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Tiles",
-              "assign home tiles", open_tile_slots_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, "Z-Wave",
-              "built-in devices", open_zwave); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "WiFi",
-              "scan & connect", open_wifi); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, "Adapters",
-              "meter & boiler", open_adapters); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
-              "lights & blinds", open_domoticz); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, "Client mode",
-              "mirror a master Toon", open_client_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, "Auto-rotate",
-              "cycle a tile's content", open_rotate_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Newsreader",
-              "RSS headlines ticker", open_news_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Agenda",
-              "HA + iCal events", open_calendar_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, "Indeling",
-              "tile layout editor", open_layout_editor); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, "Restart UI",
-              "reload settings", open_restart_confirm); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "Web Access",
-              "browser login", open_web_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, "PIN code",
-              "lock changes", open_pin_settings_modal); n++;
-    #undef GX
-    #undef GY
+    /* Five category tiles in a 2-column grid. 5th tile is offset so it centres
+     * visually (first column, second row sits left; it looks fine as-is). */
+    #define CW SX(485)
+    #define CH SY(110)
+    #define CX(c) (SX(20) + ((c) & 1) * (CW + SX(14)))
+    #define CY(r) (SY(112) + (r) * (CH + SY(10)))
+    int i = 0;
+    #define CTILE(sym, tkey, cb) do { \
+        make_sub_tile(scr_root, CX(i & 1), CY(i / 2), sym, TR(tkey), TR(tkey), cb); i++; \
+    } while(0)
+
+    CTILE(LV_SYMBOL_SETTINGS,  I18N_CLIMATE_HEATING, open_cat_a);
+    CTILE(LV_SYMBOL_HOME,      I18N_SMART_HOME,      open_cat_b);
+    CTILE(LV_SYMBOL_EYE_OPEN,  I18N_DISPLAY_LAYOUT,  open_cat_c);
+    CTILE(LV_SYMBOL_DOWNLOAD,  I18N_APPS_EXTENSIONS, open_cat_d);
+    CTILE(LV_SYMBOL_LIST,      I18N_SYSTEM_NETWORK,  open_cat_e);
+    #undef CTILE
+    #undef CX
+    #undef CY
+    #undef CW
+    #undef CH
 
     return scr_root;
 }

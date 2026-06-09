@@ -8,6 +8,8 @@ extern const lv_img_dsc_t icon_faucet;
 extern const lv_img_dsc_t icon_drop;
 extern const lv_img_dsc_t icon_fan;
 extern const lv_img_dsc_t icon_radiator;
+extern const lv_img_dsc_t icon_ha;        /* Home Assistant logo (home Devices button) */
+extern const lv_img_dsc_t icon_domoticz;  /* Domoticz logo (home Devices button) */
 
 extern const lv_img_dsc_t icon_wx_sun;
 extern const lv_img_dsc_t icon_wx_sun_cloud;

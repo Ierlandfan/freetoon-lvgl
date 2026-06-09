@@ -59,7 +59,7 @@ static void build_rows(void) {
         lv_obj_set_style_text_font(empty, SF(18), 0);
         lv_label_set_text(empty, settings.domoticz_host[0]
             ? "No lights/blinds returned. Check host / credentials / 'used' devices."
-            : "Set the Domoticz host on the settings page (PWA: Domoticz section).");
+            : "Set the Domoticz host on the settings page (Settings -> Domoticz).");
         g_built_count = n;
         return;
     }

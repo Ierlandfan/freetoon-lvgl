@@ -13,9 +13,16 @@
 # Device builds use main.c + the fbdev/evdev drivers; the headless `sim` builds
 # swap in sim.c (offscreen framebuffer → PPM) and drop the hardware drivers.
 ENTRY      := main.c
-LVDRV_SRC  := lv_drivers/display/fbdev.c lv_drivers/indev/evdev.c
+LVDRV_SRC  := fbdev.c lv_drivers/indev/evdev.c
 EXTRA      :=
 # (EXTRA is set per-target in the branches below; it needs BUILDDIR.)
+
+# glibc-2.21 compat (TOON1 only): the buildroot 2.38 toolchain stamps 2.34+
+# symbol versions into the binary; these wrap/downgrade them so it loads
+# against the Toon 1's glibc 2.21. Empty for toon2/sim (they don't need it).
+GLIBC_CFLAGS  :=
+GLIBC_LDFLAGS :=
+GLIBC_SRC     :=
 
 TARGET ?= toon2
 
@@ -23,18 +30,29 @@ ifeq ($(TARGET),toon1)
   CROSS      := /tmp/qt_rebuild/toon1-toolchain/bin/arm-linux-
   SYSROOT    := /tmp/qt_rebuild/toon1-toolchain/arm-buildroot-linux-gnueabi/sysroot
   SYSROOTFLAG:= --sysroot=$(SYSROOT)
-  ARCHFLAGS  := -march=armv5te -marm -mfloat-abi=soft
+  # -mcpu=arm926ej-s schedules for the exact i.MX27 core (its pipeline), which
+  # is more specific than -march=armv5te; still armv5te-compatible code. -marm
+  # (no Thumb -> full register width for pixel ops) and -mfloat-abi=soft (the
+  # 926 has no FPU) are required. See LVGL.docx research.
+  ARCHFLAGS  := -mcpu=arm926ej-s -marm -mfloat-abi=soft
   TARGET_DEF := -DTOON1
+  GLIBC_CFLAGS  := -include glibc_compat.h
+  GLIBC_LDFLAGS := -Wl,--wrap=stat -Wl,--wrap=fstat -Wl,--wrap=lstat \
+                   -Wl,--wrap=__libc_start_main \
+                   -Wl,--no-as-needed,-lpthread,--as-needed
+  GLIBC_SRC     := glibc_compat_wrap.c
   OUT        := toonui-toon1
   BUILDDIR   := ../build-toon1
-  EXTRA      := $(BUILDDIR)/fbvnc_input $(BUILDDIR)/wastefetch
+  EXTRA      := $(BUILDDIR)/fbvnc_input $(BUILDDIR)/wastefetch $(BUILDDIR)/doorbell_daemon
   WF_POST    := $(CROSS)objcopy --remove-section .note.ABI-tag $(BUILDDIR)/wastefetch && $(CROSS)strip $(BUILDDIR)/wastefetch
   # The buildroot toolchain stamps an NT_GNU_ABI_TAG of "Linux 4.1.0" into the
   # binary. The device's ld-2.21 checks that note against its running kernel
   # (2.6.36) and aborts with "FATAL: kernel too old" — so drop the note. Then
   # strip, for the Toon 1's small flash. (Symbols ARE only glibc 2.21; see
   # abi-check.)
-  POSTLINK   := $(CROSS)objcopy --remove-section .note.ABI-tag $(BUILDDIR)/$(OUT) && $(CROSS)strip $(BUILDDIR)/$(OUT)
+  POSTLINK   := $(CROSS)objcopy --remove-section .note.ABI-tag $(BUILDDIR)/$(OUT) && \
+                patchelf --add-needed libpthread.so.0 $(BUILDDIR)/$(OUT) && \
+                $(CROSS)strip $(BUILDDIR)/$(OUT)
 else ifeq ($(TARGET),toon2)
   CROSS      := /tmp/qt_rebuild/linaro/bin/arm-linux-gnueabihf-
   SYSROOT    := /tmp/qt_rebuild/linaro/arm-linux-gnueabihf/libc
@@ -84,26 +102,27 @@ BUILD_VERSION := $(shell cd ../.. && git describe --tags --always --dirty 2>/dev
 CFLAGS  := $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
            -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE $(TARGET_DEF) \
            -DBUILD_VERSION=\"$(BUILD_VERSION)\" \
-           -I. -Ilvgl -Ilv_drivers -pthread \
+           -I. -Ilvgl -Ilv_drivers -pthread $(GLIBC_CFLAGS) \
            -MMD -MP
-LDFLAGS := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm -lrt
+LDFLAGS := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm -lrt $(GLIBC_LDFLAGS)
 
-# Sources
-LVGL_SRC      := $(shell find lvgl/src -name '*.c')
-APP_SRC       := $(ENTRY) boxtalk.c ui_stack.c screen_home.c screen_thermostat.c \
+# Sources. The GIF decoder is vendored out of the submodule (gifdec_vendored.c)
+# so our no-GCT patch survives a submodule reset — exclude the submodule's copy.
+LVGL_SRC      := $(filter-out lvgl/src/extra/libs/gif/gifdec.c, $(shell find lvgl/src -name '*.c'))
+APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen_thermostat.c \
                  screen_dim.c screen_settings.c screen_schedule.c \
                  screen_stats.c screen_forecast.c screen_inbox.c \
                  screen_heater_advanced.c \
                  screen_vent_remote.c screen_vent_advanced.c \
                  screen_lights.c screen_marketplace.c screen_zwave.c screen_wifi.c \
                  screen_adapters.c screen_domoticz.c screen_calendar.c screen_layout_editor.c \
-                 screen_crypto_picker.c screen_crypto.c \
-                 stats.c airhist.c homewizard.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c \
-                 wastecollection.c ventilation.c homeassistant.c \
+                 screen_crypto_picker.c screen_crypto.c screen_ha_picker.c screen_ha_devices.c \
+                 stats.c airhist.c energy_hist.c homewizard.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c \
+                 wastecollection.c ventilation.c homeassistant.c i18n.c \
                  notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
-                 toon1_touch.c pin_modal.c \
+                 toon1_touch.c pin_modal.c video.c ui_cmd.c gifdec_vendored.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c
 ALL_SRC       := $(APP_SRC) $(LVGL_SRC) $(LVDRV_SRC)
 OBJ           := $(patsubst %.c,$(BUILDDIR)/%.o,$(ALL_SRC))
@@ -151,6 +170,16 @@ $(BUILDDIR)/fbvnc_input: fbvnc_input.c
 	$(CC) --sysroot=$(SYSROOT) -O2 -Wall -Wextra -o $@ $<
 	$(CROSS)strip $@
 
+# Standalone HA-doorbell HTTP shim (Toon 1): POST /show /hide on :8765 ->
+# /tmp/toonui.cmd -> video_open/close. No LVGL deps.
+$(BUILDDIR)/doorbell_daemon: doorbell_daemon.c $(GLIBC_SRC)
+	@mkdir -p $(dir $@)
+	$(CC) $(SYSROOTFLAG) $(ARCHFLAGS) $(TARGET_DEF) $(GLIBC_CFLAGS) -O2 -Wall -Wextra \
+	      -o $@ doorbell_daemon.c $(GLIBC_SRC) $(GLIBC_LDFLAGS)
+	$(CROSS)objcopy --remove-section .note.ABI-tag $@
+	$(if $(GLIBC_SRC),patchelf --add-needed libpthread.so.0 $@)
+	$(CROSS)strip $@
+
 # wastefetch — QuickJS host that runs the ToonSoftwareCollective provider
 # scripts (full stock-app mimic). QuickJS is vendored under quickjs/.
 QJS_OBJ := $(addprefix $(BUILDDIR)/quickjs/,quickjs.o cutils.o libregexp.o libunicode.o libbf.o)
@@ -159,7 +188,7 @@ $(BUILDDIR)/quickjs/%.o: quickjs/%.c
 	$(CC) $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -w -DCONFIG_VERSION='"2024-01-13"' -D_GNU_SOURCE -Iquickjs -c $< -o $@
 $(BUILDDIR)/wastefetch: wastefetch.c $(QJS_OBJ)
 	@mkdir -p $(dir $@)
-	$(CC) $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Iquickjs -o $@ wastefetch.c $(QJS_OBJ) -lm -lpthread
+	$(CC) $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Iquickjs -o $@ wastefetch.c $(QJS_OBJ) -lm -lpthread -latomic
 	@$(WF_POST)
 
 # Pull in header-dep files (.d) emitted by -MMD so changes to .h trigger rebuild.

@@ -82,7 +82,9 @@ static void gas_hour_update(float gas_now) {
         gas_ring_last_t = now;
     }
     if (gas_ring_count < 2) { hw_state.gas_hour_m3 = 0; return; }
+    long midnight = now - (now % 86400);
     long cutoff = now - 3600;
+    if (cutoff < midnight) cutoff = midnight;  /* daily reset — don't cross midnight */
     int oldest = (gas_ring_head - gas_ring_count + GAS_RING_N) % GAS_RING_N;
     /* newest sample that is still at/older than 1h ago; else the oldest we have */
     int ref = oldest;
@@ -96,7 +98,9 @@ static void gas_hour_update(float gas_now) {
 }
 
 static void poll_p1(void) {
-    if (!settings.enable_p1_elec || !settings.p1_elec_host[0]) { hw_state.connected_p1 = 0; return; }
+    if ((settings.energy_elec_source != ENERGY_SRC_HW_P1 &&
+         settings.energy_gas_source  != ENERGY_SRC_HW_P1) ||
+        !settings.p1_elec_host[0]) { hw_state.connected_p1 = 0; return; }
     hw_state.polled_p1 = 1;             /* a poll is being attempted */
     static char body[4096];
     if (http_get(settings.p1_elec_host, "/api/v1/data", body, sizeof(body)) != 0) {
@@ -140,7 +144,7 @@ static int   session_zero_seconds = 0;
 static float prev_total_m3 = -1.0f;
 
 static void poll_water(void) {
-    if (!settings.enable_p1_water || !settings.p1_water_host[0]) {
+    if (settings.energy_water_source != ENERGY_SRC_HW_P1 || !settings.p1_water_host[0]) {
         hw_state.connected_water = 0;
         hw_state.water_lpm = 0;
         return;
@@ -305,17 +309,20 @@ static void * hw_thread(void * arg) {
 }
 
 int homewizard_start(void) {
-    /* Skip the polling thread entirely when both halves are off — keeps
-     * "basic" installs from spawning a thread that does nothing every 2 s
-     * and from contaminating connected_* flags on the home tile. */
-    if (!settings.enable_p1_elec && !settings.enable_p1_water) {
-        fprintf(stderr, "[hw] both P1 integrations disabled — not starting poller\n");
+    /* Start the poller when any resource uses HomeWizard P1 — derived from the
+     * per-resource source selectors in settings. */
+    int need_p1 = (settings.energy_elec_source  == ENERGY_SRC_HW_P1 ||
+                   settings.energy_gas_source   == ENERGY_SRC_HW_P1 ||
+                   settings.energy_water_source == ENERGY_SRC_HW_P1);
+    if (!need_p1) {
+        fprintf(stderr, "[hw] no resource uses HomeWizard P1 — not starting poller\n");
         return 0;
     }
     pthread_t th;
     if (pthread_create(&th, NULL, hw_thread, NULL) != 0) return -1;
     pthread_detach(th);
-    fprintf(stderr, "[hw] poller started (elec=%d water=%d)\n",
-            settings.enable_p1_elec, settings.enable_p1_water);
+    fprintf(stderr, "[hw] poller started (elec_src=%d gas_src=%d water_src=%d)\n",
+            settings.energy_elec_source, settings.energy_gas_source,
+            settings.energy_water_source);
     return 0;
 }

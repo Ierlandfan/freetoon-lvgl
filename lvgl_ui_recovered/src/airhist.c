@@ -133,6 +133,7 @@ int airhist_series(int which, long window_seconds, int max_samples, stats_series
         if (ring[idx].ts < cutoff) continue;
         double v = which ? ring[idx].tvoc : ring[idx].eco2;
         out->samples[out->n] = v;
+        out->ts[out->n] = ring[idx].ts;
         struct tm tm; time_t tt = (time_t)ring[idx].ts; localtime_r(&tt, &tm);
         strftime(out->labels[out->n], sizeof out->labels[0], "%d-%m %H:%M", &tm);
         snprintf(out->year2[out->n], 3, "%02d", (tm.tm_year + 1900) % 100);
@@ -165,6 +166,7 @@ int airhist_pres_series(long window_seconds, int max_samples, stats_series_t * o
         if ((seen++ % stride) != 0) continue;
         double v = pring[idx].bar;
         out->samples[out->n] = v;
+        out->ts[out->n] = pring[idx].ts;
         struct tm tm; time_t tt = (time_t)pring[idx].ts; localtime_r(&tt, &tm);
         strftime(out->labels[out->n], sizeof out->labels[0], "%d-%m %H:%M", &tm);
         snprintf(out->year2[out->n], 3, "%02d", (tm.tm_year + 1900) % 100);

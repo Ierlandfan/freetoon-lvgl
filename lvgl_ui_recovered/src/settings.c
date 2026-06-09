@@ -16,10 +16,16 @@ settings_t settings = {
     .auto_home_seconds = 60,
     .active_brightness = 800,
     .dim_brightness    = 80,
+    .night_mode        = 0,
+    .night_source      = 1,         /* sunset->sunrise (default) */
+    .night_start       = 22 * 60,   /* 22:00 */
+    .night_end         = 7 * 60,    /* 07:00 */
+    .night_pct         = 30,        /* 30% of day brightness */
     .temp_offset_centi = 0,
     .show_dim_weather  = 1,
     .show_dim_waste    = 1,
     .show_dim_bars     = 1,
+    .show_dim_metrics  = 1,
     .dim_bars_swap     = 0,
     .dim_waste_lead_days = 3,
     .vnc_enabled       = 0,
@@ -59,10 +65,11 @@ settings_t settings = {
     .mqtt_pass           = "",
     .mqtt_topics         = {"home/packages/banner", "home/packages/state"},
     .mqtt_topic_count    = 2,
+    .mqtt_ha_reads       = 0,
+    .mqtt_ha_base        = "homeassistant",
+    .mqtt_domoticz       = 0,
     /* Integrations default OFF — see settings.h for the on-first-boot
      * auto-enable rule based on existing config files. */
-    .enable_p1_elec      = 0,
-    .enable_p1_water     = 0,
     .enable_vent         = 0,
     .enable_ha           = 0,
     .enable_domoticz     = 0,
@@ -85,10 +92,21 @@ settings_t settings = {
     .curtain_entity      = "",
     .curtain_bat_a       = "",
     .curtain_bat_b       = "",
+    .blinds_entity       = "",
+    .blinds_bat_a        = "",
+    .blinds_bat_b        = "",
     .doorbell_entity     = "",
     .doorbell_camera     = "",
     .doorbell_seconds    = 30,
     .doorbell_stream_url = "",
+    .video_enabled       = 1,
+    .video_size_pct      = 50,
+    .video_src_w         = 640,
+    .video_src_h         = 480,
+    .video_x             = -1,
+    .video_y             = -1,
+    .video_rtp           = 0,
+    .video_overlay       = 0,
     .p1_elec_host        = "",
     .p1_water_host       = "",
     .vent_host           = "",
@@ -99,7 +117,18 @@ settings_t settings = {
     .hide_offline_tiles  = 0,
     .update_check_enabled = 1,
     .update_channel       = 1,   /* beta/dev by default */
-    .energy_source       = 0,   /* meteradapter (official) by default */
+    .energy_elec_source       = ENERGY_SRC_ZWAVE, /* meteradapter (official) by default */
+    .energy_gas_source        = ENERGY_SRC_ZWAVE,
+    .energy_water_source      = ENERGY_SRC_OFF,
+    .energy_elec_ha_entity    = "",
+    .energy_elec_prod_ha_entity = "",
+    .energy_gas_ha_entity     = "",
+    .energy_water_ha_entity   = "",
+    .energy_daily_date        = "",
+    .energy_daily_kwh         = 0,
+    .energy_daily_net_kwh     = 0,
+    .energy_daily_gas_m3      = 0,
+    .energy_daily_water_m3    = 0,
 
     /* Toon 1 panel mounting orientation — TSC2007 reports Y flipped vs the
      * framebuffer on EVERY Toon 1 (not a per-device tweak). Default this
@@ -119,6 +148,8 @@ settings_t settings = {
     /* PIN off by default. */
     .pin_enabled         = 0,
     .pin_code            = "",
+
+    .lang                = 0,   /* English by default */
 };
 
 float display_indoor_temp(float raw) {
@@ -140,7 +171,8 @@ void settings_load(void) {
      * 0 after the parse loop is filled in by the migration / autodetect
      * step below — keeps existing installs from suddenly losing pollers
      * after the upgrade. */
-    int seen_p1_elec = 0, seen_p1_water = 0, seen_vent = 0, seen_ha = 0;
+    int seen_vent = 0, seen_ha = 0;
+    int seen_energy_source_old = 0;  /* 1-based: 1→old=0(meter), 2→old=1(P1) */
     int cfg_existed = 0;
 
     FILE * f = fopen(CFG_PATH, "r");
@@ -167,6 +199,11 @@ void settings_load(void) {
         else if (strcmp(k, "active_brightness") == 0) settings.active_brightness = iv;
         else if (strcmp(k, "dim_brightness")    == 0) settings.dim_brightness    = iv;
         else if (strcmp(k, "auto_brightness")   == 0) settings.auto_brightness   = iv;
+        else if (strcmp(k, "night_mode")        == 0) settings.night_mode        = iv;
+        else if (strcmp(k, "night_source")      == 0) settings.night_source      = iv;
+        else if (strcmp(k, "night_start")       == 0) settings.night_start       = iv;
+        else if (strcmp(k, "night_end")         == 0) settings.night_end         = iv;
+        else if (strcmp(k, "night_pct")         == 0) settings.night_pct         = iv;
         else if (strcmp(k, "touch_swap_xy")     == 0) settings.touch_swap_xy     = iv;
         else if (strcmp(k, "touch_invert_x")    == 0) settings.touch_invert_x    = iv;
         else if (strcmp(k, "touch_invert_y")    == 0) settings.touch_invert_y    = iv;
@@ -174,6 +211,7 @@ void settings_load(void) {
         else if (strcmp(k, "show_dim_weather")  == 0) settings.show_dim_weather  = iv;
         else if (strcmp(k, "show_dim_waste")    == 0) settings.show_dim_waste    = iv;
         else if (strcmp(k, "show_dim_bars")     == 0) settings.show_dim_bars     = iv;
+        else if (strcmp(k, "show_dim_metrics")  == 0) settings.show_dim_metrics  = iv;
         else if (strcmp(k, "dim_bars_swap")     == 0) settings.dim_bars_swap     = iv;
         else if (strcmp(k, "dim_waste_lead_days") == 0) settings.dim_waste_lead_days = iv;
         else if (strcmp(k, "waste_postcode")    == 0)
@@ -234,8 +272,12 @@ void settings_load(void) {
                 snprintf(settings.mqtt_topics[idx],
                          sizeof settings.mqtt_topics[0], "%s", v);
         }
-        else if (strcmp(k, "enable_p1_elec")  == 0) { settings.enable_p1_elec  = iv; seen_p1_elec  = 1; }
-        else if (strcmp(k, "enable_p1_water") == 0) { settings.enable_p1_water = iv; seen_p1_water = 1; }
+        else if (strcmp(k, "mqtt_ha_reads")     == 0) settings.mqtt_ha_reads = iv;
+        else if (strcmp(k, "mqtt_ha_base")      == 0)
+            snprintf(settings.mqtt_ha_base, sizeof settings.mqtt_ha_base, "%s", v);
+        else if (strcmp(k, "mqtt_domoticz")     == 0) settings.mqtt_domoticz = iv;
+        else if (strcmp(k, "enable_p1_elec")  == 0) { /* deprecated — now derived from source */ }
+        else if (strcmp(k, "enable_p1_water") == 0) { /* deprecated — now derived from source */ }
         else if (strcmp(k, "enable_vent")     == 0) { settings.enable_vent     = iv; seen_vent     = 1; }
         else if (strcmp(k, "enable_ha")       == 0) { settings.enable_ha       = iv; seen_ha       = 1; }
         else if (strcmp(k, "enable_domoticz") == 0) settings.enable_domoticz = iv;
@@ -276,9 +318,20 @@ void settings_load(void) {
         else if (strcmp(k, "curtain_entity")   == 0) snprintf(settings.curtain_entity, sizeof settings.curtain_entity, "%s", v);
         else if (strcmp(k, "curtain_bat_a")    == 0) snprintf(settings.curtain_bat_a, sizeof settings.curtain_bat_a, "%s", v);
         else if (strcmp(k, "curtain_bat_b")    == 0) snprintf(settings.curtain_bat_b, sizeof settings.curtain_bat_b, "%s", v);
+        else if (strcmp(k, "blinds_entity")    == 0) snprintf(settings.blinds_entity, sizeof settings.blinds_entity, "%s", v);
+        else if (strcmp(k, "blinds_bat_a")     == 0) snprintf(settings.blinds_bat_a, sizeof settings.blinds_bat_a, "%s", v);
+        else if (strcmp(k, "blinds_bat_b")     == 0) snprintf(settings.blinds_bat_b, sizeof settings.blinds_bat_b, "%s", v);
         else if (strcmp(k, "doorbell_entity")  == 0) snprintf(settings.doorbell_entity, sizeof settings.doorbell_entity, "%s", v);
         else if (strcmp(k, "doorbell_camera")  == 0) snprintf(settings.doorbell_camera, sizeof settings.doorbell_camera, "%s", v);
         else if (strcmp(k, "doorbell_seconds") == 0) settings.doorbell_seconds = (iv < 3 || iv > 300) ? 30 : iv;
+        else if (strcmp(k, "video_enabled")    == 0 || strcmp(k, "camera_enabled")  == 0) settings.video_enabled = (iv ? 1 : 0);
+        else if (strcmp(k, "video_size_pct")   == 0 || strcmp(k, "camera_size_pct") == 0) settings.video_size_pct = (iv < 25 || iv > 125) ? 100 : iv;
+        else if (strcmp(k, "video_src_w")      == 0 || strcmp(k, "camera_src_w")    == 0) settings.video_src_w = (iv < 64 || iv > 1920) ? 640 : iv;
+        else if (strcmp(k, "video_src_h")      == 0 || strcmp(k, "camera_src_h")    == 0) settings.video_src_h = (iv < 64 || iv > 1080) ? 480 : iv;
+        else if (strcmp(k, "video_x")          == 0 || strcmp(k, "camera_x")        == 0) settings.video_x = iv;
+        else if (strcmp(k, "video_y")          == 0 || strcmp(k, "camera_y")        == 0) settings.video_y = iv;
+        else if (strcmp(k, "video_rtp")        == 0 || strcmp(k, "camera_rtp")      == 0) settings.video_rtp = (iv < 0 || iv > 65535) ? 0 : iv;
+        else if (strcmp(k, "video_overlay")    == 0 || strcmp(k, "camera_overlay")  == 0) settings.video_overlay = (iv ? 1 : 0);
         else if (strcmp(k, "doorbell_stream_url") == 0) snprintf(settings.doorbell_stream_url, sizeof settings.doorbell_stream_url, "%s", v);
         else if (strcmp(k, "p1_elec_host")     == 0) snprintf(settings.p1_elec_host, sizeof settings.p1_elec_host, "%s", v);
         else if (strcmp(k, "p1_water_host")    == 0) snprintf(settings.p1_water_host, sizeof settings.p1_water_host, "%s", v);
@@ -289,7 +342,24 @@ void settings_load(void) {
         else if (strcmp(k, "domoticz_pass")   == 0)
             snprintf(settings.domoticz_pass, sizeof settings.domoticz_pass, "%s", v);
         else if (strcmp(k, "enable_zwave")    == 0) settings.enable_zwave = iv;
-        else if (strcmp(k, "energy_source")   == 0) settings.energy_source = iv;
+        else if (strcmp(k, "energy_source")     == 0) seen_energy_source_old = iv + 1;  /* 0→1, 1→2 (sticky) */
+        else if (strcmp(k, "energy_elec_source")  == 0) settings.energy_elec_source  = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+        else if (strcmp(k, "energy_gas_source")   == 0) settings.energy_gas_source   = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_ZWAVE : iv;
+        else if (strcmp(k, "energy_water_source") == 0) settings.energy_water_source = (iv < 0 || iv > ENERGY_SRC_MAX) ? ENERGY_SRC_OFF   : iv;
+        else if (strcmp(k, "energy_elec_ha_entity")       == 0) snprintf(settings.energy_elec_ha_entity, sizeof settings.energy_elec_ha_entity, "%s", v);
+        else if (strcmp(k, "energy_elec_prod_ha_entity")  == 0) snprintf(settings.energy_elec_prod_ha_entity, sizeof settings.energy_elec_prod_ha_entity, "%s", v);
+        else if (strcmp(k, "energy_gas_ha_entity")        == 0) snprintf(settings.energy_gas_ha_entity, sizeof settings.energy_gas_ha_entity, "%s", v);
+        else if (strcmp(k, "energy_water_ha_entity")      == 0) snprintf(settings.energy_water_ha_entity, sizeof settings.energy_water_ha_entity, "%s", v);
+        else if (strcmp(k, "energy_elec_dz_idx")       == 0) settings.energy_elec_dz_idx       = iv;
+        else if (strcmp(k, "energy_elec_prod_dz_idx")  == 0) settings.energy_elec_prod_dz_idx  = iv;
+        else if (strcmp(k, "energy_gas_dz_idx")        == 0) settings.energy_gas_dz_idx        = iv;
+        else if (strcmp(k, "energy_water_dz_idx")      == 0) settings.energy_water_dz_idx      = iv;
+        else if (strcmp(k, "energy_daily_date")        == 0)
+            snprintf(settings.energy_daily_date, sizeof settings.energy_daily_date, "%s", v);
+        else if (strcmp(k, "energy_daily_kwh")         == 0) settings.energy_daily_kwh        = (float)atof(v);
+        else if (strcmp(k, "energy_daily_net_kwh")     == 0) settings.energy_daily_net_kwh    = (float)atof(v);
+        else if (strcmp(k, "energy_daily_gas_m3")      == 0) settings.energy_daily_gas_m3     = (float)atof(v);
+        else if (strcmp(k, "energy_daily_water_m3")    == 0) settings.energy_daily_water_m3   = (float)atof(v);
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
         else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
         else if (strcmp(k, "update_check_enabled") == 0) settings.update_check_enabled = iv;
@@ -313,6 +383,7 @@ void settings_load(void) {
         else if (strcmp(k, "pin_enabled")       == 0) settings.pin_enabled = iv;
         else if (strcmp(k, "pin_code")          == 0)
             snprintf(settings.pin_code, sizeof settings.pin_code, "%s", v);
+        else if (strcmp(k, "lang")              == 0) settings.lang = (iv == 1) ? 1 : 0;
     }
     fclose(f);
 
@@ -336,14 +407,18 @@ autodetect:
      *  so this branch only runs once per install. */
     {
     int legacy = cfg_existed;
-    if (!seen_p1_elec)
-        settings.enable_p1_elec  = legacy ? 1 : file_has_content("/mnt/data/p1bridge.conf");
-    if (!seen_p1_water)
-        settings.enable_p1_water = legacy ? 1 : (settings.p1_water_host[0] != 0);
     if (!seen_vent)
         settings.enable_vent     = legacy ? 1 : file_has_content("/mnt/data/vent.conf");
     if (!seen_ha)
         settings.enable_ha       = legacy ? 1 : file_has_content("/mnt/data/ha.cfg");
+
+    /* Migrate old `energy_source` to the new per-resource fields. */
+    if (seen_energy_source_old) {
+        int old = seen_energy_source_old - 1;  /* 0=meteradapter, 1=HomeWizard P1 */
+        settings.energy_elec_source  = old ? ENERGY_SRC_HW_P1 : ENERGY_SRC_ZWAVE;
+        settings.energy_gas_source   = old ? ENERGY_SRC_HW_P1 : ENERGY_SRC_ZWAVE;
+        /* Water had no old energy_source — it was gated by enable_p1_water. */
+    }
     }
 
     /* Migration: if mqtt_pass is still empty, try to read /mnt/data/mqtt.cfg
@@ -413,7 +488,8 @@ static void sanitize_all_strings(void) {
         settings.mqtt_pass, settings.domoticz_host, settings.master_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
         settings.calendar_ics_url, settings.ha_host, settings.curtain_entity,
-        settings.curtain_bat_a, settings.curtain_bat_b, settings.doorbell_entity,
+        settings.curtain_bat_a, settings.curtain_bat_b, settings.blinds_entity,
+        settings.blinds_bat_a, settings.blinds_bat_b, settings.doorbell_entity,
         settings.doorbell_camera, settings.doorbell_stream_url, settings.vent_host,
         settings.opnsense_host, settings.domoticz_user, settings.domoticz_pass,
         settings.tile_slot_energy, settings.tile_slot_family, settings.tile_slot_vent,
@@ -503,6 +579,11 @@ void settings_save(void) {
     fprintf(f, "active_brightness=%d\n", settings.active_brightness);
     fprintf(f, "dim_brightness=%d\n",    settings.dim_brightness);
     fprintf(f, "auto_brightness=%d\n",   settings.auto_brightness);
+    fprintf(f, "night_mode=%d\n",        settings.night_mode);
+    fprintf(f, "night_source=%d\n",      settings.night_source);
+    fprintf(f, "night_start=%d\n",       settings.night_start);
+    fprintf(f, "night_end=%d\n",         settings.night_end);
+    fprintf(f, "night_pct=%d\n",         settings.night_pct);
     fprintf(f, "touch_swap_xy=%d\n",     settings.touch_swap_xy);
     fprintf(f, "touch_invert_x=%d\n",    settings.touch_invert_x);
     fprintf(f, "touch_invert_y=%d\n",    settings.touch_invert_y);
@@ -510,6 +591,7 @@ void settings_save(void) {
     fprintf(f, "show_dim_weather=%d\n",  settings.show_dim_weather);
     fprintf(f, "show_dim_waste=%d\n",    settings.show_dim_waste);
     fprintf(f, "show_dim_bars=%d\n",     settings.show_dim_bars);
+    fprintf(f, "show_dim_metrics=%d\n",  settings.show_dim_metrics);
     fprintf(f, "dim_bars_swap=%d\n",     settings.dim_bars_swap);
     fprintf(f, "dim_waste_lead_days=%d\n", settings.dim_waste_lead_days);
     fprintf(f, "waste_postcode=%s\n",      settings.waste_postcode);
@@ -537,8 +619,9 @@ void settings_save(void) {
     fprintf(f, "mqtt_topic_count=%d\n",    settings.mqtt_topic_count);
     for (int i = 0; i < settings.mqtt_topic_count && i < 8; i++)
         fprintf(f, "mqtt_topic_%d=%s\n", i, settings.mqtt_topics[i]);
-    fprintf(f, "enable_p1_elec=%d\n",  settings.enable_p1_elec);
-    fprintf(f, "enable_p1_water=%d\n", settings.enable_p1_water);
+    fprintf(f, "mqtt_ha_reads=%d\n",   settings.mqtt_ha_reads);
+    fprintf(f, "mqtt_ha_base=%s\n",    settings.mqtt_ha_base);
+    fprintf(f, "mqtt_domoticz=%d\n",   settings.mqtt_domoticz);
     fprintf(f, "enable_vent=%d\n",     settings.enable_vent);
     fprintf(f, "enable_ha=%d\n",       settings.enable_ha);
     fprintf(f, "enable_domoticz=%d\n", settings.enable_domoticz);
@@ -576,9 +659,20 @@ void settings_save(void) {
     fprintf(f, "curtain_entity=%s\n", settings.curtain_entity);
     fprintf(f, "curtain_bat_a=%s\n", settings.curtain_bat_a);
     fprintf(f, "curtain_bat_b=%s\n", settings.curtain_bat_b);
+    fprintf(f, "blinds_entity=%s\n", settings.blinds_entity);
+    fprintf(f, "blinds_bat_a=%s\n",  settings.blinds_bat_a);
+    fprintf(f, "blinds_bat_b=%s\n",  settings.blinds_bat_b);
     fprintf(f, "doorbell_entity=%s\n", settings.doorbell_entity);
     fprintf(f, "doorbell_camera=%s\n", settings.doorbell_camera);
     fprintf(f, "doorbell_seconds=%d\n", settings.doorbell_seconds);
+    fprintf(f, "video_enabled=%d\n",   settings.video_enabled);
+    fprintf(f, "video_size_pct=%d\n",  settings.video_size_pct);
+    fprintf(f, "video_src_w=%d\n",     settings.video_src_w);
+    fprintf(f, "video_src_h=%d\n",     settings.video_src_h);
+    fprintf(f, "video_x=%d\n",         settings.video_x);
+    fprintf(f, "video_y=%d\n",         settings.video_y);
+    fprintf(f, "video_rtp=%d\n",       settings.video_rtp);
+    fprintf(f, "video_overlay=%d\n",   settings.video_overlay);
     fprintf(f, "doorbell_stream_url=%s\n", settings.doorbell_stream_url);
     fprintf(f, "p1_elec_host=%s\n", settings.p1_elec_host);
     fprintf(f, "p1_water_host=%s\n", settings.p1_water_host);
@@ -587,7 +681,27 @@ void settings_save(void) {
     fprintf(f, "domoticz_user=%s\n",   settings.domoticz_user);
     fprintf(f, "domoticz_pass=%s\n",   settings.domoticz_pass);
     fprintf(f, "enable_zwave=%d\n",    settings.enable_zwave);
-    fprintf(f, "energy_source=%d\n",   settings.energy_source);
+    fprintf(f, "energy_elec_source=%d\n",   settings.energy_elec_source);
+    fprintf(f, "energy_gas_source=%d\n",    settings.energy_gas_source);
+    fprintf(f, "energy_water_source=%d\n",  settings.energy_water_source);
+    if (settings.energy_elec_ha_entity[0])
+        fprintf(f, "energy_elec_ha_entity=%s\n", settings.energy_elec_ha_entity);
+    if (settings.energy_elec_prod_ha_entity[0])
+        fprintf(f, "energy_elec_prod_ha_entity=%s\n", settings.energy_elec_prod_ha_entity);
+    if (settings.energy_gas_ha_entity[0])
+        fprintf(f, "energy_gas_ha_entity=%s\n", settings.energy_gas_ha_entity);
+    if (settings.energy_water_ha_entity[0])
+        fprintf(f, "energy_water_ha_entity=%s\n", settings.energy_water_ha_entity);
+    fprintf(f, "energy_elec_dz_idx=%d\n",       settings.energy_elec_dz_idx);
+    fprintf(f, "energy_elec_prod_dz_idx=%d\n",  settings.energy_elec_prod_dz_idx);
+    fprintf(f, "energy_gas_dz_idx=%d\n",        settings.energy_gas_dz_idx);
+    fprintf(f, "energy_water_dz_idx=%d\n",      settings.energy_water_dz_idx);
+    if (settings.energy_daily_date[0])
+        fprintf(f, "energy_daily_date=%s\n",       settings.energy_daily_date);
+    fprintf(f, "energy_daily_kwh=%.3f\n",       settings.energy_daily_kwh);
+    fprintf(f, "energy_daily_net_kwh=%.3f\n",   settings.energy_daily_net_kwh);
+    fprintf(f, "energy_daily_gas_m3=%.4f\n",    settings.energy_daily_gas_m3);
+    fprintf(f, "energy_daily_water_m3=%.4f\n",  settings.energy_daily_water_m3);
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
     fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fprintf(f, "update_check_enabled=%d\n", settings.update_check_enabled);
@@ -601,5 +715,6 @@ void settings_save(void) {
     fprintf(f, "pwa_login_pass=%s\n",    settings.pwa_login_pass);
     fprintf(f, "pin_enabled=%d\n",       settings.pin_enabled);
     fprintf(f, "pin_code=%s\n",          settings.pin_code);
+    fprintf(f, "lang=%d\n",              settings.lang);
     fclose(f);
 }

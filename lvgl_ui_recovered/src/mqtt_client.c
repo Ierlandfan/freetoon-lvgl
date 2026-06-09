@@ -162,6 +162,20 @@ static int mqtt_send_ping(int fd) {
     return sock_send_all(fd, p, 2);
 }
 
+/* PUBLISH, QoS 0 (no packet id, no ack). */
+static int mqtt_send_publish(int fd, const char * topic, const char * payload) {
+    size_t pl = payload ? strlen(payload) : 0;
+    uint8_t var[1024]; size_t o = 0;
+    o += pack_str(var + o, topic);
+    if (pl > sizeof(var) - o) pl = sizeof(var) - o;
+    if (pl) { memcpy(var + o, payload, pl); o += pl; }
+    uint8_t hdr[6]; hdr[0] = 0x30;          /* PUBLISH, QoS 0 */
+    int rl = mqtt_enc_remlen((uint32_t)o, hdr + 1);
+    if (sock_send_all(fd, hdr, 1 + rl) < 0) return -1;
+    if (sock_send_all(fd, var, o)      < 0) return -1;
+    return 0;
+}
+
 /* Read one PUBLISH (or PINGRESP) packet. Returns -1 on socket error;
  * 0 if a non-PUBLISH packet was consumed (caller continues); >0 if a
  * PUBLISH was delivered to `cb`. */
@@ -221,11 +235,29 @@ int mqtt_test_connection(const char * host, int port,
     return rc;
 }
 
+/* Public: one-shot publish (connect → PUBLISH QoS0 → disconnect) using the
+ * broker + creds from settings. Used for device control (HA command topic /
+ * domoticz/in) — infrequent, so a short connection per command is fine and
+ * still far cheaper than fork+exec curl. Returns 0 on success. */
+int mqtt_publish(const char * topic, const char * payload) {
+    if (!settings.mqtt_host[0] || !topic) return -1;
+    int port = settings.mqtt_port ? settings.mqtt_port : 1883;
+    char err[64];
+    int s = mqtt_open_sock(settings.mqtt_host, port, 5, err, sizeof err);
+    if (s < 0) return -1;
+    int rc = mqtt_send_connect(s, settings.mqtt_user, settings.mqtt_pass, err, sizeof err);
+    if (rc == 0) rc = mqtt_send_publish(s, topic, payload);
+    uint8_t dc[2] = { 0xE0, 0x00 };
+    sock_send_all(s, dc, 2);
+    close(s);
+    return rc;
+}
+
 /* ===================================================================== */
 /* Public: discover topics                                               */
 /* ===================================================================== */
 typedef struct {
-    char  seen[64][96];
+    char  seen[128][96];   /* also used for entity discovery (HA statestream) */
     int   count;
     mqtt_topic_cb cb;
     void * arg;
@@ -324,6 +356,8 @@ static int subscriber_session(void) {
         }
         fprintf(stderr, "[mqtt] subscribed: %s\n", settings.mqtt_topics[i]);
     }
+    /* Devices no longer use MQTT (HA → WebSocket, Domoticz → ws://host/json).
+     * The broker here only carries the optional packages banner/state topics. */
     /* Switch RX timeout to PING cadence so we wake to send pings + check
      * the restart flag. */
     struct timeval tv = { .tv_sec = PING_S, .tv_usec = 0 };

@@ -153,7 +153,7 @@ const char * tile_slots_local_label(int i) {
 int tile_slots_local_enabled(int i) {
     switch (i) {
         case 0: return 1;                                 /* energy — core (meteradapter/P1) */
-        case 1: return settings.enable_p1_water;
+        case 1: return settings.energy_water_source != ENERGY_SRC_OFF;
         case 2: return settings.enable_vent;
         case 3: return settings.enable_ha && settings.life360_a_entity[0] != 0;
         case 4: return 1;                                 /* air quality — core sensor */

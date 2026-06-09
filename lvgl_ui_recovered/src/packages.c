@@ -270,8 +270,10 @@ static void on_mqtt_msg(const char * topic, const unsigned char * payload,
                          size_t len, void * arg) {
     (void)arg;
     if (!topic || !payload || !len) return;
-    if (!strcmp(topic, "home/packages/banner")) on_banner_event(payload, len);
-    else if (!strcmp(topic, "home/packages/state")) on_state_map(payload, len);
+    if (!strcmp(topic, "home/packages/banner")) { on_banner_event(payload, len); return; }
+    if (!strcmp(topic, "home/packages/state"))  { on_state_map(payload, len);    return; }
+    /* Devices no longer read over MQTT: HA uses its WebSocket, Domoticz uses
+     * ws://host/json + the JSON API (see homeassistant.c / domoticz.c). */
 }
 
 void packages_start(void) {
