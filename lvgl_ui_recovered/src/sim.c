@@ -142,6 +142,12 @@ static void mock_state(void) {
 
     /* HA devices so the Devices screen renders populated (one of each type). */
     settings.enable_ha = 1;
+    /* Sim-only: SIM_BACKEND=domoticz flips the active lights backend so the
+     * backend-aware home handle/Devices routing can be verified both ways. */
+    if (getenv("SIM_BACKEND") && !strcmp(getenv("SIM_BACKEND"), "domoticz")) {
+        settings.enable_domoticz = 1;
+        settings.enable_ha = 0;
+    }
     ha_state.connected = 1;
     struct { int type; const char * ent; const char * name; int on; int bri; int pos; int pin; } d[] = {
         { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 0 },
