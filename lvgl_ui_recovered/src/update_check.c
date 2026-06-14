@@ -33,7 +33,7 @@
  * could run past the timeout on the Toon's slow link and fail the whole check.
  * 10 newest is more than enough to find the highest semver even when GitHub's
  * created_at order is scrambled by a re-created older release. */
-#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=10"
+#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=5"
 #define RELEASES_API_STABLE "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases/latest"
 
 /* Lightweight connectivity probe used to tell "the GitHub API itself is
@@ -152,7 +152,7 @@ void update_check_now(void) {
     /* GitHub's /releases/latest payload runs ~8-12 KB once asset metadata
      * is in there; bump the buffer to 32 KB so curl doesn't EPIPE when we
      * close the read pipe before it's finished writing. */
-    static char body[32768];
+    static char body[262144];   /* 256 KB: GitHub release listings with many assets run ~30 KB each */
     body[0] = 0;
     const char * api = settings.update_channel == 0
                        ? RELEASES_API_STABLE : RELEASES_API_BETA;

@@ -32,6 +32,12 @@ int http_fetch(const char * url, char * out, size_t out_max) {
     }
     out[got] = 0;
     int rc = pclose(fp);
+    /* A response larger than the buffer fills it and we stop reading; curl then
+     * hits SIGPIPE on the now-closed pipe and exits non-zero. The prefix we DID
+     * read is still usable (e.g. the newest release's tag_name sits near the top
+     * of a /releases listing), so treat a full buffer as success regardless of
+     * curl's exit code — otherwise a big payload silently fails the whole fetch. */
+    if (got >= out_max - 1) return 0;
     return (rc == 0 && got > 0) ? 0 : -1;
 }
 
@@ -68,5 +74,11 @@ int http_fetch_cookies(const char * url, const char * jar, char * out, size_t ou
     }
     out[got] = 0;
     int rc = pclose(fp);
+    /* A response larger than the buffer fills it and we stop reading; curl then
+     * hits SIGPIPE on the now-closed pipe and exits non-zero. The prefix we DID
+     * read is still usable (e.g. the newest release's tag_name sits near the top
+     * of a /releases listing), so treat a full buffer as success regardless of
+     * curl's exit code — otherwise a big payload silently fails the whole fetch. */
+    if (got >= out_max - 1) return 0;
     return (rc == 0 && got > 0) ? 0 : -1;
 }
