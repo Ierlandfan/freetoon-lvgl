@@ -94,6 +94,10 @@ static void mock_state(void) {
      * (PROG_MANUAL) yet activeState still names the value-matching preset, so we
      * can verify no preset/program highlight leaks through in manual mode. */
     if (getenv("SIM_MANUAL")) { toon_state.program_state = 0; toon_state.active_state = 0; }
+    /* Render an EXACT live device state (verify against real happ data):
+     * SIM_PS=<programState> SIM_AS=<activeState>. */
+    if (getenv("SIM_PS")) toon_state.program_state = atoi(getenv("SIM_PS"));
+    if (getenv("SIM_AS")) toon_state.active_state  = atoi(getenv("SIM_AS"));
 
     weather_state.connected   = 1;
     weather_state.current_temp = 22.6f;

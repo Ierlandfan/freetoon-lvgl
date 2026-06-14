@@ -1458,14 +1458,18 @@ static void refresh_cb(lv_timer_t * t) {
     if (lbl_t_program)
         lv_label_set_text(lbl_t_program, "Program");
 
-    /* Preset row: white border on activeState's preset — always (stock). */
+    /* Preset row: white border on activeState's preset — always (stock). The
+     * whole row is DIMMED in Manual (freetoon choice, not stock) to signal the
+     * presets aren't driving the setpoint right now; full opacity on program. */
     {
         int hi = (toon_state.active_state >= 0 && toon_state.active_state <= 3)
                      ? toon_state.active_state : -1;
+        lv_opa_t row_opa = on_program ? LV_OPA_COVER : LV_OPA_40;
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
             lv_obj_set_style_border_width(tile_btn_preset[i],
                                           (i == hi) ? 2 : 0, 0);
+            lv_obj_set_style_opa(tile_btn_preset[i], row_opa, 0);
         }
     }
 
