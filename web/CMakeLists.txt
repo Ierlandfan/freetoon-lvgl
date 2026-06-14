@@ -64,6 +64,10 @@ list(REMOVE_ITEM FT_SOURCES
     ${FREETOON}/toon1_touch.c   # Toon-1 evdev touch (linux/input.h); active only
                                 # under -DTOON1, and the WASM uses SDL input —
                                 # called only by main.c/bootpick.c (also excluded)
+    ${FREETOON}/fbdev.c         # /dev/fb0 + linux/fb.h (Toon framebuffer driver)
+    ${FREETOON}/video.c         # Toon-1 i.MX27 VPU pipeline (depends on fbdev cutout)
+    ${FREETOON}/doorbell_daemon.c  # standalone daemon, own main()
+    ${FREETOON}/glibc_compat_wrap.c # Toon-1 glibc-2.21 --wrap shim (linker-wrap only)
 )
 
 # ---- LVGL ---------------------------------------------------------------------
