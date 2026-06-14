@@ -24,7 +24,13 @@
  *====================*/
 
 /*Color depth: 1 (1 byte per pixel), 8 (RGB332), 16 (RGB565), 32 (ARGB8888)*/
-#define LV_COLOR_DEPTH 32
+/* Toon 1 (i.MX27) renders at 16bpp so the LCDC foreground plane (fb1) used
+ * for the live-video overlay matches fb0; Toon 2 stays 32bpp. */
+#ifdef TOON1
+#  define LV_COLOR_DEPTH 16
+#else
+#  define LV_COLOR_DEPTH 32
+#endif
 
 /*Swap the 2 bytes of RGB565 color. Useful if the display has an 8-bit interface (e.g. SPI)*/
 #define LV_COLOR_16_SWAP 0
@@ -71,14 +77,21 @@
 #define LV_MEM_BUF_MAX_NUM 16
 
 /*Use the standard `memcpy` and `memset` instead of LVGL's own functions. (Might or might not be faster).*/
-#define LV_MEMCPY_MEMSET_STD 0
+/* glibc's ARM memcpy/memset are hand-tuned; faster than LVGL's generic ones
+ * for the blend/fill inner loops on the i.MX27 (no NEON, slow CPU). */
+#define LV_MEMCPY_MEMSET_STD 1
 
 /*====================
    HAL SETTINGS
  *====================*/
 
 /*Default display refresh period. LVG will redraw changed areas with this period time*/
-#define LV_DISP_DEF_REFR_PERIOD 30      /*[ms]*/
+/* 30ms -> 20ms took scrolling from 33 to a stable 50 FPS. 16ms gave no further
+ * gain (the renderer is work-limited at ~20ms/frame, so 60 FPS isn't reachable
+ * without cutting draw cost), so 20ms is the sweet spot. Idle is unaffected
+ * (no dirty area -> no redraw). Going below ~16.6ms (60Hz) can't help anyway —
+ * the panel won't show more. */
+#define LV_DISP_DEF_REFR_PERIOD 20      /*[ms]*/
 
 /*Input device read period in milliseconds*/
 #define LV_INDEV_DEF_READ_PERIOD 30     /*[ms]*/

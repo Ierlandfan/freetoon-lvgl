@@ -129,7 +129,12 @@ static char THERMD_UUID[96]   = "qb-000000000000-0000000000:happ_thermstat";
 
 static void bt_init_dev_uuids(void) {
     char hn[64] = {0};
-    if (gethostname(hn, sizeof hn - 1) == 0 && strncmp(hn, "qb-", 3) == 0)
+    /* Accept both "qb-..." (Toon 2 / nxt) and "eneco-..." (Toon 1 / qb2)
+     * hostnames as the BoxTalk UUID prefix -- without the eneco- case a
+     * Toon 1 keeps the dummy serial and every subscription (incl. the
+     * indoor-temperature dataset) silently fails. */
+    if (gethostname(hn, sizeof hn - 1) == 0 &&
+        (strncmp(hn, "qb-", 3) == 0 || strncmp(hn, "eneco-", 6) == 0))
         snprintf(dev_base, sizeof dev_base, "%s", hn);
     snprintf(OUR_UUID,     sizeof OUR_UUID,     "%s:toonui",      dev_base);
     snprintf(ZWAVE_UUID,   sizeof ZWAVE_UUID,   "%s:hdrv_zwave",  dev_base);

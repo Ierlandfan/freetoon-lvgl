@@ -72,8 +72,12 @@ static const layout_tile_t DEFAULTS[] = {
     { LT_FAMILY,        0,   9,  2,  3, 2, 1, -1 },
     { LT_WATER,         0,   9,  4,  3, 2, 1, -1 },
     { LT_THERMOSTAT,    0,   0,  0,  7, 6, 1, -1 },
-    { LT_NEWS_TICKER,   0,   0,  6, 12, 1, 1, -1 },
-    { LT_FORECAST,      0,   0,  7, 12, 1, 1, -1 },
+    /* Ticker overlays the thermostat's bottom row (row 5); the forecast is a
+     * single-row bar across the bottom (row 6). The home-screen forecast
+     * scaler shrinks its 5 day-columns to fit one row, so it no longer needs
+     * the old 2-row height. */
+    { LT_NEWS_TICKER,   0,   0,  5,  7, 1, 1, -1 },
+    { LT_FORECAST,      0,   0,  6, 12, 1, 1, -1 },
     /* news-summary + calendar are NOT preplaced (the grid is full) — add them
      * on demand via the editor's "+ Tegel" button, which drops them in a free
      * cell. */
@@ -311,8 +315,10 @@ int layout_reflow_push(layout_t * L, int moved) {
 void layout_type_min(int type, int * min_w, int * min_h) {
     /* {min_w, min_h} in grid cells. Height is the meaningful constraint: data
      * tiles that stack several rows of info need >=3 rows, so they can't be
-     * dropped into a 2-row "Half"/"Breed" tile; ticker/forecast are single-line
-     * strips. Tweak freely — purely a UI guard, not persisted. */
+     * dropped into a 2-row "Half"/"Breed" tile; ticker is a single-line strip;
+     * the forecast renders fine as a single-row bar (the home-screen forecast
+     * scaler shrinks its text to fit), so min_h=1. Tweak freely — purely a UI
+     * guard, not persisted. */
     int w = 2, h = 2;
     switch (type) {
         case LT_THERMOSTAT:   w = 5; h = 4; break;

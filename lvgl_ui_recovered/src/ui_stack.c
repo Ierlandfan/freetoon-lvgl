@@ -13,10 +13,24 @@
 #include "backlight.h"
 #include "boxtalk.h"
 #include <stdio.h>
+#include <unistd.h>
 
 #define STACK_MAX 8
 static lv_obj_t * stack[STACK_MAX];
 static int sp = 0;
+
+/* Request a clean UI restart. Drops a marker so ui_launcher.sh's crash-loop
+ * guard doesn't mistake this intentional _exit(0) for a crash (3 fast exits
+ * in 120 s otherwise force the qt-gui fallback — which bit the layout editor's
+ * Save/preset/restart round-trips). Then flush + exit; init respawns the
+ * launcher, which re-launches toonui with the freshly saved cfg/layout. */
+#define UI_RESTART_MARKER "/var/volatile/tmp/toonui_restart"
+void ui_request_restart(void) {
+    FILE * f = fopen(UI_RESTART_MARKER, "w");
+    if (f) fclose(f);
+    fflush(NULL);
+    _exit(0);
+}
 
 static uint32_t last_activity_ms = 0;
 static int      is_dimmed = 0;

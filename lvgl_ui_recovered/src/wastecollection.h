@@ -16,6 +16,7 @@ typedef struct {
 
 typedef struct {
     volatile int connected;
+    volatile int wake_fetch;   /* set to 1 to trigger an immediate re-fetch */
     char         bag_id[24];
     waste_item_t items[WASTE_TYPES];
 } waste_state_t;

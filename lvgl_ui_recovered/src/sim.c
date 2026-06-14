@@ -15,6 +15,7 @@
 #include "display.h"
 #include "screens.h"
 #include "settings.h"
+#include "homeassistant.h"
 #include "layout.h"
 #include "boxtalk.h"
 #include "weather.h"
@@ -41,7 +42,19 @@ static void dump_ppm(const char * path) {
     if (!f) { perror("ppm"); return; }
     fprintf(f, "P6\n%d %d\n255\n", DISP_HOR, DISP_VER);
     for (int i = 0; i < DISP_HOR * DISP_VER; i++) {
+#if LV_COLOR_DEPTH == 16
+        /* RGB565: channels are 5/6/5-bit. Scale up to full 8-bit (replicate
+           the high bits into the low ones) so the PPM isn't a dark cast of
+           the real RGB565 device output. */
+        unsigned r5 = fb[i].ch.red, g6 = fb[i].ch.green, b5 = fb[i].ch.blue;
+        unsigned char rgb[3] = {
+            (unsigned char)((r5 << 3) | (r5 >> 2)),
+            (unsigned char)((g6 << 2) | (g6 >> 4)),
+            (unsigned char)((b5 << 3) | (b5 >> 2)),
+        };
+#else
         unsigned char rgb[3] = { fb[i].ch.red, fb[i].ch.green, fb[i].ch.blue };
+#endif
         fwrite(rgb, 1, 3, f);
     }
     fclose(f);
@@ -126,6 +139,29 @@ static void mock_state(void) {
         snprintf(waste_state.items[i].label, sizeof waste_state.items[i].label, "%s", w[i].lbl);
         snprintf(waste_state.items[i].date,  sizeof waste_state.items[i].date,  "%s", w[i].date);
     }
+
+    /* HA devices so the Devices screen renders populated (one of each type). */
+    settings.enable_ha = 1;
+    ha_state.connected = 1;
+    struct { int type; const char * ent; const char * name; int on; int bri; int pos; int pin; } d[] = {
+        { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 0 },
+        { HADEV_LIGHT,  "light.keuken",      "Keuken",      0,  -1, -1, 0 },
+        { HADEV_COVER,  "cover.gordijnen",   "Gordijnen",   0,  -1, 60, 1 },
+        { HADEV_SWITCH, "switch.tuinpomp",   "Tuinpomp",    1,  -1, -1, 0 },
+        { HADEV_SCRIPT, "script.avondmodus", "Avondmodus",  0,  -1, -1, 0 },
+        { HADEV_SCENE,  "scene.film",        "Filmavond",   0,  -1, -1, 0 },
+    };
+    ha_device_count = (int)(sizeof(d)/sizeof(d[0]));
+    for (int i = 0; i < ha_device_count; i++) {
+        ha_device_t * D = &ha_devices[i];
+        memset((void *)D, 0, sizeof *D);
+        D->type = d[i].type;
+        snprintf(D->entity_id, sizeof D->entity_id, "%s", d[i].ent);
+        snprintf(D->name, sizeof D->name, "%s", d[i].name);
+        D->available = 1; D->on = d[i].on; D->brightness = d[i].bri;
+        D->position = d[i].pos; D->pin_home = d[i].pin;
+        if (d[i].type == HADEV_COVER) snprintf(D->state, sizeof D->state, "%s", d[i].pos > 0 ? "open" : "closed");
+    }
 }
 
 typedef lv_obj_t * (*create_fn)(void);
@@ -146,6 +182,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "wifi",        screen_wifi_create },
     { "adapters",    screen_adapters_create },
     { "domoticz",    screen_domoticz_create },
+    { "ha_devices",  screen_ha_devices_create },
     { "layout",      screen_layout_editor_create },
     { "crypto_pick", screen_crypto_picker_create },
     { "crypto",      screen_crypto_create },

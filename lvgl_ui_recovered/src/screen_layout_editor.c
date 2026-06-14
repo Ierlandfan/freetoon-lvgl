@@ -536,7 +536,7 @@ static void on_reset(lv_event_t * e) {
     settings.custom_layout_enabled = 0;           /* home → built-in hardcoded layout */
     settings_save();
     fprintf(stderr, "[layout] reset to default — restarting UI\n");
-    _exit(0);                                      /* ui_launcher.sh respawns; home is clean */
+    ui_request_restart();                          /* ui_launcher.sh respawns; home is clean */
 }
 
 /* ---- preset manager ("Indelingen") ------------------------------------ */
@@ -650,7 +650,7 @@ static void on_preset_apply(lv_event_t * e) {
     settings_save();
     fprintf(stderr, "[layout] preset '%s' set as home — restarting UI\n",
             name[0] ? name : "(standaard)");
-    _exit(0);                          /* ui_launcher.sh respawns; home loads this preset */
+    ui_request_restart();              /* ui_launcher.sh respawns; home loads this preset */
 }
 static void on_preset_delete(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
@@ -808,7 +808,7 @@ static void on_save(lv_event_t * e) {
      * the "Restart UI" tile uses; the new layout is read on boot. */
     fprintf(stderr, "[layout] saved preset '%s' — restarting UI to apply\n",
             settings.active_layout[0] ? settings.active_layout : "(standaard)");
-    _exit(0);
+    ui_request_restart();
 }
 
 static lv_obj_t * tb_btn(lv_obj_t * bar, int x, int w, const char * txt,

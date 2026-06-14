@@ -35,6 +35,12 @@ typedef struct {
     volatile int   doorbell_seq;
     volatile int   doorbell_frame;
     volatile int   doorbell_live;
+    /* Blinds — second cover entity (settings.blinds_entity). Same shape as
+     * the curtain fields above. */
+    volatile int   blinds_pos;        /* 0..100 */
+    volatile int   blinds_is_closed;  /* 0/1 */
+    volatile int   blinds_battery;    /* % — min of the two child sensors */
+    char           blinds_state[16];  /* "open" / "closed" / "opening" / "closing" / "unknown" */
 } ha_state_t;
 
 /* Where poll_doorbell() writes the fetched JPEG (LVGL stdio drive 'S'). */
@@ -61,6 +67,56 @@ typedef struct {
 extern ha_light_t ha_lights[HA_LIGHT_COUNT];
 extern int        ha_light_count;
 
+/* ---- Unified dynamic device list ---------------------------------------
+ * A single user-managed list of HA entities of mixed kinds, loaded from
+ * /mnt/data/ha_devices.conf ("type|entity_id|Name|pin" per line). Replaces
+ * the old fixed cover slots: covers, lights, switches, scripts and scenes
+ * all live here. State for light/cover/switch is polled in ha_thread;
+ * script/scene are stateless (a Run button). The Devices screen renders the
+ * list; pin==1 devices also appear as quick-tiles on the home screen. */
+enum { HADEV_LIGHT = 0, HADEV_COVER, HADEV_SWITCH, HADEV_SCRIPT, HADEV_SCENE };
+
+typedef struct {
+    int          type;           /* HADEV_* */
+    char         entity_id[64];  /* "light.bank_lamp" / "cover.blind" / … */
+    char         name[32];       /* display name */
+    int          pin_home;       /* 0/1 — also show as a home quick-tile */
+    /* live state (light/switch use on+brightness; cover uses position+state) */
+    volatile int available;      /* 0 if HA says unavailable / unreachable */
+    volatile int on;             /* 0/1 (light/switch) */
+    volatile int brightness;     /* 0..255, -1 if not reported (light) */
+    volatile int position;       /* 0..100 (cover) */
+    char         state[16];      /* raw HA state ("open"/"closing"/…) (cover) */
+} ha_device_t;
+
+#define HA_DEVICE_MAX 32
+extern ha_device_t ha_devices[HA_DEVICE_MAX];
+extern int         ha_device_count;
+
+/* "light"/"cover"/"switch"/"script"/"scene" <-> HADEV_*. */
+const char * hadev_type_str(int type);
+int          hadev_type_from_str(const char * s);
+
+/* (Re)load the device list from ha_devices.conf (migrating the legacy
+ * ha_lights.conf + curtain/blinds slots on first run). Safe to call from the
+ * settings UI after an edit; the poller picks up the new list on its next
+ * pass. */
+void ha_devices_load(void);
+/* Persist the current ha_devices[] back to ha_devices.conf. */
+void ha_devices_save(void);
+
+/* Device control (async, fire-and-forget). `type` selects the HA domain. */
+void ha_device_toggle_async(int type, const char * entity_id);      /* light/switch */
+void ha_device_cover_async(const char * entity_id, const char * cmd); /* "open"/"stop"/"close" */
+void ha_device_run_async(int type, const char * entity_id);          /* script/scene */
+
+/* List editing for the settings device manager (each persists ha_devices.conf).
+ * ha_device_add returns the new index, or -1 if rejected (list full / unsafe
+ * entity id). */
+int  ha_device_add(int type, const char * entity_id, const char * name, int pin);
+void ha_device_remove(int idx);
+void ha_device_set_pin(int idx, int pin);
+
 /* Start the poller (background thread, ~10s loop). Returns 0 on success. */
 int ha_start(void);
 
@@ -74,10 +130,28 @@ void ha_curtain_stop_async(void);
 void ha_light_toggle_async(const char * entity_id);
 void ha_lights_all_on_async(void);
 void ha_lights_all_off_async(void);
+void ha_light_set_brightness_async(const char * entity_id, int brightness_pct);
+
+/* Cover position setter (generic — works for curtains and blinds). */
+void ha_cover_set_position_async(const char * entity_id, int position_pct);
+void ha_cover_stop_async(const char * entity_id);
 
 /* GET /api/calendars/<entity>?start=&end= (Bearer auth) → HA event-array JSON
  * into `out`. Returns 0 on success. Used by calendar.c. */
 int ha_fetch_calendar(const char * entity, const char * start_iso,
                       const char * end_iso, char * out, size_t out_max);
+
+/* Entity discovery — GET /api/states and return all entities whose entity_id
+ * starts with `domain_prefix` (e.g. "cover", "light", "sensor"). Fills out[]
+ * up to max entries. *count is set to the number written. Returns 0 on success,
+ * -1 on failure (HA unreachable, no token, etc.). */
+#define HA_DISCOVERED_MAX 128
+typedef struct {
+    char entity_id[64];
+    char friendly_name[64];
+} ha_discovered_t;
+
+int ha_discover_entities(const char * domain_prefix,
+                          ha_discovered_t * out, int * count, int max);
 
 #endif
