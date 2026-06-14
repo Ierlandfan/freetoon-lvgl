@@ -98,8 +98,11 @@ const char* program_label(void) {
     if (temp_override_active && temp_override_origin >= 0 &&
                                 temp_override_origin <= 3)
         origin = temp_override_origin;
+    /* activeState IS the live preset (Comfort/Home/Sleep/Away); program_state is
+     * the schedule MODE index and stays ~0, so reading it here made the dim
+     * screen always say "Comfort". Match the home-tile highlight: use active_state. */
     int preset_idx = (toon_state.active_state >= 0)
-                         ? toon_state.program_state : origin;
+                         ? toon_state.active_state : origin;
     if (preset_idx < 0) return "Manual";
     switch (preset_idx) {
         case 0: return "Comfort";
