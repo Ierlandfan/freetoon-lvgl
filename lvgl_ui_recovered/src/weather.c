@@ -48,10 +48,33 @@ static int js_str(const char * begin, const char * end, const char * key,
         if (*e == '\\' && e + 1 < end) e++;
         e++;
     }
-    size_t len = (size_t)(e - p);
-    if (len >= outsz) len = outsz - 1;
-    memcpy(out, p, len);
-    out[len] = 0;
+    /* Decode the JSON string escapes while copying. Buienradar escapes URLs as
+     * "https:\/\/…RadarMapNL?w=500&h=512" — copied raw, the literal \/ and
+     * & make curl reject the radar/icon URL ("radar fetch failed"). */
+    size_t o = 0;
+    for (const char * q = p; q < e && o < outsz - 1; q++) {
+        if (*q == '\\' && q + 1 < e) {
+            char c = q[1];
+            if (c == '/' || c == '"' || c == '\\') { out[o++] = c; q++; }
+            else if (c == 'n' || c == 't' || c == 'r') { out[o++] = ' '; q++; }
+            else if (c == 'u' && q + 5 < e) {
+                unsigned v = 0; int ok = 1;
+                for (int k = 2; k <= 5; k++) {
+                    char h = q[k]; v <<= 4;
+                    if      (h >= '0' && h <= '9') v |= (unsigned)(h - '0');
+                    else if (h >= 'a' && h <= 'f') v |= (unsigned)(h - 'a' + 10);
+                    else if (h >= 'A' && h <= 'F') v |= (unsigned)(h - 'A' + 10);
+                    else { ok = 0; break; }
+                }
+                if (ok && v && v < 0x80) { out[o++] = (char)v; q += 5; }
+                else                     { out[o++] = *q; }   /* non-ASCII \uXXXX: leave as-is */
+            }
+            else { out[o++] = *q; }       /* unknown escape: keep the backslash */
+        } else {
+            out[o++] = *q;
+        }
+    }
+    out[o] = 0;
     return 1;
 }
 
