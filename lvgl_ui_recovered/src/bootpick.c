@@ -9,6 +9,7 @@
  */
 #include "bootpick.h"
 #include "display.h"
+#include "i18n.h"
 #include "settings.h"
 #include "lvgl/lvgl.h"
 #include "lv_drivers/display/fbdev.h"
@@ -114,9 +115,10 @@ static void tick_countdown(lv_timer_t * t) {
     if (bp_lbl_countdown) {
         const char * which = (bp_default_choice == CHOICE_FREETOON)
                                  ? "freetoon"
-                                 : "stock qt-gui";
+                                 : tr("stock qt-gui", "stock qt-gui");
         lv_label_set_text_fmt(bp_lbl_countdown,
-            "Booting %s in %d s — tap to choose",
+            tr("%s start over %d s — tik om te kiezen",
+               "Booting %s in %d s — tap to choose"),
             which, bp_remaining_seconds);
     }
 }
@@ -169,7 +171,7 @@ int bootpick_run(void) {
         lv_obj_t * msg = lv_label_create(scr);
         lv_obj_set_style_text_font(msg, SF(28), 0);
         lv_obj_set_style_text_color(msg, lv_color_hex(0xffffff), 0);
-        lv_label_set_text(msg, LV_SYMBOL_REFRESH "  UI restarting");
+        lv_label_set_text(msg, tr(LV_SYMBOL_REFRESH "  UI herstart", LV_SYMBOL_REFRESH "  UI restarting"));
         lv_obj_center(msg);
         for (int i = 0; i < 300; i++) {     /* ~1.5 s so it actually shows */
             lv_timer_handler();
@@ -203,7 +205,7 @@ int bootpick_run(void) {
     lv_obj_t * title = lv_label_create(scr);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(title, "Choose UI");
+    lv_label_set_text(title, tr("Kies UI", "Choose UI"));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 50);
 
     bp_lbl_countdown = lv_label_create(scr);
@@ -215,9 +217,10 @@ int bootpick_run(void) {
     {
         const char * which = (bp_default_choice == CHOICE_FREETOON)
                                  ? "freetoon"
-                                 : "stock qt-gui";
+                                 : tr("stock qt-gui", "stock qt-gui");
         lv_label_set_text_fmt(bp_lbl_countdown,
-            "Booting %s in %d s — tap to choose",
+            tr("%s start over %d s — tik om te kiezen",
+               "Booting %s in %d s — tap to choose"),
             which, bp_remaining_seconds);
     }
 
@@ -237,7 +240,7 @@ int bootpick_run(void) {
         lv_obj_t * s = lv_label_create(bp_btn_freetoon);
         lv_obj_set_style_text_font(s, SF(18), 0);
         lv_obj_set_style_text_color(s, lv_color_hex(0x9ec4e6), 0);
-        lv_label_set_text(s, "Custom LVGL UI");
+        lv_label_set_text(s, tr("Eigen LVGL UI", "Custom LVGL UI"));
         lv_obj_align(s, LV_ALIGN_CENTER, 0, 22);
     }
 
@@ -251,12 +254,12 @@ int bootpick_run(void) {
         lv_obj_t * l = lv_label_create(bp_btn_qtgui);
         lv_obj_set_style_text_font(l, SF(28), 0);
         lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-        lv_label_set_text(l, "Stock qt-gui");
+        lv_label_set_text(l, tr("Stock qt-gui", "Stock qt-gui"));
         lv_obj_align(l, LV_ALIGN_CENTER, 0, -24);
         lv_obj_t * s = lv_label_create(bp_btn_qtgui);
         lv_obj_set_style_text_font(s, SF(18), 0);
         lv_obj_set_style_text_color(s, lv_color_hex(0xddc296), 0);
-        lv_label_set_text(s, "Original Eneco UI");
+        lv_label_set_text(s, tr("Originele Eneco UI", "Original Eneco UI"));
         lv_obj_align(s, LV_ALIGN_CENTER, 0, 22);
     }
     apply_button_highlight();

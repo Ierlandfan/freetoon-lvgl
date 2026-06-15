@@ -11,6 +11,7 @@
  */
 #include "screens.h"
 #include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
+#include "i18n.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,11 +40,11 @@ static int sel_index(const char * id) {
 
 static void update_picked_label(void) {
     char buf[256]; int o = 0;
-    o += snprintf(buf + o, sizeof buf - o, "Gekozen %d/%d: ", sel_n, MAX_PICK);
+    o += snprintf(buf + o, sizeof buf - o, tr("Gekozen %d/%d: ", "Selected %d/%d: "), sel_n, MAX_PICK);
     for (int i = 0; i < sel_n && o < (int)sizeof buf - 8; i++)
         o += snprintf(buf + o, sizeof buf - o, "%s%s%s",
-                      i ? ", " : "", sel_sym[i], i == 0 ? " (tegel)" : "");
-    if (sel_n == 0) snprintf(buf, sizeof buf, "Gekozen 0/%d — tik op een munt", MAX_PICK);
+                      i ? ", " : "", sel_sym[i], i == 0 ? tr(" (tegel)", " (tile)") : "");
+    if (sel_n == 0) snprintf(buf, sizeof buf, tr("Gekozen 0/%d — tik op een munt", "Selected 0/%d — tap a coin"), MAX_PICK);
     lv_label_set_text(lbl_picked, buf);
 }
 
@@ -60,11 +61,13 @@ static void refilter(void) {
     const char * q = lv_textarea_get_text(ta_search);
     char ql[64]; lc(q, ql, sizeof ql);
     if (!ql[0]) {
-        lv_obj_t * b = lv_list_add_text(lst_results, "Typ om te zoeken (naam of symbool)…");
+        lv_obj_t * b = lv_list_add_text(lst_results, tr("Typ om te zoeken (naam of symbool)…",
+                                                        "Type to search (name or symbol)…"));
         (void)b; return;
     }
     FILE * f = fopen(COINS_TSV, "r");
-    if (!f) { lv_list_add_text(lst_results, "coins.tsv ontbreekt — crypto-integratie nog niet geinstalleerd?"); return; }
+    if (!f) { lv_list_add_text(lst_results, tr("coins.tsv ontbreekt — crypto-integratie nog niet geinstalleerd?",
+                                               "coins.tsv missing — crypto integration not installed yet?")); return; }
     char line[256]; int shown = 0;
     while (fgets(line, sizeof line, f) && shown < MAX_RESULTS) {
         char * nl = strchr(line, '\n'); if (nl) *nl = 0;
@@ -89,8 +92,9 @@ static void refilter(void) {
         shown++;
     }
     fclose(f);
-    if (shown == 0) lv_list_add_text(lst_results, "Geen munten gevonden");
-    else if (shown >= MAX_RESULTS) lv_list_add_text(lst_results, "… verfijn de zoekopdracht voor meer");
+    if (shown == 0) lv_list_add_text(lst_results, tr("Geen munten gevonden", "No coins found"));
+    else if (shown >= MAX_RESULTS) lv_list_add_text(lst_results, tr("… verfijn de zoekopdracht voor meer",
+                                                                     "… refine the search for more"));
 }
 
 static void on_pick(lv_event_t * e) {
@@ -183,23 +187,24 @@ lv_obj_t * screen_crypto_picker_create(void) {
 
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
-    lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, LV_SYMBOL_LEFT " Terug");
+    lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * save = lv_btn_create(scr_root);
     lv_obj_align(save, LV_ALIGN_TOP_RIGHT, SX(-8), SY(8));
-    lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, LV_SYMBOL_SAVE " Opslaan");
+    lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, tr(LV_SYMBOL_SAVE " Opslaan", LV_SYMBOL_SAVE " Save"));
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_font(title, SF(22), 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(title, "Crypto munten");
+    lv_label_set_text(title, tr("Crypto munten", "Crypto coins"));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, SY(14));
 
     ta_search = lv_textarea_create(scr_root);
     lv_textarea_set_one_line(ta_search, true);
-    lv_textarea_set_placeholder_text(ta_search, "Zoek munt (bv. bitcoin, eth, solana)…");
+    lv_textarea_set_placeholder_text(ta_search, tr("Zoek munt (bv. bitcoin, eth, solana)…",
+                                                   "Search coin (e.g. bitcoin, eth, solana)…"));
     lv_obj_set_width(ta_search, LV_PCT(70));
     lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, SY(64));
     lv_obj_add_event_cb(ta_search, on_search_changed, LV_EVENT_VALUE_CHANGED, NULL);

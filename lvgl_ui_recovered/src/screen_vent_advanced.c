@@ -10,6 +10,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "ventilation.h"
 #include <stdio.h>
 #include <string.h>
@@ -78,8 +79,10 @@ static void on_modal_save(lv_event_t * e) {
     }
     if (modal_err_lbl) {
         const char * msg = (rc == -2)
-            ? "Write rejected: settings API is disabled in Itho-Wifi addon"
-            : "Save failed (HTTP / parse error)";
+            ? tr("Schrijven geweigerd: instellingen-API uit in Itho-Wifi addon",
+                 "Write rejected: settings API is disabled in Itho-Wifi addon")
+            : tr("Opslaan mislukt (HTTP / parsefout)",
+                 "Save failed (HTTP / parse error)");
         lv_label_set_text(modal_err_lbl, msg);
         lv_obj_set_style_text_color(modal_err_lbl,
                                     lv_color_hex(0xff8866), 0);
@@ -127,7 +130,7 @@ static void open_edit_modal(int idx) {
     lv_obj_t * range = lv_label_create(box);
     lv_obj_set_style_text_font(range, SF(14), 0);
     lv_obj_set_style_text_color(range, lv_color_hex(0x88aabb), 0);
-    lv_label_set_text_fmt(range, "range %d .. %d",
+    lv_label_set_text_fmt(range, tr("bereik %d .. %d", "range %d .. %d"),
                           vent_settings[idx].minimum,
                           vent_settings[idx].maximum);
     lv_obj_align(range, LV_ALIGN_CENTER, 0, SY(-40));
@@ -176,7 +179,7 @@ static void open_edit_modal(int idx) {
     lv_obj_t * cl = lv_label_create(cancel);
     lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(cl, SF(18), 0);
-    lv_label_set_text(cl, "Cancel");
+    lv_label_set_text(cl, tr("Annuleren", "Cancel"));
     lv_obj_center(cl);
 
     lv_obj_t * save = lv_btn_create(box);
@@ -187,7 +190,7 @@ static void open_edit_modal(int idx) {
     lv_obj_t * sl = lv_label_create(save);
     lv_obj_set_style_text_color(sl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(sl, SF(18), 0);
-    lv_label_set_text(sl, "Save");
+    lv_label_set_text(sl, tr("Opslaan", "Save"));
     lv_obj_center(sl);
 }
 
@@ -209,14 +212,17 @@ static void refresh_rows_cb(lv_timer_t * t) {
                 lv_label_set_text(row_label_lbl[i],
                                   vent_settings[i].label);
         } else if (vent_settings[i].loaded == -1) {
-            lv_label_set_text(row_value_lbl[i], "err");
+            lv_label_set_text(row_value_lbl[i], tr("fout", "err"));
         }
     }
     if (lbl_status) {
         if (loaded == VENT_SETTING_COUNT)
-            lv_label_set_text(lbl_status, "all settings loaded - tap to edit");
+            lv_label_set_text(lbl_status,
+                tr("alle instellingen geladen - tik om te wijzigen",
+                   "all settings loaded - tap to edit"));
         else
-            lv_label_set_text_fmt(lbl_status, "loading %d/%d ...",
+            lv_label_set_text_fmt(lbl_status,
+                                  tr("laden %d/%d ...", "loading %d/%d ..."),
                                   loaded, VENT_SETTING_COUNT);
     }
 }
@@ -247,7 +253,7 @@ static void build_rows(void) {
         lv_obj_set_style_text_color(row_label_lbl[i], lv_color_hex(0xeeeeee), 0);
         lv_obj_set_width(row_label_lbl[i], SX(780));
         lv_label_set_long_mode(row_label_lbl[i], LV_LABEL_LONG_CLIP);
-        lv_label_set_text(row_label_lbl[i], "(loading)");
+        lv_label_set_text(row_label_lbl[i], tr("(laden)", "(loading)"));
         lv_obj_align(row_label_lbl[i], LV_ALIGN_LEFT_MID, SX(50), 0);
         lv_obj_add_flag(row_label_lbl[i], LV_OBJ_FLAG_EVENT_BUBBLE);
 
@@ -269,7 +275,7 @@ lv_obj_t * screen_vent_advanced_create(void) {
     lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(hdr, SF(28), 0);
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, SX(20), SY(14));
-    lv_label_set_text(hdr, "Ventilation - Settings");
+    lv_label_set_text(hdr, tr("Ventilatie - Instellingen", "Ventilation - Settings"));
 
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, SX(100), SY(44));
@@ -279,13 +285,13 @@ lv_obj_t * screen_vent_advanced_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(bl, SF(18), 0);
-    lv_label_set_text(bl, "Back");
+    lv_label_set_text(bl, tr("Terug", "Back"));
     lv_obj_center(bl);
 
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_font(lbl_status, SF(14), 0);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(0x888888), 0);
-    lv_label_set_text(lbl_status, "loading...");
+    lv_label_set_text(lbl_status, tr("laden...", "loading..."));
     lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(20), SY(56));
 
     list_col = lv_obj_create(scr_root);

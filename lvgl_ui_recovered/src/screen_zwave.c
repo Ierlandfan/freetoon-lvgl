@@ -19,6 +19,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "settings.h"
 #include "boxtalk.h"
 #include <stdio.h>
@@ -131,7 +132,7 @@ static void on_switch_toggled(lv_event_t * e) {
     lv_obj_t * sw = lv_event_get_target(e);
     int want = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
     boxtalk_zwave_basic_set(d->uuid, want);
-    snprintf(g_status, sizeof g_status, "%s -> %s", d->name, want ? "on" : "off");
+    snprintf(g_status, sizeof g_status, "%s -> %s", d->name, want ? tr("aan", "on") : tr("uit", "off"));
     g_poll_ticks = 0;   /* refresh soon */
 }
 
@@ -159,7 +160,7 @@ static void on_rename_save(lv_event_t * e) {
     }
     clean[o] = 0;
     boxtalk_zwave_set_name(g_rename_uuid, clean);
-    snprintf(g_status, sizeof g_status, "Renamed to %s", clean);
+    snprintf(g_status, sizeof g_status, tr("Hernoemd naar %s", "Renamed to %s"), clean);
     g_poll_ticks = 0;
     rename_close();
 }
@@ -186,7 +187,7 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(22), 0);
-    lv_label_set_text(t, "Rename device");
+    lv_label_set_text(t, tr("Apparaat hernoemen", "Rename device"));
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(8), SY(6));
 
     g_rename_ta = lv_textarea_create(card);
@@ -205,7 +206,7 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
     lv_obj_set_style_bg_color(save, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(save, on_rename_save, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, "Save");
+    lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, tr("Opslaan", "Save"));
     lv_obj_center(sl);
 
     lv_obj_t * cancel = lv_btn_create(card);
@@ -213,7 +214,7 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
     lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(cancel, on_rename_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, "Cancel");
+    lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, tr("Annuleer", "Cancel"));
     lv_obj_center(cl);
 }
 
@@ -222,9 +223,10 @@ static void on_include(lv_event_t * e) {
     if (g_exc_active) { boxtalk_zwave_exclude(0); g_exc_active = 0; }
     g_inc_active = !g_inc_active;
     boxtalk_zwave_include(g_inc_active);
-    snprintf(g_status, sizeof g_status, g_inc_active
-        ? "Inclusion active - trigger pairing on the device (auto-stops in 60 s)."
-        : "Inclusion stopped.");
+    snprintf(g_status, sizeof g_status, "%s", g_inc_active
+        ? tr("Toevoegen actief - start koppelen op het apparaat (stopt vanzelf na 60 s).",
+             "Inclusion active - trigger pairing on the device (auto-stops in 60 s).")
+        : tr("Toevoegen gestopt.", "Inclusion stopped."));
     g_poll_ticks = 0;
 }
 static void on_exclude(lv_event_t * e) {
@@ -232,15 +234,16 @@ static void on_exclude(lv_event_t * e) {
     if (g_inc_active) { boxtalk_zwave_include(0); g_inc_active = 0; }
     g_exc_active = !g_exc_active;
     boxtalk_zwave_exclude(g_exc_active);
-    snprintf(g_status, sizeof g_status, g_exc_active
-        ? "Removal active - trigger exclusion on the device (auto-stops in 30 s)."
-        : "Removal stopped.");
+    snprintf(g_status, sizeof g_status, "%s", g_exc_active
+        ? tr("Verwijderen actief - start ontkoppelen op het apparaat (stopt vanzelf na 30 s).",
+             "Removal active - trigger exclusion on the device (auto-stops in 30 s).")
+        : tr("Verwijderen gestopt.", "Removal stopped."));
     g_poll_ticks = 0;
 }
 static void on_heal(lv_event_t * e) {
     (void)e;
     boxtalk_zwave_heal();
-    snprintf(g_status, sizeof g_status, "Heal requested - routing update runs in the background.");
+    snprintf(g_status, sizeof g_status, "%s", tr("Herstel aangevraagd - routering wordt op de achtergrond bijgewerkt.", "Heal requested - routing update runs in the background."));
 }
 
 static void on_enable_toggled(lv_event_t * e) {
@@ -252,8 +255,9 @@ static void on_enable_toggled(lv_event_t * e) {
         if (g_exc_active) boxtalk_zwave_exclude(0);
         g_inc_active = g_exc_active = 0;
     }
-    snprintf(g_status, sizeof g_status, settings.enable_zwave
-        ? "Control enabled." : "Enable control to manage devices.");
+    snprintf(g_status, sizeof g_status, "%s", settings.enable_zwave
+        ? tr("Bediening ingeschakeld.", "Control enabled.")
+        : tr("Schakel bediening in om apparaten te beheren.", "Enable control to manage devices."));
 }
 
 /* ===================================================================== */
@@ -267,8 +271,10 @@ static void build_rows(void) {
         lv_obj_set_style_text_color(empty, lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(empty, SF(18), 0);
         lv_label_set_text(empty,
-            "No Z-Wave devices paired.\n"
-            "Tap \"Add device\" and trigger inclusion on the device.");
+            tr("Geen Z-Wave apparaten gekoppeld.\n"
+               "Tik op \"Apparaat toevoegen\" en start koppelen op het apparaat.",
+               "No Z-Wave devices paired.\n"
+               "Tap \"Add device\" and trigger inclusion on the device."));
         return;
     }
 
@@ -291,7 +297,7 @@ static void build_rows(void) {
         lv_obj_t * sub = lv_label_create(row);
         lv_obj_set_style_text_font(sub, SF(14), 0);
         lv_obj_set_style_text_color(sub, lv_color_hex(COL_TEXT_DIM), 0);
-        lv_label_set_text_fmt(sub, "%s   node %d", d->type, d->node_id);
+        lv_label_set_text_fmt(sub, tr("%s   node %d", "%s   node %d"), d->type, d->node_id);
         lv_obj_align(sub, LV_ALIGN_TOP_LEFT, SX(4), SY(34));
 
         int x = -4;
@@ -308,7 +314,7 @@ static void build_rows(void) {
             lv_obj_align(ren, LV_ALIGN_RIGHT_MID, SX(x), 0);
             lv_obj_set_style_bg_color(ren, lv_color_hex(0x2a4060), 0);
             lv_obj_add_event_cb(ren, on_row_rename, LV_EVENT_CLICKED, d);
-            lv_obj_t * rl = lv_label_create(ren); lv_label_set_text(rl, "Rename");
+            lv_obj_t * rl = lv_label_create(ren); lv_label_set_text(rl, tr("Hernoem", "Rename"));
             lv_obj_center(rl);
         }
     }
@@ -322,8 +328,8 @@ static void refresh_cb(lv_timer_t * t) {
         zwave_response_ready = 0;
         build_rows();
         if (lbl_ctrl)
-            lv_label_set_text_fmt(lbl_ctrl, "%d device%s",
-                g_dev_count, g_dev_count == 1 ? "" : "s");
+            lv_label_set_text_fmt(lbl_ctrl, "%d %s", g_dev_count,
+                g_dev_count == 1 ? tr("apparaat", "device") : tr("apparaten", "devices"));
     }
 
     /* Periodically ask for the device list (every ~3 s, faster right after an
@@ -338,8 +344,10 @@ static void refresh_cb(lv_timer_t * t) {
     /* Status + control-gated widgets. */
     if (lbl_status)
         lv_label_set_text(lbl_status, g_status[0] ? g_status :
-            (settings.enable_zwave ? "Control enabled. Add, remove or toggle devices."
-                                   : "Enable control to manage devices."));
+            (settings.enable_zwave ? tr("Bediening ingeschakeld. Apparaten toevoegen, verwijderen of schakelen.",
+                                        "Control enabled. Add, remove or toggle devices.")
+                                   : tr("Schakel bediening in om apparaten te beheren.",
+                                        "Enable control to manage devices.")));
     if (sw_enable) {
         if (settings.enable_zwave) lv_obj_add_state(sw_enable, LV_STATE_CHECKED);
         else                       lv_obj_clear_state(sw_enable, LV_STATE_CHECKED);
@@ -348,8 +356,8 @@ static void refresh_cb(lv_timer_t * t) {
         if (settings.enable_zwave) lv_obj_clear_flag(bar_actions, LV_OBJ_FLAG_HIDDEN);
         else                       lv_obj_add_flag(bar_actions, LV_OBJ_FLAG_HIDDEN);
     }
-    if (btn_inc_lbl) lv_label_set_text(btn_inc_lbl, g_inc_active ? "Stop add" : "+ Add device");
-    if (btn_exc_lbl) lv_label_set_text(btn_exc_lbl, g_exc_active ? "Stop remove" : "- Remove");
+    if (btn_inc_lbl) lv_label_set_text(btn_inc_lbl, g_inc_active ? tr("Stop toevoegen", "Stop add") : tr("+ Apparaat toevoegen", "+ Add device"));
+    if (btn_exc_lbl) lv_label_set_text(btn_exc_lbl, g_exc_active ? tr("Stop verwijderen", "Stop remove") : tr("- Verwijderen", "- Remove"));
 }
 
 /* ===================================================================== */
@@ -412,7 +420,7 @@ lv_obj_t * screen_zwave_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_label_set_text(bl, "< Back");
+    lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
@@ -424,13 +432,13 @@ lv_obj_t * screen_zwave_create(void) {
     lbl_ctrl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_ctrl, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_ctrl, SF(14), 0);
-    lv_label_set_text(lbl_ctrl, "querying...");
+    lv_label_set_text(lbl_ctrl, tr("opvragen...", "querying..."));
     lv_obj_align(lbl_ctrl, LV_ALIGN_TOP_LEFT, SX(300), SY(34));
 
     lv_obj_t * en_lbl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(en_lbl, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(en_lbl, SF(18), 0);
-    lv_label_set_text(en_lbl, "Enable control");
+    lv_label_set_text(en_lbl, tr("Bediening aan", "Enable control"));
     lv_obj_align(en_lbl, LV_ALIGN_TOP_RIGHT, SX(-90), SY(24));
 
     sw_enable = lv_switch_create(scr_root);
@@ -445,9 +453,9 @@ lv_obj_t * screen_zwave_create(void) {
     lv_obj_set_style_border_width(bar_actions, 0, 0);
     lv_obj_set_style_pad_all(bar_actions, 0, 0);
     lv_obj_clear_flag(bar_actions, LV_OBJ_FLAG_SCROLLABLE);
-    mk_action_btn(bar_actions, "+ Add device", COL_OK,   on_include, 0,   &btn_inc_lbl);
-    mk_action_btn(bar_actions, "- Remove",     COL_WARN, on_exclude, 224, &btn_exc_lbl);
-    mk_action_btn(bar_actions, "Heal network", 0x2a4060, on_heal,    448, NULL);
+    mk_action_btn(bar_actions, tr("+ Apparaat toevoegen", "+ Add device"), COL_OK,   on_include, 0,   &btn_inc_lbl);
+    mk_action_btn(bar_actions, tr("- Verwijderen", "- Remove"),     COL_WARN, on_exclude, 224, &btn_exc_lbl);
+    mk_action_btn(bar_actions, tr("Netwerk herstellen", "Heal network"), 0x2a4060, on_heal,    448, NULL);
     if (!settings.enable_zwave) lv_obj_add_flag(bar_actions, LV_OBJ_FLAG_HIDDEN);
 
     lbl_status = lv_label_create(scr_root);
@@ -456,7 +464,8 @@ lv_obj_t * screen_zwave_create(void) {
     lv_obj_set_width(lbl_status, SX(980));
     lv_label_set_long_mode(lbl_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_status,
-        settings.enable_zwave ? "Control enabled." : "Enable control to manage devices.");
+        settings.enable_zwave ? tr("Bediening ingeschakeld.", "Control enabled.")
+                              : tr("Schakel bediening in om apparaten te beheren.", "Enable control to manage devices."));
     lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(22), SY(152));
 
     list_box = lv_obj_create(scr_root);

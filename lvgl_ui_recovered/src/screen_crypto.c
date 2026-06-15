@@ -10,6 +10,7 @@
  */
 #include "screens.h"
 #include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
+#include "i18n.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +35,15 @@ static int  cur_coin = 0;
 static int  cur_tf = 1;   /* default 7d */
 
 static const char * const TF_DAYS[5]  = { "1", "7", "30", "365", "max" };
-static const char * const TF_LABEL[5] = { "24u", "7d", "30d", "1j", "max" };
+/* TF_LABEL is populated at runtime so the timeframe chips follow the language. */
+static const char * TF_LABEL[5];
+static void init_tf_labels(void) {
+    TF_LABEL[0] = tr("24u", "24h");
+    TF_LABEL[1] = tr("7d", "7d");
+    TF_LABEL[2] = tr("30d", "30d");
+    TF_LABEL[3] = tr("1j", "1y");
+    TF_LABEL[4] = tr("max", "max");
+}
 
 /* compact price like the tile: 62.9k / 1.23M / 0.42 */
 static void fmt_price(double v, char * out, size_t osz) {
@@ -82,7 +91,8 @@ static void rebuild_chart(void) {
 
     char ttl[96], hi[32], lo[32], lc[32];
     if (n == 0) {
-        lv_label_set_text_fmt(lbl_title, "%s — geen data (nog aan het ophalen…)", coin_sym[cur_coin]);
+        lv_label_set_text_fmt(lbl_title, tr("%s — geen data (nog aan het ophalen…)",
+                                            "%s — no data (still fetching…)"), coin_sym[cur_coin]);
         lv_label_set_text(lbl_hi, ""); lv_label_set_text(lbl_lo, "");
         lv_chart_set_point_count(chart, 1);
         cs->y_points[0] = 0; lv_chart_refresh(chart);
@@ -92,8 +102,8 @@ static void rebuild_chart(void) {
     snprintf(ttl, sizeof ttl, "%s   EUR %s   (%s)", coin_sym[cur_coin], lc, TF_LABEL[cur_tf]);
     lv_label_set_text(lbl_title, ttl);
     fmt_price(mx, hi, sizeof hi); fmt_price(mn, lo, sizeof lo);
-    lv_label_set_text_fmt(lbl_hi, "hoog %s", hi);
-    lv_label_set_text_fmt(lbl_lo, "laag %s", lo);
+    lv_label_set_text_fmt(lbl_hi, tr("hoog %s", "high %s"), hi);
+    lv_label_set_text_fmt(lbl_lo, tr("laag %s", "low %s"), lo);
 
     /* Scale into 0..1000 of the (min..max) band so any price magnitude fits. */
     double span = (mx - mn); if (span < 1e-9) span = 1;
@@ -132,13 +142,14 @@ static lv_obj_t * chip(lv_obj_t * parent, const char * txt, lv_event_cb_t cb, in
 }
 
 lv_obj_t * screen_crypto_create(void) {
+    init_tf_labels();
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x101418), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
-    lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, LV_SYMBOL_LEFT " Terug");
+    lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     lbl_title = lv_label_create(scr_root);
@@ -176,7 +187,8 @@ lv_obj_t * screen_crypto_create(void) {
     lv_label_set_text(lbl_lo, "");
     lv_obj_align_to(lbl_lo, chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
 
-    if (coin_n == 0) lv_label_set_text(lbl_title, "Geen munten gekozen — Instellingen → Crypto");
+    if (coin_n == 0) lv_label_set_text(lbl_title, tr("Geen munten gekozen — Instellingen → Crypto",
+                                                     "No coins selected — Settings → Crypto"));
     else rebuild_chart();
     return scr_root;
 }

@@ -7,6 +7,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "settings.h"
 #include "domoticz.h"
 #include <stdio.h>
@@ -58,8 +59,10 @@ static void build_rows(void) {
         lv_obj_set_style_text_color(empty, lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(empty, SF(18), 0);
         lv_label_set_text(empty, settings.domoticz_host[0]
-            ? "No lights/blinds returned. Check host / credentials / 'used' devices."
-            : "Set the Domoticz host on the settings page (PWA: Domoticz section).");
+            ? tr("Geen lampen/schermen ontvangen. Controleer host / inloggegevens / 'used' apparaten.",
+                 "No lights/blinds returned. Check host / credentials / 'used' devices.")
+            : tr("Stel de Domoticz-host in op de instellingenpagina (PWA: Domoticz-sectie).",
+                 "Set the Domoticz host on the settings page (PWA: Domoticz section)."));
         g_built_count = n;
         return;
     }
@@ -80,18 +83,18 @@ static void build_rows(void) {
         lv_obj_align(nm, LV_ALIGN_LEFT_MID, SX(4), 0);
 
         if (d->kind == DZ_BLIND) {
-            mk_btn(row, "Close", 0x6e3a3a, on_blind_close, d->idx, SX(120)); /* rightmost */
+            mk_btn(row, tr("Dicht", "Close"), 0x6e3a3a, on_blind_close, d->idx, SX(120)); /* rightmost */
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-4), 0);
-            mk_btn(row, "Stop", 0x2a4060, on_blind_stop, d->idx, SX(110));
+            mk_btn(row, tr("Stop", "Stop"), 0x2a4060, on_blind_stop, d->idx, SX(110));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-132), 0);
-            mk_btn(row, "Open", COL_ON, on_blind_open, d->idx, SX(120));
+            mk_btn(row, tr("Open", "Open"), COL_ON, on_blind_open, d->idx, SX(120));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-250), 0);
         } else {
             char st[24];
             if (d->kind == DZ_DIMMER && d->on && d->level >= 0)
                 snprintf(st, sizeof st, "%d%%", d->level);
             else
-                snprintf(st, sizeof st, "%s", d->on ? "ON" : "OFF");
+                snprintf(st, sizeof st, "%s", d->on ? tr("AAN", "ON") : tr("UIT", "OFF"));
             lv_obj_t * b = mk_btn(row, st, d->on ? COL_ON : COL_OFF, on_toggle, d->idx, SX(150));
             lv_obj_align(b, LV_ALIGN_RIGHT_MID, SX(-4), 0);
         }
@@ -103,12 +106,14 @@ static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lbl_status) {
         if (!settings.enable_domoticz)
-            lv_label_set_text(lbl_status, "Domoticz disabled - enable it on the settings page.");
+            lv_label_set_text(lbl_status, tr("Domoticz uitgeschakeld - schakel het in op de instellingenpagina.",
+                                             "Domoticz disabled - enable it on the settings page."));
         else if (domoticz_state.connected)
-            lv_label_set_text_fmt(lbl_status, "Connected - %d device%s",
-                                  domoticz_state.count, domoticz_state.count == 1 ? "" : "s");
+            lv_label_set_text_fmt(lbl_status, tr("Verbonden - %d apparaat%s", "Connected - %d device%s"),
+                                  domoticz_state.count, domoticz_state.count == 1 ? "" : tr("en", "s"));
         else
-            lv_label_set_text(lbl_status, "Not connected - check host / credentials.");
+            lv_label_set_text(lbl_status, tr("Niet verbonden - controleer host / inloggegevens.",
+                                             "Not connected - check host / credentials."));
     }
     /* Rebuild rows when the device count changes; otherwise repaint state. */
     if (domoticz_state.count != g_built_count) {
@@ -123,7 +128,7 @@ static void refresh_cb(lv_timer_t * t) {
             lv_obj_t * bl = lv_obj_get_child(b, 0);
             char st[24];
             if (d->kind == DZ_DIMMER && d->on && d->level >= 0) snprintf(st, sizeof st, "%d%%", d->level);
-            else snprintf(st, sizeof st, "%s", d->on ? "ON" : "OFF");
+            else snprintf(st, sizeof st, "%s", d->on ? tr("AAN", "ON") : tr("UIT", "OFF"));
             lv_label_set_text(bl, st);
         }
     }
@@ -159,7 +164,7 @@ lv_obj_t * screen_domoticz_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_label_set_text(bl, "< Back"); lv_obj_center(bl);
+    lv_label_set_text(bl, tr("< Terug", "< Back")); lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);

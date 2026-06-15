@@ -11,6 +11,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "homeassistant.h"
 #include "icons.h"
 #include "settings.h"
@@ -145,9 +146,9 @@ static void build_dev_row(int i) {
         lv_obj_t * c = make_card(86);
         card_name(c, D->name, LV_ALIGN_TOP_LEFT, 4, 2);
         R->lbl_state = mk_state(c, LV_ALIGN_TOP_LEFT, 4, 26);
-        mk_btn(c, "Open",  0x2e6e3a, 58, 30, LV_ALIGN_TOP_RIGHT, -126, 2, on_cover_open,  i);
-        mk_btn(c, "Stop",  0x6a5424, 58, 30, LV_ALIGN_TOP_RIGHT,  -64, 2, on_cover_stop,  i);
-        mk_btn(c, "Close", 0x6e3a3a, 58, 30, LV_ALIGN_TOP_RIGHT,   -2, 2, on_cover_close, i);
+        mk_btn(c, tr("Open", "Open"),  0x2e6e3a, 58, 30, LV_ALIGN_TOP_RIGHT, -126, 2, on_cover_open,  i);
+        mk_btn(c, tr("Stop", "Stop"),  0x6a5424, 58, 30, LV_ALIGN_TOP_RIGHT,  -64, 2, on_cover_stop,  i);
+        mk_btn(c, tr("Dicht", "Close"), 0x6e3a3a, 58, 30, LV_ALIGN_TOP_RIGHT,   -2, 2, on_cover_close, i);
         R->slider = mk_slider(c, COL_ACCENT, on_cover_pos, i);
         break;
     }
@@ -155,7 +156,7 @@ static void build_dev_row(int i) {
         lv_obj_t * c = make_card(84);
         card_name(c, D->name, LV_ALIGN_TOP_LEFT, 4, 2);
         R->lbl_state = mk_state(c, LV_ALIGN_TOP_LEFT, 4, 26);
-        R->btn = mk_btn(c, "Off", COL_OFF, 64, 32, LV_ALIGN_TOP_RIGHT, -2, 2, on_toggle, i);
+        R->btn = mk_btn(c, tr("Uit", "Off"), COL_OFF, 64, 32, LV_ALIGN_TOP_RIGHT, -2, 2, on_toggle, i);
         R->btn_lbl = lv_obj_get_child(R->btn, 0);
         R->slider = mk_slider(c, COL_ON, on_bright, i);
         break;
@@ -164,14 +165,14 @@ static void build_dev_row(int i) {
         lv_obj_t * c = make_card(56);
         card_name(c, D->name, LV_ALIGN_LEFT_MID, 4, -8);
         R->lbl_state = mk_state(c, LV_ALIGN_LEFT_MID, 4, 12);
-        R->btn = mk_btn(c, "Off", COL_OFF, 64, 36, LV_ALIGN_RIGHT_MID, -2, 0, on_toggle, i);
+        R->btn = mk_btn(c, tr("Uit", "Off"), COL_OFF, 64, 36, LV_ALIGN_RIGHT_MID, -2, 0, on_toggle, i);
         R->btn_lbl = lv_obj_get_child(R->btn, 0);
         break;
     }
     default: {   /* HADEV_SCRIPT / HADEV_SCENE — stateless Run button */
         lv_obj_t * c = make_card(56);
         card_name(c, D->name, LV_ALIGN_LEFT_MID, 4, 0);
-        R->btn = mk_btn(c, D->type == HADEV_SCENE ? "Activate" : "Run",
+        R->btn = mk_btn(c, D->type == HADEV_SCENE ? tr("Activeer", "Activate") : tr("Start", "Run"),
                         0x2e5e8a, 96, 38, LV_ALIGN_RIGHT_MID, -2, 0, on_run, i);
         break;
     }
@@ -200,15 +201,17 @@ static void rebuild_rows(void) {
     if (!show) {
         lv_label_set_text(empty_hint,
             settings.enable_ha
-                ? "No devices yet.\nAdd lights, covers, switches or scripts in\nSettings  >  Devices."
-                : "Home Assistant is disabled.\nEnable it in Settings  >  Integrations.");
+                ? tr("Nog geen apparaten.\nVoeg lampen, schermen, schakelaars of scripts toe in\nInstellingen  >  Apparaten.",
+                     "No devices yet.\nAdd lights, covers, switches or scripts in\nSettings  >  Devices.")
+                : tr("Home Assistant is uitgeschakeld.\nSchakel het in bij Instellingen  >  Integraties.",
+                     "Home Assistant is disabled.\nEnable it in Settings  >  Integrations."));
         return;
     }
 
     const struct { int type; const char * hdr; } groups[] = {
-        { HADEV_LIGHT,  "Lights"  }, { HADEV_COVER,  "Covers"  },
-        { HADEV_SWITCH, "Switches"}, { HADEV_SCRIPT, "Scripts" },
-        { HADEV_SCENE,  "Scenes"  },
+        { HADEV_LIGHT,  tr("Lampen", "Lights")  }, { HADEV_COVER,  tr("Schermen", "Covers")  },
+        { HADEV_SWITCH, tr("Schakelaars", "Switches")}, { HADEV_SCRIPT, tr("Scripts", "Scripts") },
+        { HADEV_SCENE,  tr("Scenes", "Scenes")  },
     };
     for (size_t g = 0; g < sizeof(groups)/sizeof(groups[0]); g++) {
         int any = 0;
@@ -237,10 +240,10 @@ static void refresh_cb(lv_timer_t * t) {
         ha_device_t * D = &ha_devices[R->dev_idx];
         if (D->type == HADEV_COVER) {
             if (R->lbl_state) {
-                if (!D->available) lv_label_set_text(R->lbl_state, "offline");
+                if (!D->available) lv_label_set_text(R->lbl_state, tr("offline", "offline"));
                 else if (D->position >= 0)
                     lv_label_set_text_fmt(R->lbl_state, "%s  %d%%",
-                                          D->state[0] ? D->state : "cover", D->position);
+                                          D->state[0] ? D->state : tr("scherm", "cover"), D->position);
                 else
                     lv_label_set_text(R->lbl_state, D->state[0] ? D->state : "--");
             }
@@ -248,14 +251,14 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_slider_set_value(R->slider, D->position, LV_ANIM_OFF);
         } else if (D->type == HADEV_LIGHT || D->type == HADEV_SWITCH) {
             const char * txt; uint32_t bcol; const char * blbl;
-            if (!D->available)   { txt = "offline"; bcol = COL_OFFLINE; blbl = "Offline"; }
-            else if (D->on)      { bcol = COL_ON;  blbl = "On";  txt = NULL; }
-            else                 { txt = "off"; bcol = COL_OFF; blbl = "Off"; }
+            if (!D->available)   { txt = tr("offline", "offline"); bcol = COL_OFFLINE; blbl = tr("Offline", "Offline"); }
+            else if (D->on)      { bcol = COL_ON;  blbl = tr("Aan", "On");  txt = NULL; }
+            else                 { txt = tr("uit", "off"); bcol = COL_OFF; blbl = tr("Uit", "Off"); }
             if (R->lbl_state) {
                 if (D->available && D->on) {
                     if (D->type == HADEV_LIGHT && D->brightness > 0)
-                        lv_label_set_text_fmt(R->lbl_state, "on  %d%%", D->brightness * 100 / 255);
-                    else lv_label_set_text(R->lbl_state, "on");
+                        lv_label_set_text_fmt(R->lbl_state, tr("aan  %d%%", "on  %d%%"), D->brightness * 100 / 255);
+                    else lv_label_set_text(R->lbl_state, tr("aan", "on"));
                     lv_obj_set_style_text_color(R->lbl_state, lv_color_hex(COL_ON), 0);
                 } else if (txt) {
                     lv_label_set_text(R->lbl_state, txt);
@@ -293,7 +296,7 @@ lv_obj_t * screen_lights_create(void) {
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_label_set_text(title, "Devices");
+    lv_label_set_text(title, tr("Apparaten", "Devices"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 24, 16);
 
     lv_obj_t * back = lv_btn_create(scr_root);
@@ -305,7 +308,7 @@ lv_obj_t * screen_lights_create(void) {
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(bl, "< Back");
+    lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 
     /* Scrollable card column. */

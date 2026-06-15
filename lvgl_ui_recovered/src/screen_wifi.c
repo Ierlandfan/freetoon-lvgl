@@ -16,6 +16,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "boxtalk.h"
 #include "http.h"
 #include <pthread.h>
@@ -169,7 +170,7 @@ static void on_conn_go(lv_event_t * e) {
         key[o] = 0;
     }
     boxtalk_wifi_connect(g_conn_ssid, key);
-    lv_label_set_text_fmt(lbl_hint, "Connecting to %s ...", g_conn_ssid);
+    lv_label_set_text_fmt(lbl_hint, tr("Verbinden met %s ...", "Connecting to %s ..."), g_conn_ssid);
     g_status_ticks = 0;
     conn_close();
 }
@@ -196,14 +197,14 @@ static void open_connect_modal(ap_t * a) {
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(22), 0);
-    lv_label_set_text_fmt(t, "Connect to %s", a->ssid);
+    lv_label_set_text_fmt(t, tr("Verbind met %s", "Connect to %s"), a->ssid);
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(8), SY(6));
 
     if (a->secured) {
         g_conn_ta = lv_textarea_create(card);
         lv_textarea_set_one_line(g_conn_ta, true);
         lv_textarea_set_password_mode(g_conn_ta, true);
-        lv_textarea_set_placeholder_text(g_conn_ta, "password");
+        lv_textarea_set_placeholder_text(g_conn_ta, tr("wachtwoord", "password"));
         lv_obj_set_width(g_conn_ta, SX(620));
         lv_obj_align(g_conn_ta, LV_ALIGN_TOP_MID, 0, SY(44));
 
@@ -215,7 +216,7 @@ static void open_connect_modal(ap_t * a) {
         lv_obj_t * o = lv_label_create(card);
         lv_obj_set_style_text_color(o, lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(o, SF(18), 0);
-        lv_label_set_text(o, "Open network - no password needed.");
+        lv_label_set_text(o, tr("Open netwerk - geen wachtwoord nodig.", "Open network - no password needed."));
         lv_obj_align(o, LV_ALIGN_CENTER, 0, 0);
     }
 
@@ -224,7 +225,7 @@ static void open_connect_modal(ap_t * a) {
     lv_obj_align(go, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
     lv_obj_set_style_bg_color(go, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(go, on_conn_go, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * gl = lv_label_create(go); lv_label_set_text(gl, "Connect");
+    lv_obj_t * gl = lv_label_create(go); lv_label_set_text(gl, tr("Verbind", "Connect"));
     lv_obj_center(gl);
 
     lv_obj_t * cancel = lv_btn_create(card);
@@ -232,7 +233,7 @@ static void open_connect_modal(ap_t * a) {
     lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
     lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(cancel, on_conn_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, "Cancel");
+    lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, tr("Annuleer", "Cancel"));
     lv_obj_center(cl);
 }
 
@@ -247,7 +248,7 @@ static void on_scan(lv_event_t * e) {
     (void)e;
     g_scanning = 1;
     boxtalk_wifi_scan();
-    lv_label_set_text(lbl_hint, "Scanning... (wifi may blip for a moment)");
+    lv_label_set_text(lbl_hint, tr("Scannen... (wifi valt even kort weg)", "Scanning... (wifi may blip for a moment)"));
 }
 
 /* ===================================================================== */
@@ -262,7 +263,7 @@ static void on_disc_confirm(lv_event_t * e) {
     (void)e;
     boxtalk_wifi_disconnect();
     if (lbl_hint) lv_label_set_text(lbl_hint,
-        "Disconnected. Tap Scan to reconnect.");
+        tr("Verbinding verbroken. Tik op Scan om opnieuw te verbinden.", "Disconnected. Tap Scan to reconnect."));
     g_cur_ssid[0] = 0; g_internet = -1; g_status_ticks = 0;
     g_status_known = 1;   /* deliberate disconnect: "not connected" is correct now */
     disc_close();
@@ -290,7 +291,8 @@ static void on_disconnect(lv_event_t * e) {
     lv_obj_set_style_text_font(t, SF(22), 0);
     lv_obj_set_width(t, SX(600));
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
-    lv_label_set_text_fmt(t, "Disconnect from %s?\nThe Toon will leave the network until it reconnects.",
+    lv_label_set_text_fmt(t, tr("Verbinding met %s verbreken?\nDe Toon verlaat het netwerk tot hij opnieuw verbindt.",
+                                "Disconnect from %s?\nThe Toon will leave the network until it reconnects."),
                           g_cur_ssid[0] ? g_cur_ssid : "WiFi");
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
 
@@ -299,7 +301,7 @@ static void on_disconnect(lv_event_t * e) {
     lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
     lv_obj_set_style_bg_color(yes, lv_color_hex(COL_WARN), 0);
     lv_obj_add_event_cb(yes, on_disc_confirm, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, "Disconnect");
+    lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, tr("Verbreek", "Disconnect"));
     lv_obj_center(yl);
 
     lv_obj_t * no = lv_btn_create(card);
@@ -307,7 +309,7 @@ static void on_disconnect(lv_event_t * e) {
     lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
     lv_obj_set_style_bg_color(no, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(no, on_disc_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, "Cancel");
+    lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, tr("Annuleer", "Cancel"));
     lv_obj_center(nl);
 }
 
@@ -327,7 +329,7 @@ static void build_rows(void) {
         lv_obj_t * empty = lv_label_create(list_box);
         lv_obj_set_style_text_color(empty, lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(empty, SF(18), 0);
-        lv_label_set_text(empty, "Tap Scan to list nearby networks.");
+        lv_label_set_text(empty, tr("Tik op Scan om netwerken in de buurt te tonen.", "Tap Scan to list nearby networks."));
         return;
     }
     for (int i = 0; i < g_ap_count; i++) {
@@ -346,7 +348,7 @@ static void build_rows(void) {
         lv_obj_t * nm = lv_label_create(row);
         lv_obj_set_style_text_font(nm, SF(22), 0);
         lv_obj_set_style_text_color(nm, lv_color_hex(connected ? COL_OK : COL_TEXT_HI), 0);
-        lv_label_set_text_fmt(nm, "%s%s", a->ssid, connected ? "  (connected)" : "");
+        lv_label_set_text_fmt(nm, "%s%s", a->ssid, connected ? tr("  (verbonden)", "  (connected)") : "");
         lv_obj_align(nm, LV_ALIGN_LEFT_MID, SX(4), 0);
 
         lv_obj_t * meta = lv_label_create(row);
@@ -365,7 +367,7 @@ static void refresh_cb(lv_timer_t * t) {
             parse_scan(netcon_response_buf);
             g_scanning = 0;
             build_rows();
-            lv_label_set_text_fmt(lbl_hint, "%d network%s found.",
+            lv_label_set_text_fmt(lbl_hint, tr("%d netwerk%s gevonden.", "%d network%s found."),
                                   g_ap_count, g_ap_count == 1 ? "" : "s");
         } else if (strstr(netcon_response_buf, "GetWirelessNetworkInformationResponse")) {
             parse_status(netcon_response_buf);
@@ -384,8 +386,8 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     if (lbl_status) {
-        const char * net = g_internet == 1 ? "internet OK"
-                         : g_internet == 0 ? "no internet" : "checking...";
+        const char * net = g_internet == 1 ? tr("internet OK", "internet OK")
+                         : g_internet == 0 ? tr("geen internet", "no internet") : tr("controleren...", "checking...");
         if (g_cur_ssid[0])
             lv_label_set_text_fmt(lbl_status, "%s   %d%%   %s   %s",
                 g_cur_ssid, g_cur_quality < 0 ? 0 : g_cur_quality,
@@ -394,11 +396,11 @@ static void refresh_cb(lv_timer_t * t) {
             /* Only declare "not connected" once a real status query has come
              * back empty — never in the gap between screen-load and the first
              * response, which would flash a false "not connected". */
-            lv_label_set_text(lbl_status, "not connected");
+            lv_label_set_text(lbl_status, tr("niet verbonden", "not connected"));
         else
-            lv_label_set_text(lbl_status, "querying...");
+            lv_label_set_text(lbl_status, tr("opvragen...", "querying..."));
     }
-    if (btn_scan_lbl) lv_label_set_text(btn_scan_lbl, g_scanning ? "Scanning..." : "Scan");
+    if (btn_scan_lbl) lv_label_set_text(btn_scan_lbl, g_scanning ? tr("Scannen...", "Scanning...") : tr("Scan", "Scan"));
 }
 
 /* ===================================================================== */
@@ -437,7 +439,7 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_label_set_text(bl, "< Back");
+    lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
@@ -449,7 +451,7 @@ lv_obj_t * screen_wifi_create(void) {
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_status, SF(18), 0);
-    lv_label_set_text(lbl_status, "querying...");
+    lv_label_set_text(lbl_status, tr("opvragen...", "querying..."));
     lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(280), SY(30));
 
     /* Scan button (top-right) */
@@ -463,7 +465,7 @@ lv_obj_t * screen_wifi_create(void) {
     btn_scan_lbl = lv_label_create(scan);
     lv_obj_set_style_text_color(btn_scan_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(btn_scan_lbl, SF(22), 0);
-    lv_label_set_text(btn_scan_lbl, "Scan");
+    lv_label_set_text(btn_scan_lbl, tr("Scan", "Scan"));
     lv_obj_center(btn_scan_lbl);
 
     /* Disconnect button (left of Scan) */
@@ -477,7 +479,7 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_t * dl = lv_label_create(disc);
     lv_obj_set_style_text_color(dl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(dl, SF(22), 0);
-    lv_label_set_text(dl, "Disconnect");
+    lv_label_set_text(dl, tr("Verbreek", "Disconnect"));
     lv_obj_center(dl);
 
     lbl_hint = lv_label_create(scr_root);
@@ -485,7 +487,7 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_set_style_text_font(lbl_hint, SF(14), 0);
     lv_obj_set_width(lbl_hint, SX(980));
     lv_label_set_long_mode(lbl_hint, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(lbl_hint, "Tap Scan to list nearby networks.  WPS is not supported by the Toon's network manager.");
+    lv_label_set_text(lbl_hint, tr("Tik op Scan om netwerken in de buurt te tonen.  WPS wordt niet ondersteund door de netwerkbeheerder van de Toon.", "Tap Scan to list nearby networks.  WPS is not supported by the Toon's network manager."));
     lv_obj_align(lbl_hint, LV_ALIGN_TOP_LEFT, SX(22), SY(76));
 
     list_box = lv_obj_create(scr_root);

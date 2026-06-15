@@ -21,6 +21,7 @@ settings_t settings = {
     .show_dim_waste    = 1,
     .show_dim_bars     = 1,
     .show_dim_metrics  = 1,
+    .language          = 0,   /* LANG_NL */
     .dim_bars_swap     = 0,
     .dim_waste_lead_days = 3,
     .vnc_enabled       = 0,
@@ -187,6 +188,7 @@ void settings_load(void) {
         else if (strcmp(k, "show_dim_waste")    == 0) settings.show_dim_waste    = iv;
         else if (strcmp(k, "show_dim_bars")     == 0) settings.show_dim_bars     = iv;
         else if (strcmp(k, "show_dim_metrics")  == 0) settings.show_dim_metrics  = iv;
+        else if (strcmp(k, "language")          == 0) settings.language          = iv;
         else if (strcmp(k, "dim_bars_swap")     == 0) settings.dim_bars_swap     = iv;
         else if (strcmp(k, "dim_waste_lead_days") == 0) settings.dim_waste_lead_days = iv;
         else if (strcmp(k, "waste_postcode")    == 0)
@@ -536,6 +538,7 @@ void settings_save(void) {
     fprintf(f, "show_dim_waste=%d\n",    settings.show_dim_waste);
     fprintf(f, "show_dim_bars=%d\n",     settings.show_dim_bars);
     fprintf(f, "show_dim_metrics=%d\n",  settings.show_dim_metrics);
+    fprintf(f, "language=%d\n",           settings.language);
     fprintf(f, "dim_bars_swap=%d\n",     settings.dim_bars_swap);
     fprintf(f, "dim_waste_lead_days=%d\n", settings.dim_waste_lead_days);
     fprintf(f, "waste_postcode=%s\n",      settings.waste_postcode);

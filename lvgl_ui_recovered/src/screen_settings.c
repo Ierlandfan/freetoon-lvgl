@@ -17,6 +17,7 @@
 #include "screens.h"
 #include "display.h"
 #include "settings.h"
+#include "i18n.h"
 #include "domoticz.h"
 #include "homeassistant.h"
 #include "calendar.h"
@@ -82,9 +83,9 @@ static void on_dim_bars_swap_change(lv_event_t * e) {
     settings.dim_bars_swap = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
 static const char * forecast_mode_label(int m) {
-    if (m == FORECAST_HOURLY) return "always hourly";
-    if (m == FORECAST_DAILY)  return "always daily";
-    return "auto (hourly if available)";
+    if (m == FORECAST_HOURLY) return tr("altijd per uur", "always hourly");
+    if (m == FORECAST_DAILY)  return tr("altijd per dag", "always daily");
+    return tr("auto (per uur indien mogelijk)", "auto (hourly if available)");
 }
 static void on_forecast_mode_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
@@ -138,7 +139,7 @@ static void on_weather_apply(lv_event_t * e) {
     settings_save();
     if (lbl_wx_status)
         lv_label_set_text_fmt(lbl_wx_status,
-            "Saved. %s = %d", settings.weather_location,
+            tr("Opgeslagen. %s = %d", "Saved. %s = %d"), settings.weather_location,
             settings.weather_location_id);
 }
 static void on_dim_waste_change(lv_event_t * e) {
@@ -147,9 +148,9 @@ static void on_dim_waste_change(lv_event_t * e) {
 static void on_waste_lead_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
     settings.dim_waste_lead_days = v;
-    if (v == 0)      lv_label_set_text(lbl_waste_lead, "uit");
-    else if (v == 1) lv_label_set_text(lbl_waste_lead, "vanaf 1 dag vooraf");
-    else             lv_label_set_text_fmt(lbl_waste_lead, "vanaf %d dagen vooraf", v);
+    if (v == 0)      lv_label_set_text(lbl_waste_lead, tr("uit", "off"));
+    else if (v == 1) lv_label_set_text(lbl_waste_lead, tr("vanaf 1 dag vooraf", "from 1 day ahead"));
+    else             lv_label_set_text_fmt(lbl_waste_lead, tr("vanaf %d dagen vooraf", "from %d days ahead"), v);
 }
 static void on_timeout_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
@@ -451,7 +452,7 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_t * dt = lv_label_create(dlg);
     lv_obj_set_style_text_font(dt, SF(28), 0);
     lv_obj_set_style_text_color(dt, lv_color_hex(0xffcc66), 0);
-    lv_label_set_text(dt, "Change boiler control?");
+    lv_label_set_text(dt, tr("Ketelregeling wijzigen?", "Change boiler control?"));
     lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t * body = lv_label_create(dlg);
@@ -460,10 +461,14 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(body, SX(672));
     lv_label_set_text_fmt(body,
-        "Switch boiler control to %s?\n\n"
-        "This reconfigures how Toon drives your boiler and is written to "
-        "the device immediately. Only change it if you know your boiler "
-        "wiring — the wrong setting can stop your heating from working.",
+        tr("Ketelregeling omzetten naar %s?\n\n"
+           "Dit verandert hoe Toon je ketel aanstuurt en wordt direct naar "
+           "het apparaat geschreven. Wijzig dit alleen als je je ketel-"
+           "bedrading kent — de verkeerde instelling kan je verwarming uitschakelen.",
+           "Switch boiler control to %s?\n\n"
+           "This reconfigures how Toon drives your boiler and is written to "
+           "the device immediately. Only change it if you know your boiler "
+           "wiring — the wrong setting can stop your heating from working."),
         want_onoff ? "On/Off" : "OpenTherm");
     lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, SY(48));
 
@@ -474,7 +479,7 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_set_style_radius(b_no, 12, 0);
     lv_obj_add_event_cb(b_no, on_boiler_confirm_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_no_l = lv_label_create(b_no);
-    lv_label_set_text(b_no_l, "Cancel");
+    lv_label_set_text(b_no_l, tr("Annuleren", "Cancel"));
     lv_obj_set_style_text_font(b_no_l, SF(22), 0);
     lv_obj_center(b_no_l);
 
@@ -485,7 +490,7 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_set_style_radius(b_yes, 12, 0);
     lv_obj_add_event_cb(b_yes, on_boiler_confirm_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_yes_l = lv_label_create(b_yes);
-    lv_label_set_text_fmt(b_yes_l, "Set %s", want_onoff ? "On/Off" : "OpenTherm");
+    lv_label_set_text_fmt(b_yes_l, tr("Zet %s", "Set %s"), want_onoff ? "On/Off" : "OpenTherm");
     lv_obj_set_style_text_font(b_yes_l, SF(22), 0);
     lv_obj_center(b_yes_l);
 }
@@ -496,14 +501,14 @@ static void heating_tick(void) {
     if (lbl_boiler_mode) {
         const char * m = (toon_state.boiler_type == 1) ? "On/Off"
                        : (toon_state.boiler_type == 0) ? "OpenTherm"
-                       : "detecting...";
-        lv_label_set_text_fmt(lbl_boiler_mode, "Current mode: %s", m);
+                       : tr("detecteren...", "detecting...");
+        lv_label_set_text_fmt(lbl_boiler_mode, tr("Huidige modus: %s", "Current mode: %s"), m);
     }
     if (lbl_boiler_ot) {
         if (toon_state.boiler_type == 0) {
-            lv_label_set_text_fmt(lbl_boiler_ot, "Modulation %d%%   -   OT link %s",
+            lv_label_set_text_fmt(lbl_boiler_ot, tr("Modulatie %d%%   -   OT-link %s", "Modulation %d%%   -   OT link %s"),
                                   (int)toon_state.modulation_level,
-                                  toon_state.ot_comm_error ? "ERROR" : "OK");
+                                  toon_state.ot_comm_error ? tr("FOUT", "ERROR") : "OK");
         } else {
             lv_label_set_text(lbl_boiler_ot, "");
         }
@@ -517,22 +522,38 @@ static void about_tick(void) {
     if (f) { if (fscanf(f, "%lf", &up) != 1) up = 0; fclose(f); }
     int uh = (int)(up / 3600), um = (int)((up - uh * 3600) / 60);
     lv_label_set_text_fmt(lbl_about_status,
-        "BoxTalk: %s   (msg %d)\n"
-        "Boiler: %s\n"
-        "Indoor %.1f C   -   Setpoint %.1f C\n"
-        "System uptime: %dh %dm",
-        toon_state.connected ? "connected" : "connecting...",
+        tr("BoxTalk: %s   (ber %d)\n"
+           "Ketel: %s\n"
+           "Binnen %.1f C   -   Streefwaarde %.1f C\n"
+           "Systeem-uptime: %dh %dm",
+           "BoxTalk: %s   (msg %d)\n"
+           "Boiler: %s\n"
+           "Indoor %.1f C   -   Setpoint %.1f C\n"
+           "System uptime: %dh %dm"),
+        toon_state.connected ? tr("verbonden", "connected") : tr("verbinden...", "connecting..."),
         toon_state.msg_count,
         toon_state.boiler_type == 1 ? "On/Off" :
-        toon_state.boiler_type == 0 ? "OpenTherm" : "unknown",
+        toon_state.boiler_type == 0 ? "OpenTherm" : tr("onbekend", "unknown"),
         toon_state.indoor_temp, toon_state.setpoint, uh, um);
+}
+
+/* Language selector — OFF = Nederlands (LANG_NL), ON = English (LANG_EN).
+   Switching takes effect on the next modal/screen build (tr() reads
+   settings.language live); no restart needed. */
+static lv_obj_t * lbl_lang_val = NULL;
+static void on_language_change(lv_event_t * e) {
+    int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+    settings.language = on ? LANG_EN : LANG_NL;
+    if (lbl_lang_val)
+        lv_label_set_text(lbl_lang_val, on ? "English" : "Nederlands");
+    settings_save();
 }
 
 /* ============================ category modals ============================ */
 
 static void open_display_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Display", 560);
+    lv_obj_t * p = modal_open(tr("Scherm", "Display"), 560);
     /* Six rows don't fit a fixed panel on a 600px screen — let it scroll. */
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
@@ -540,62 +561,70 @@ static void open_display_modal(lv_event_t * e) {
     int y = 70;
     lv_obj_t * r;
 
-    r = panel_row(p, y, "Auto-dim when idle", NULL);
+    r = panel_row(p, y, tr("Automatisch dimmen bij inactiviteit", "Auto-dim when idle"), NULL);
     sw_enable = row_switch(r, settings.auto_dim_enabled, on_enable_change);
     y += 82;
 
-    r = panel_row(p, y, "Idle timeout", &lbl_timeout_val);
+    r = panel_row(p, y, tr("Wachttijd inactief", "Idle timeout"), &lbl_timeout_val);
     lv_label_set_text_fmt(lbl_timeout_val, "%d s", settings.auto_dim_seconds);
     sl_timeout = row_slider(r, 5, 300, settings.auto_dim_seconds, on_timeout_change);
     y += 82;
 
-    r = panel_row(p, y, "Return to home when idle", NULL);
+    r = panel_row(p, y, tr("Terug naar start bij inactiviteit", "Return to home when idle"), NULL);
     sw_home_enable = row_switch(r, settings.auto_home_enabled, on_home_enable_change);
     y += 82;
 
-    r = panel_row(p, y, "Return-home timeout", &lbl_home_timeout_val);
+    r = panel_row(p, y, tr("Wachttijd terug naar start", "Return-home timeout"), &lbl_home_timeout_val);
     lv_label_set_text_fmt(lbl_home_timeout_val, "%d s", settings.auto_home_seconds);
     sl_home_timeout = row_slider(r, 5, 600, settings.auto_home_seconds, on_home_timeout_change);
     y += 82;
 
-    r = panel_row(p, y, "Active brightness", &lbl_act_val);
+    r = panel_row(p, y, tr("Helderheid actief", "Active brightness"), &lbl_act_val);
     lv_label_set_text_fmt(lbl_act_val, "%d", settings.active_brightness);
     sl_act = row_slider(r, 100, 1000, settings.active_brightness, on_act_change);
     y += 82;
 
-    r = panel_row(p, y, "Dim brightness", &lbl_dim_val);
+    r = panel_row(p, y, tr("Helderheid gedimd", "Dim brightness"), &lbl_dim_val);
     lv_label_set_text_fmt(lbl_dim_val, "%d", settings.dim_brightness);
     sl_dim = row_slider(r, 0, 400, settings.dim_brightness, on_dim_change);
     y += 82;
 
     /* Auto-brightness — follow the LTR-303 ambient sensor (Toon 2). When on, the
        active backlight tracks the room between the dim and active values above. */
-    r = panel_row(p, y, "Auto-brightness (light sensor)", NULL);
+    r = panel_row(p, y, tr("Auto-helderheid (lichtsensor)", "Auto-brightness (light sensor)"), NULL);
     row_switch(r, settings.auto_brightness, on_auto_brightness_change);
     y += 82;
 
     /* Usage bars flanking the dim clock: energy now (W) + gas hourly (m³),
        auto-scaled. The swap toggle flips which metric is on which side. */
-    r = panel_row(p, y, "Usage bars on dim screen", NULL);
+    r = panel_row(p, y, tr("Verbruiksbalken op dimscherm", "Usage bars on dim screen"), NULL);
     sw_dim_bars = row_switch(r, settings.show_dim_bars, on_dim_bars_change);
     y += 82;
 
-    r = panel_row(p, y, "Bars: swap (energy left / gas right)", NULL);
+    r = panel_row(p, y, tr("Balken: wisselen (energie links / gas rechts)", "Bars: swap (energy left / gas right)"), NULL);
     sw_dim_bars_swap = row_switch(r, settings.dim_bars_swap, on_dim_bars_swap_change);
+    y += 82;
+
+    /* Language — OFF = Nederlands, ON = English. The value label shows the
+       current choice; takes effect on the next UI build (no restart). */
+    r = panel_row(p, y, tr("Taal", "Language"), &lbl_lang_val);
+    lv_label_set_text(lbl_lang_val,
+                      settings.language == LANG_EN ? "English" : "Nederlands");
+    row_switch(r, settings.language == LANG_EN, on_language_change);
 }
 
 static void open_weather_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Weather", 560);
+    lv_obj_t * p = modal_open(tr("Weer", "Weather"), 560);
     int y = 70;
 
-    lv_obj_t * r = panel_row(p, y, "Show weather on dim screen", NULL);
+    lv_obj_t * r = panel_row(p, y, tr("Weer tonen op dimscherm", "Show weather on dim screen"), NULL);
     sw_dim_wx = row_switch(r, settings.show_dim_weather, on_dim_wx_change);
     y += 82;
 
     /* 3-position slider: 0=auto, 1=hourly, 2=daily. Current label updates
        in-place via on_forecast_mode_change. */
-    r = panel_row(p, y, "Forecast strip", &lbl_forecast_mode);
+    r = panel_row(p, y, tr("Verwachtingsbalk", "Forecast strip"), &lbl_forecast_mode);
     lv_label_set_text(lbl_forecast_mode,
                       forecast_mode_label(settings.forecast_mode));
     sl_forecast_mode = row_slider(r, 0, 2, settings.forecast_mode,
@@ -606,7 +635,7 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_t * lbl_city = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_city, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_city, SF(22), 0);
-    lv_label_set_text(lbl_city, "City:");
+    lv_label_set_text(lbl_city, tr("Plaats:", "City:"));
     lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_wx_city = lv_textarea_create(p);
     lv_obj_set_size(ta_wx_city, SX(380), SY(44));
@@ -618,7 +647,7 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_t * lbl_id = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_id, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_id, SF(22), 0);
-    lv_label_set_text(lbl_id, "Buienradar id:");
+    lv_label_set_text(lbl_id, tr("Buienradar-id:", "Buienradar id:"));
     lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_wx_id = lv_textarea_create(p);
     lv_obj_set_size(ta_wx_id, SX(380), SY(44));
@@ -635,9 +664,12 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(hint, SF(14), 0);
     lv_label_set_text(hint,
-        "Find your city's id in the URL on buienradar.nl/weer/<city>/nl/<ID>\n"
-        "(e.g. Medemblik = 2751073, De Bilt = 2757783). Plain KNMI codes\n"
-        "won't work — these are GeoNames ids.");
+        tr("Vind de id van je plaats in de URL op buienradar.nl/weer/<plaats>/nl/<ID>\n"
+           "(bijv. Medemblik = 2751073, De Bilt = 2757783). Gewone KNMI-codes\n"
+           "werken niet — dit zijn GeoNames-id's.",
+           "Find your city's id in the URL on buienradar.nl/weer/<city>/nl/<ID>\n"
+           "(e.g. Medemblik = 2751073, De Bilt = 2757783). Plain KNMI codes\n"
+           "won't work — these are GeoNames ids."));
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 70;
 
@@ -647,7 +679,7 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_weather_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
-    lv_label_set_text(bl, "Apply");
+    lv_label_set_text(bl, tr("Toepassen", "Apply"));
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_center(bl);
 
@@ -731,7 +763,8 @@ static void on_waste_apply(lv_event_t * e) {
                                      below is actually true (else up to 4h). */
     if (lbl_waste_status)
         lv_label_set_text(lbl_waste_status,
-            "Saved - the calendar refreshes within a few seconds.");
+            tr("Opgeslagen - de kalender ververst binnen enkele seconden.",
+               "Saved - the calendar refreshes within a few seconds."));
 }
 
 /* small labelled one-line text field; returns the textarea */
@@ -751,21 +784,21 @@ static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lb
 
 static void open_waste_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Waste", 720);
+    lv_obj_t * p = modal_open(tr("Afval", "Waste"), 720);
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
     lv_obj_t * r;
 
-    r = panel_row(p, y, "Show waste on dim screen", NULL);
+    r = panel_row(p, y, tr("Afval tonen op dimscherm", "Show waste on dim screen"), NULL);
     sw_dim_waste = row_switch(r, settings.show_dim_waste, on_dim_waste_change);
     y += 82;
 
-    r = panel_row(p, y, "Waste alert window", &lbl_waste_lead);
-    if      (settings.dim_waste_lead_days == 0) lv_label_set_text(lbl_waste_lead, "uit");
-    else if (settings.dim_waste_lead_days == 1) lv_label_set_text(lbl_waste_lead, "vanaf 1 dag vooraf");
-    else lv_label_set_text_fmt(lbl_waste_lead, "vanaf %d dagen vooraf", settings.dim_waste_lead_days);
+    r = panel_row(p, y, tr("Afval-waarschuwingsvenster", "Waste alert window"), &lbl_waste_lead);
+    if      (settings.dim_waste_lead_days == 0) lv_label_set_text(lbl_waste_lead, tr("uit", "off"));
+    else if (settings.dim_waste_lead_days == 1) lv_label_set_text(lbl_waste_lead, tr("vanaf 1 dag vooraf", "from 1 day ahead"));
+    else lv_label_set_text_fmt(lbl_waste_lead, tr("vanaf %d dagen vooraf", "from %d days ahead"), settings.dim_waste_lead_days);
     sl_waste_lead = row_slider(r, 0, 7, settings.dim_waste_lead_days, on_waste_lead_change);
     y += 90;
 
@@ -775,7 +808,7 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_t * lp = lv_label_create(p);
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
-    lv_label_set_text(lp, "Afvalverwerker (provider):");
+    lv_label_set_text(lp, tr("Afvalverwerker (provider):", "Waste collector (provider):"));
     lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     waste_load_providers();
     dd_waste_prov = lv_dropdown_create(p);
@@ -786,21 +819,21 @@ static void open_waste_modal(lv_event_t * e) {
         for (int i = 0; i < g_prov_count; i++)
             if (strcmp(g_prov_ids[i], settings.waste_plugin) == 0) { lv_dropdown_set_selected(dd_waste_prov, i); break; }
     } else {
-        lv_dropdown_set_options(dd_waste_prov, "(provider list unavailable - check internet)");
+        lv_dropdown_set_options(dd_waste_prov, tr("(providerlijst niet beschikbaar - controleer internet)", "(provider list unavailable - check internet)"));
     }
     y += 96;
 
     /* Per-provider fields — fill the ones your provider needs (postcode+nr, or a
        calendar number/ICS-id, or street+city). Hint shown per provider's info. */
-    ta_waste_pc    = waste_field(p, 4,   y, 220, "Postcode",        settings.waste_postcode);
-    ta_waste_nr    = waste_field(p, 240, y, 120, "Huisnr",          settings.waste_housenr);
-    ta_waste_icsid = waste_field(p, 380, y, 360, "Kalender-/ICS-id", settings.waste_icsid);
+    ta_waste_pc    = waste_field(p, 4,   y, 220, tr("Postcode", "Postcode"),        settings.waste_postcode);
+    ta_waste_nr    = waste_field(p, 240, y, 120, tr("Huisnr", "House no."),          settings.waste_housenr);
+    ta_waste_icsid = waste_field(p, 380, y, 360, tr("Kalender-/ICS-id", "Calendar/ICS id"), settings.waste_icsid);
     ta_make_numeric(ta_waste_nr); ta_make_numeric(ta_waste_icsid);
     y += 84;
-    ta_waste_street = waste_field(p, 4,   y, 360, "Straat (opt)",   settings.waste_street);
-    ta_waste_city   = waste_field(p, 380, y, 360, "Plaats (opt)",   settings.waste_city);
+    ta_waste_street = waste_field(p, 4,   y, 360, tr("Straat (opt)", "Street (opt)"),   settings.waste_street);
+    ta_waste_city   = waste_field(p, 380, y, 360, tr("Plaats (opt)", "City (opt)"),   settings.waste_city);
     y += 84;
-    ta_waste_ics = waste_field(p, 4, y, 736, "of: eigen iCal / ICS URL", settings.waste_ics_url);
+    ta_waste_ics = waste_field(p, 4, y, 736, tr("of: eigen iCal / ICS URL", "or: own iCal / ICS URL"), settings.waste_ics_url);
     y += 92;
 
     lv_obj_t * apply = lv_btn_create(p);
@@ -808,24 +841,24 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_align(apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(apply, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(apply, on_waste_apply, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, "Opslaan"); lv_obj_center(al);
+    lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, tr("Opslaan", "Save")); lv_obj_center(al);
 
     lbl_waste_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_waste_status, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_waste_status, SF(14), 0);
     lv_obj_set_width(lbl_waste_status, SX(736));
     lv_label_set_long_mode(lbl_waste_status, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(lbl_waste_status, "Kies een provider en vul de velden die deze nodig heeft.");
+    lv_label_set_text(lbl_waste_status, tr("Kies een provider en vul de velden die deze nodig heeft.", "Pick a provider and fill in the fields it needs."));
     lv_obj_align(lbl_waste_status, LV_ALIGN_TOP_LEFT, SX(220), SY(y + 8));
 }
 
 static void open_heating_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Heating", 470);
+    lv_obj_t * p = modal_open(tr("Verwarming", "Heating"), 470);
     int y = 70;
 
     /* indoor temp calibration */
-    lv_obj_t * r = panel_row(p, y, "Indoor temp offset", &lbl_offset_val);
+    lv_obj_t * r = panel_row(p, y, tr("Correctie binnentemperatuur", "Indoor temp offset"), &lbl_offset_val);
     lv_label_set_text_fmt(lbl_offset_val, "%+.1f C", settings.temp_offset_centi / 100.0f);
     sl_offset = row_slider(r, -500, 500, settings.temp_offset_centi, on_offset_change);
     y += 90;
@@ -844,7 +877,7 @@ static void open_heating_modal(lv_event_t * e) {
     lv_obj_t * hdr = lv_label_create(box);
     lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(hdr, SF(22), 0);
-    lv_label_set_text(hdr, "Boiler control");
+    lv_label_set_text(hdr, tr("Ketelregeling", "Boiler control"));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 0, 0);
 
     sw_boiler = lv_switch_create(box);
@@ -856,7 +889,7 @@ static void open_heating_modal(lv_event_t * e) {
     lv_obj_t * swlbl = lv_label_create(box);
     lv_obj_set_style_text_color(swlbl, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(swlbl, SF(18), 0);
-    lv_label_set_text(swlbl, "Off = OpenTherm    On = On/Off");
+    lv_label_set_text(swlbl, tr("Uit = OpenTherm    Aan = On/Off", "Off = OpenTherm    On = On/Off"));
     lv_obj_align(swlbl, LV_ALIGN_TOP_RIGHT, SX(-4), SY(38));
 
     lbl_boiler_mode = lv_label_create(box);
@@ -875,7 +908,8 @@ static void open_heating_modal(lv_event_t * e) {
     lv_label_set_long_mode(warn, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(warn, SX(772));
     lv_label_set_text(warn,
-        "Changing this writes to the live boiler. You'll be asked to confirm.");
+        tr("Wijzigen schrijft direct naar de ketel. Je wordt om bevestiging gevraagd.",
+           "Changing this writes to the live boiler. You'll be asked to confirm."));
     lv_obj_align(warn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
     /* refresh the boiler labels live + re-query the type */
@@ -913,8 +947,12 @@ static void on_preset_change(lv_event_t * e) {
 
 static void open_presets_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Preset temperatures", 430);
-    static const char * names[4] = {"Comfort", "Home", "Sleep", "Away"};
+    lv_obj_t * p = modal_open(tr("Voorkeurstemperaturen", "Preset temperatures"), 430);
+    static const char * names[4];
+    names[0] = tr("Comfort", "Comfort");
+    names[1] = tr("Thuis",   "Home");
+    names[2] = tr("Slapen",  "Sleep");
+    names[3] = tr("Weg",     "Away");
     int y = 70;
     for (int i = 0; i < 4; i++) {
         int v = boxtalk_get_state_value(i);
@@ -1026,7 +1064,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_obj_t * dt = lv_label_create(dlg);
     lv_obj_set_style_text_font(dt, SF(28), 0);
     lv_obj_set_style_text_color(dt, lv_color_hex(0xffcc66), 0);
-    lv_label_set_text(dt, "Switch to stock qt-gui?");
+    lv_label_set_text(dt, tr("Overschakelen naar standaard qt-gui?", "Switch to stock qt-gui?"));
     lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t * body = lv_label_create(dlg);
@@ -1035,12 +1073,18 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(body, SX(712));
     lv_label_set_text(body,
-        "The freetoon UI will exit and the original Eneco UI takes "
-        "over within about a second. Our companion bridges (p1bridge, "
-        "quby_bridge) go idle so stock meteradapter / keteladapter "
-        "remain in charge. To come back, tap the freetoon button in "
-        "the boot picker (or hold the touch top-right for 10 s during "
-        "the qt-gui boot).");
+        tr("De freetoon-UI sluit af en de originele Eneco-UI neemt binnen "
+           "ongeveer een seconde over. Onze hulpbruggen (p1bridge, "
+           "quby_bridge) gaan inactief zodat de standaard meteradapter / "
+           "keteladapter de leiding houden. Om terug te komen, tik op de "
+           "freetoon-knop in de bootkiezer (of houd rechtsboven 10 s "
+           "ingedrukt tijdens het opstarten van qt-gui).",
+           "The freetoon UI will exit and the original Eneco UI takes "
+           "over within about a second. Our companion bridges (p1bridge, "
+           "quby_bridge) go idle so stock meteradapter / keteladapter "
+           "remain in charge. To come back, tap the freetoon button in "
+           "the boot picker (or hold the touch top-right for 10 s during "
+           "the qt-gui boot)."));
     lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, SY(56));
 
     lv_obj_t * b_no = lv_btn_create(dlg);
@@ -1050,7 +1094,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_obj_set_style_radius(b_no, 12, 0);
     lv_obj_add_event_cb(b_no, on_uimode_confirm_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_no_l = lv_label_create(b_no);
-    lv_label_set_text(b_no_l, "Cancel");
+    lv_label_set_text(b_no_l, tr("Annuleren", "Cancel"));
     lv_obj_set_style_text_font(b_no_l, SF(22), 0);
     lv_obj_center(b_no_l);
 
@@ -1061,7 +1105,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_obj_set_style_radius(b_yes, 12, 0);
     lv_obj_add_event_cb(b_yes, on_uimode_confirm_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_yes_l = lv_label_create(b_yes);
-    lv_label_set_text(b_yes_l, "Switch to qt-gui");
+    lv_label_set_text(b_yes_l, tr("Naar qt-gui", "Switch to qt-gui"));
     lv_obj_set_style_text_font(b_yes_l, SF(22), 0);
     lv_obj_center(b_yes_l);
 }
@@ -1127,7 +1171,7 @@ static void open_restart_confirm(lv_event_t * e) {
     lv_obj_set_style_text_font(t, SF(22), 0);
     lv_obj_set_width(t, SX(560));
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(t, "Restart the freetoon UI now?\n\nIt reloads settings from toonui.cfg and comes back in a few seconds.");
+    lv_label_set_text(t, tr("freetoon-UI nu herstarten?\n\nDe instellingen worden opnieuw geladen uit toonui.cfg en komt binnen enkele seconden terug.", "Restart the freetoon UI now?\n\nIt reloads settings from toonui.cfg and comes back in a few seconds."));
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(14), SY(12));
 
     lv_obj_t * yes = lv_btn_create(card);
@@ -1135,14 +1179,14 @@ static void open_restart_confirm(lv_event_t * e) {
     lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, SX(-12), SY(-12));
     lv_obj_set_style_bg_color(yes, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(yes, on_restart_yes, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, "Restart"); lv_obj_center(yl);
+    lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, tr("Herstart", "Restart")); lv_obj_center(yl);
 
     lv_obj_t * no = lv_btn_create(card);
     lv_obj_set_size(no, SX(180), SY(52));
     lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, SX(12), SY(-12));
     lv_obj_set_style_bg_color(no, lv_color_hex(0x3a4658), 0);
     lv_obj_add_event_cb(no, on_restart_no, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, "Cancel"); lv_obj_center(nl);
+    lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, tr("Annuleren", "Cancel")); lv_obj_center(nl);
 }
 
 static void open_adapters(lv_event_t * e) {
@@ -1174,25 +1218,25 @@ static void on_domoticz_apply_click(lv_event_t * e) {
     extern int domoticz_start(void);
     domoticz_start();    /* (re)connect with the new host */
     if (!lbl_domoticz_result) return;
-    if (!settings.domoticz_host[0]) { lv_label_set_text(lbl_domoticz_result, "Vul eerst de host in (ip:poort)."); return; }
+    if (!settings.domoticz_host[0]) { lv_label_set_text(lbl_domoticz_result, tr("Vul eerst de host in (ip:poort).", "Enter the host first (ip:port).")); return; }
 
     /* Real connection test via domoticz_probe(): it runs the exact auth ladder
      * the live client uses — DMZSID session login (modern / "Login Page" mode)
      * with an HTTP Basic fallback ("Basic Authentication" mode) — so the result
      * reflects what the tile will actually do, instead of a Basic-only GET that
      * falsely fails against a session-mode Domoticz. */
-    lv_label_set_text(lbl_domoticz_result, "Bezig met testen...");
+    lv_label_set_text(lbl_domoticz_result, tr("Bezig met testen...", "Testing..."));
     lv_refr_now(NULL);
     extern int domoticz_probe(void);
     int rc = domoticz_probe();
     if (rc >= 1) {
-        lv_label_set_text_fmt(lbl_domoticz_result, "Verbonden - %d apparaten", rc);
+        lv_label_set_text_fmt(lbl_domoticz_result, tr("Verbonden - %d apparaten", "Connected - %d devices"), rc);
     } else if (rc == 0) {
-        lv_label_set_text(lbl_domoticz_result, "Verbonden - geen licht/blind-apparaten gevonden.");
+        lv_label_set_text(lbl_domoticz_result, tr("Verbonden - geen licht/blind-apparaten gevonden.", "Connected - no light/blind devices found."));
     } else if (rc == DZ_PROBE_AUTH) {
-        lv_label_set_text(lbl_domoticz_result, "Fout: inloggen vereist (gebruiker/wachtwoord).");
+        lv_label_set_text(lbl_domoticz_result, tr("Fout: inloggen vereist (gebruiker/wachtwoord).", "Error: login required (user/password)."));
     } else {
-        lv_label_set_text(lbl_domoticz_result, "Fout: geen verbinding - controleer host/poort.");
+        lv_label_set_text(lbl_domoticz_result, tr("Fout: geen verbinding - controleer host/poort.", "Error: no connection - check host/port."));
     }
 }
 
@@ -1201,14 +1245,14 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_t * p = modal_open("Domoticz", 430);
     int y = 70;
 
-    lv_obj_t * r_en = panel_row(p, y, "Domoticz enabled", NULL);
+    lv_obj_t * r_en = panel_row(p, y, tr("Domoticz inschakelen", "Domoticz enabled"), NULL);
     row_switch(r_en, settings.enable_domoticz, on_domoticz_enabled_change);
     y += 82;
 
     lv_obj_t * lh = lv_label_create(p);
     lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
-    lv_label_set_text(lh, "Host (ip:port):");
+    lv_label_set_text(lh, tr("Host (ip:poort):", "Host (ip:port):"));
     lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_domoticz_host = lv_textarea_create(p); ta_make_numeric(ta_domoticz_host);
     lv_obj_set_size(ta_domoticz_host, SX(420), SY(44));
@@ -1220,7 +1264,7 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_t * lu = lv_label_create(p);
     lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
-    lv_label_set_text(lu, "User (opt):");
+    lv_label_set_text(lu, tr("Gebruiker (opt):", "User (opt):"));
     lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_domoticz_user = lv_textarea_create(p);
     lv_obj_set_size(ta_domoticz_user, SX(420), SY(44));
@@ -1234,14 +1278,14 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_domoticz_apply_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, "Save + connect"); lv_obj_center(la);
+    lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, tr("Opslaan + verbinden", "Save + connect")); lv_obj_center(la);
 
     lv_obj_t * b_view = lv_btn_create(p);
     lv_obj_set_size(b_view, SX(240), SY(50));
     lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(244), y);
     lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_view, on_domoticz_view_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, "View lights/blinds"); lv_obj_center(lv);
+    lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, tr("Licht/zonwering", "View lights/blinds")); lv_obj_center(lv);
     y += 64;
 
     lbl_domoticz_result = lv_label_create(p);
@@ -1250,7 +1294,7 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_set_width(lbl_domoticz_result, SX(770));
     lv_label_set_long_mode(lbl_domoticz_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_domoticz_result, "Set the Domoticz host, then Save + connect.");
+    lv_label_set_text(lbl_domoticz_result, tr("Stel de Domoticz-host in en kies Opslaan + verbinden.", "Set the Domoticz host, then Save + connect."));
 }
 
 /* Client mode: this Toon mirrors a master Toon over its PWA API. */
@@ -1266,17 +1310,17 @@ static void on_client_apply(lv_event_t * e) {
 }
 static void open_client_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Client mode", 470);
+    lv_obj_t * p = modal_open(tr("Clientmodus", "Client mode"), 470);
     int y = 70;
 
-    lv_obj_t * r = panel_row(p, y, "Client mode (mirror a master Toon)", NULL);
+    lv_obj_t * r = panel_row(p, y, tr("Clientmodus (een master-Toon spiegelen)", "Client mode (mirror a master Toon)"), NULL);
     sw_client = row_switch(r, settings.client_mode, NULL);
     y += 90;
 
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl, SF(22), 0);
-    lv_label_set_text(lbl, "Master IP:");
+    lv_label_set_text(lbl, tr("Master-IP:", "Master IP:"));
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_master = lv_textarea_create(p); ta_make_numeric(ta_master);
     lv_obj_set_size(ta_master, SX(400), SY(44));
@@ -1289,10 +1333,14 @@ static void open_client_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(hint, SF(18), 0);
     lv_label_set_text(hint,
-        "This Toon becomes a display-only slave: it shows the master's\n"
-        "thermostat/boiler/air/curtains and sends control back to it, with\n"
-        "no local sensors or integrations. Enter the master Toon's IP\n"
-        "(an Android tablet can instead just open http://<master>:10081 ).");
+        tr("Deze Toon wordt een alleen-weergave-slave: hij toont de thermostaat/\n"
+           "ketel/lucht/gordijnen van de master en stuurt bediening terug, zonder\n"
+           "lokale sensoren of integraties. Voer het IP van de master-Toon in\n"
+           "(een Android-tablet kan in plaats daarvan http://<master>:10081 openen).",
+           "This Toon becomes a display-only slave: it shows the master's\n"
+           "thermostat/boiler/air/curtains and sends control back to it, with\n"
+           "no local sensors or integrations. Enter the master Toon's IP\n"
+           "(an Android tablet can instead just open http://<master>:10081 )."));
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 110;
 
@@ -1302,7 +1350,7 @@ static void open_client_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_client_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
-    lv_label_set_text(bl, "Apply & restart");
+    lv_label_set_text(bl, tr("Toepassen & herstarten", "Apply & restart"));
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_center(bl);
 }
@@ -1352,17 +1400,17 @@ static void rotate_add_cb(lv_obj_t * sc, const char * id, const char * label, in
 
 static void open_rotate_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Auto-rotate tile", 540);
+    lv_obj_t * p = modal_open(tr("Tegel automatisch wisselen", "Auto-rotate tile"), 540);
     int y = 70;
 
-    lv_obj_t * r = panel_row(p, y, "Rotate page-2 slot 1 content", NULL);
+    lv_obj_t * r = panel_row(p, y, tr("Inhoud pagina-2 slot 1 wisselen", "Rotate page-2 slot 1 content"), NULL);
     sw_rotate = row_switch(r, settings.tile_rotate_enabled, NULL);
     y += 86;
 
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl, SF(22), 0);
-    lv_label_set_text(lbl, "Interval (s):");
+    lv_label_set_text(lbl, tr("Interval (s):", "Interval (s):"));
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_rotate_secs = lv_textarea_create(p);
     lv_obj_set_size(ta_rotate_secs, SX(160), SY(44));
@@ -1378,7 +1426,7 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_t * pick = lv_label_create(p);
     lv_obj_set_style_text_color(pick, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(pick, SF(18), 0);
-    lv_label_set_text(pick, "Cycle through:");
+    lv_label_set_text(pick, tr("Wissel tussen:", "Cycle through:"));
     lv_obj_align(pick, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 34;
 
@@ -1410,7 +1458,7 @@ static void open_rotate_modal(lv_event_t * e) {
         lv_obj_set_style_text_font(m, SF(18), 0);
         lv_obj_set_width(m, SX(780));
         lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
-        lv_label_set_text(m, "Geen integraties aan. Zet ze aan bij Integraties, of installeer er een uit de Marketplace.");
+        lv_label_set_text(m, tr("Geen integraties aan. Zet ze aan bij Integraties, of installeer er een uit de Marketplace.", "No integrations on. Enable them under Integrations, or install one from the Marketplace."));
     }
     y += 208;
 
@@ -1420,7 +1468,7 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(note, SF(18), 0);
     lv_obj_set_width(note, SX(540));
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(note, "Meer integraties vind je in de Marketplace.");
+    lv_label_set_text(note, tr("Meer integraties vind je in de Marketplace.", "Find more integrations in the Marketplace."));
     lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y);
 
     lv_obj_t * btn = lv_btn_create(p);
@@ -1428,7 +1476,7 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(4), SY(-8));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_rotate_apply, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, "Apply");
+    lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, tr("Toepassen", "Apply"));
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0); lv_obj_center(bl);
 
     marketplace_button(p);   /* bottom-right → opens the Marketplace screen */
@@ -1468,7 +1516,7 @@ static void on_news_apply(lv_event_t * e) {
 static void on_news_test(lv_event_t * e) {
     (void)e;
     if (!ta_news_url || !lbl_news_status) return;
-    lv_label_set_text(lbl_news_status, "Testen...");
+    lv_label_set_text(lbl_news_status, tr("Testen...", "Testing..."));
     char msg[160];
     news_test_feed(lv_textarea_get_text(ta_news_url), msg, sizeof msg);
     lv_label_set_text(lbl_news_status, msg);
@@ -1514,7 +1562,7 @@ static void news_feeds_rebuild(void) {
         lv_obj_center(tl);
         i++;
     }
-    if (i == 0) lv_list_add_text(news_feeds_list, "(nog geen feeds - voeg er een toe)");
+    if (i == 0) lv_list_add_text(news_feeds_list, tr("(nog geen feeds - voeg er een toe)", "(no feeds yet - add one)"));
 }
 /* Toggle the idx-th feed's '#'-disabled prefix. */
 static void on_news_feed_toggle(lv_event_t * e) {
@@ -1589,20 +1637,20 @@ static void on_cal_save_click(lv_event_t * e) {
 }
 static void open_calendar_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Agenda", 560);
+    lv_obj_t * p = modal_open(tr("Agenda", "Calendar"), 560);
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
-    lv_obj_t * r = panel_row(p, y, "Agenda inschakelen", NULL);
+    lv_obj_t * r = panel_row(p, y, tr("Agenda inschakelen", "Enable calendar"), NULL);
     sw_cal = row_switch(r, settings.calendar_enabled, on_cal_enabled_change);
     y += 90;
 
     lv_obj_t * l1 = lv_label_create(p);
     lv_obj_set_style_text_color(l1, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(l1, SF(18), 0);
-    lv_label_set_text(l1, "Home Assistant agenda-entiteit (optioneel):");
+    lv_label_set_text(l1, tr("Home Assistant agenda-entiteit (optioneel):", "Home Assistant calendar entity (optional):"));
     lv_obj_align(l1, LV_ALIGN_TOP_LEFT, SX(4), y); y += 30;
     ta_cal_ha = lv_textarea_create(p);
     lv_obj_set_size(ta_cal_ha, SX(470), SY(44));
@@ -1615,7 +1663,7 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_t * l2 = lv_label_create(p);
     lv_obj_set_style_text_color(l2, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(l2, SF(18), 0);
-    lv_label_set_text(l2, "iCal (.ics) URL (optioneel):");
+    lv_label_set_text(l2, tr("iCal (.ics) URL (optioneel):", "iCal (.ics) URL (optional):"));
     lv_obj_align(l2, LV_ALIGN_TOP_LEFT, SX(4), y); y += 30;
     ta_cal_ics = lv_textarea_create(p);
     lv_obj_set_size(ta_cal_ics, SX(470), SY(44));
@@ -1630,25 +1678,25 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_align(saveb, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(saveb, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(saveb, on_cal_save_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * sl = lv_label_create(saveb); lv_label_set_text(sl, "Opslaan"); lv_obj_center(sl);
+    lv_obj_t * sl = lv_label_create(saveb); lv_label_set_text(sl, tr("Opslaan", "Save")); lv_obj_center(sl);
 
     lv_obj_t * openb = lv_btn_create(p);
     lv_obj_set_size(openb, SX(180), SY(46));
     lv_obj_align(openb, LV_ALIGN_TOP_LEFT, SX(170), y);
     lv_obj_set_style_bg_color(openb, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(openb, on_cal_open_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * ol = lv_label_create(openb); lv_label_set_text(ol, "Agenda openen"); lv_obj_center(ol);
+    lv_obj_t * ol = lv_label_create(openb); lv_label_set_text(ol, tr("Agenda openen", "Open calendar")); lv_obj_center(ol);
 }
 
 static void open_news_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Newsreader", 560);
+    lv_obj_t * p = modal_open(tr("Nieuwslezer", "Newsreader"), 560);
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
-    lv_obj_t * r = panel_row(p, y, "News ticker on home screen", NULL);
+    lv_obj_t * r = panel_row(p, y, tr("Nieuwsticker op startscherm", "News ticker on home screen"), NULL);
     sw_news = row_switch(r, settings.news_enabled, on_news_enabled_change);
     y += 90;
 
@@ -1659,14 +1707,14 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_align(onb, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(onb, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(onb, on_news_open_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * onl = lv_label_create(onb); lv_label_set_text(onl, "Nieuws openen"); lv_obj_center(onl);
+    lv_obj_t * onl = lv_label_create(onb); lv_label_set_text(onl, tr("Nieuws openen", "Open news")); lv_obj_center(onl);
     y += 64;
 
     /* RSS feeds — a list (tap a row to remove) + an Add box below it. */
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl, SF(22), 0);
-    lv_label_set_text(lbl, "RSS feeds (tik om te verwijderen):");
+    lv_label_set_text(lbl, tr("RSS-feeds (tik om te verwijderen):", "RSS feeds (tap to remove):"));
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
     news_feeds_list = lv_list_create(p);
@@ -1680,24 +1728,24 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_set_size(ta_news_url, SX(470), SY(44));
     lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_news_url, true);
-    lv_textarea_set_placeholder_text(ta_news_url, "https://… RSS feed");
+    lv_textarea_set_placeholder_text(ta_news_url, tr("https://… RSS-feed", "https://… RSS feed"));
     lv_obj_t * addb = lv_btn_create(p);
     lv_obj_set_size(addb, SX(120), SY(44));
     lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(484), y);
     lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(addb, on_news_add_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, "Toevoegen"); lv_obj_center(al);
+    lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, tr("Toevoegen", "Add")); lv_obj_center(al);
     lv_obj_t * tbtn = lv_btn_create(p);
     lv_obj_set_size(tbtn, SX(120), SY(44));
     lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, SX(614), y);
     lv_obj_set_style_bg_color(tbtn, lv_color_hex(0x33445a), 0);
     lv_obj_add_event_cb(tbtn, on_news_test, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, "Test"); lv_obj_center(tl);
+    lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, tr("Test", "Test")); lv_obj_center(tl);
     lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0);
     y += 64;
 
     int spd = settings.news_scroll_speed >= 30 ? settings.news_scroll_speed : 30;
-    lv_obj_t * rs = panel_row(p, y, "Ticker speed (px/s)", &lbl_news_speed);
+    lv_obj_t * rs = panel_row(p, y, tr("Tickersnelheid (px/s)", "Ticker speed (px/s)"), &lbl_news_speed);
     lv_label_set_text_fmt(lbl_news_speed, "%d", spd);
     sl_news_speed = row_slider(rs, 30, 150, spd, on_news_speed_change);
     y += 86;
@@ -1717,9 +1765,12 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_set_width(hint, SX(800));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint,
-        "Headlines scroll above the forecast; tap them to get a QR code that "
-        "opens the article on your phone. Any RSS/Atom feed works "
-        "(default: NOS Nieuws).");
+        tr("Koppen scrollen boven de verwachting; tik erop voor een QR-code die "
+           "het artikel op je telefoon opent. Elke RSS/Atom-feed werkt "
+           "(standaard: NOS Nieuws).",
+           "Headlines scroll above the forecast; tap them to get a QR code that "
+           "opens the article on your phone. Any RSS/Atom feed works "
+           "(default: NOS Nieuws)."));
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
 
     lv_obj_t * btn = lv_btn_create(p);
@@ -1728,24 +1779,24 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_news_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
-    lv_label_set_text(bl, "Apply & restart");
+    lv_label_set_text(bl, tr("Toepassen & herstarten", "Apply & restart"));
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_center(bl);
 }
 
 static void open_uimode_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("UI mode", 440);
+    lv_obj_t * p = modal_open(tr("UI-modus", "UI mode"), 440);
     int y = 70;
 
     lv_obj_t * r;
 
-    r = panel_row(p, y, "Current UI", &lbl_uimode_current);
+    r = panel_row(p, y, tr("Huidige UI", "Current UI"), &lbl_uimode_current);
     lv_label_set_text(lbl_uimode_current,
-        read_ui_choice() ? "stock qt-gui" : "freetoon-lvgl");
+        read_ui_choice() ? tr("standaard qt-gui", "stock qt-gui") : "freetoon-lvgl");
     y += 84;
 
-    r = panel_row(p, y, "Boot picker (10 s at boot)", NULL);
+    r = panel_row(p, y, tr("Bootkiezer (10 s bij opstarten)", "Boot picker (10 s at boot)"), NULL);
     sw_uimode_picker = row_switch(r, settings.boot_picker_enabled, on_uimode_picker);
     y += 84;
 
@@ -1759,7 +1810,7 @@ static void open_uimode_modal(lv_event_t * e) {
     lv_obj_set_style_radius(b_switch, 12, 0);
     lv_obj_add_event_cb(b_switch, on_uimode_to_qtgui, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bsw_l = lv_label_create(b_switch);
-    lv_label_set_text(bsw_l, "Switch to stock qt-gui...");
+    lv_label_set_text(bsw_l, tr("Naar standaard qt-gui...", "Switch to stock qt-gui..."));
     lv_obj_set_style_text_font(bsw_l, SF(22), 0);
     lv_obj_set_style_text_color(bsw_l, lv_color_hex(0xffffff), 0);
     lv_obj_center(bsw_l);
@@ -1782,8 +1833,10 @@ static lv_obj_t * sw_int_energy_src;
 static void integ_dirty_hint(void) {
     if (!lbl_integ_hint) return;
     lv_label_set_text(lbl_integ_hint,
-        "Saved. Restart toonui to apply (Settings → About → Restart, "
-        "or just unplug+plug the screen).");
+        tr("Opgeslagen. Herstart toonui om toe te passen (Instellingen → Over → Herstart, "
+           "of trek de stekker er even uit).",
+           "Saved. Restart toonui to apply (Settings → About → Restart, "
+           "or just unplug+plug the screen)."));
     lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0xffcc66), 0);
 }
 
@@ -1825,31 +1878,31 @@ static void open_integrations_modal(lv_event_t * e) {
     (void)e;
     /* Five panel_rows × 84 + 92 + 100 (hint label) ≈ 612. Bump the modal
      * height so the hide-offline switch + hint actually fit. */
-    lv_obj_t * p = modal_open("Integrations", 710);
+    lv_obj_t * p = modal_open(tr("Integraties", "Integrations"), 710);
     int y = 70;
 
     lv_obj_t * r;
-    r = panel_row(p, y, "Energy source: ON = HomeWizard P1, OFF = meteradapter", NULL);
+    r = panel_row(p, y, tr("Energiebron: AAN = HomeWizard P1, UIT = meteradapter", "Energy source: ON = HomeWizard P1, OFF = meteradapter"), NULL);
     sw_int_energy_src = row_switch(r, settings.energy_source, on_int_energy_src);
     y += 84;
 
-    r = panel_row(p, y, "HomeWizard P1 (electricity + gas)", NULL);
+    r = panel_row(p, y, tr("HomeWizard P1 (elektriciteit + gas)", "HomeWizard P1 (electricity + gas)"), NULL);
     sw_int_p1_elec = row_switch(r, settings.enable_p1_elec, on_int_p1_elec);
     y += 84;
 
-    r = panel_row(p, y, "HomeWizard HWE-WTR (water)", NULL);
+    r = panel_row(p, y, tr("HomeWizard HWE-WTR (water)", "HomeWizard HWE-WTR (water)"), NULL);
     sw_int_p1_water = row_switch(r, settings.enable_p1_water, on_int_p1_water);
     y += 84;
 
-    r = panel_row(p, y, "Itho ventilation", NULL);
+    r = panel_row(p, y, tr("Itho-ventilatie", "Itho ventilation"), NULL);
     sw_int_vent = row_switch(r, settings.enable_vent, on_int_vent);
     y += 84;
 
-    r = panel_row(p, y, "Home Assistant (curtains, Life360)", NULL);
+    r = panel_row(p, y, tr("Home Assistant (gordijnen, Life360)", "Home Assistant (curtains, Life360)"), NULL);
     sw_int_ha = row_switch(r, settings.enable_ha, on_int_ha);
     y += 84;
 
-    r = panel_row(p, y, "Hide offline tiles entirely", NULL);
+    r = panel_row(p, y, tr("Offline tegels volledig verbergen", "Hide offline tiles entirely"), NULL);
     sw_int_hide_offline = row_switch(r, settings.hide_offline_tiles, on_int_hide_offline);
     y += 92;
 
@@ -1859,9 +1912,12 @@ static void open_integrations_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_integ_hint, SX(800));
     lv_label_set_long_mode(lbl_integ_hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_integ_hint,
-        "Each integration needs its companion config "
-        "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
-        "Toggle a switch then restart toonui.");
+        tr("Elke integratie heeft zijn bijbehorende config nodig "
+           "(p1bridge.conf / vent.conf / ha.cfg) voordat de tegels oplichten. "
+           "Zet een schakelaar om en herstart toonui.",
+           "Each integration needs its companion config "
+           "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
+           "Toggle a switch then restart toonui."));
     lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), y);
 
     /* Button to open the HA entity configuration modal. */
@@ -1872,7 +1928,7 @@ static void open_integrations_modal(lv_event_t * e) {
     lv_obj_add_event_cb(b_ha, open_ha_entities_modal, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bhl = lv_label_create(b_ha);
     lv_obj_set_style_text_color(bhl, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(bhl, "Configure HA entities...");
+    lv_label_set_text(bhl, tr("HA-entiteiten instellen...", "Configure HA entities..."));
     lv_obj_center(bhl);
 }
 
@@ -2005,7 +2061,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
 
     /* Enable toggle — makes this a self-contained HA config (like the
        Domoticz tile), so the dedicated Settings tile is all you need. */
-    lv_obj_t * r_en = panel_row(p, y, "Home Assistant enabled", NULL);
+    lv_obj_t * r_en = panel_row(p, y, tr("Home Assistant inschakelen", "Home Assistant enabled"), NULL);
     row_switch(r_en, settings.enable_ha, on_int_ha);
     y += 82;
 
@@ -2013,7 +2069,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_obj_t * lh = lv_label_create(p);
     lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
-    lv_label_set_text(lh, "HA host (ip:port):");
+    lv_label_set_text(lh, tr("HA-host (ip:poort):", "HA host (ip:port):"));
     lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_ha_host = lv_textarea_create(p);
     lv_obj_set_size(ta_ha_host, tw, SY(44));
@@ -2030,7 +2086,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_obj_t * ltk = lv_label_create(p);
     lv_obj_set_style_text_color(ltk, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(ltk, SF(22), 0);
-    lv_label_set_text(ltk, "HA token:");
+    lv_label_set_text(ltk, tr("HA-token:", "HA token:"));
     lv_obj_align(ltk, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_ha_token = lv_textarea_create(p);
     lv_obj_set_size(ta_ha_token, tw, SY(44));
@@ -2045,15 +2101,17 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_obj_t * lsec = lv_label_create(p);
     lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
-    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Devices \xE2\x94\x80\xE2\x94\x80");
+    lv_label_set_text(lsec, tr("\xE2\x94\x80\xE2\x94\x80 Apparaten \xE2\x94\x80\xE2\x94\x80", "\xE2\x94\x80\xE2\x94\x80 Devices \xE2\x94\x80\xE2\x94\x80"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
     {
         lv_obj_t * hint = lv_label_create(p);
         lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
         lv_obj_set_style_text_font(hint, SF(18), 0);
-        lv_label_set_text(hint, "Lights, covers, switches, scripts and scenes —\n"
-                                "shown behind the home Devices button.");
+        lv_label_set_text(hint, tr("Lampen, zonwering, schakelaars, scripts en scènes —\n"
+                                    "te zien achter de Apparaten-knop op start.",
+                                    "Lights, covers, switches, scripts and scenes —\n"
+                                    "shown behind the home Devices button."));
         lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
         y += 52;
         lv_obj_t * bm = lv_btn_create(p);
@@ -2065,7 +2123,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
         lv_obj_t * bml = lv_label_create(bm);
         lv_obj_set_style_text_color(bml, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(bml, SF(20), 0);
-        lv_label_set_text(bml, "Manage devices...");
+        lv_label_set_text(bml, tr("Apparaten beheren...", "Manage devices..."));
         lv_obj_center(bml);
         y += 60;
     }
@@ -2074,41 +2132,41 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lsec = lv_label_create(p);
     lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
-    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Doorbell \xE2\x94\x80\xE2\x94\x80");
+    lv_label_set_text(lsec, tr("\xE2\x94\x80\xE2\x94\x80 Deurbel \xE2\x94\x80\xE2\x94\x80", "\xE2\x94\x80\xE2\x94\x80 Doorbell \xE2\x94\x80\xE2\x94\x80"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
-    y = ha_field_row(p, y, "Trigger entity:", settings.doorbell_entity, "binary_sensor.deurbel", tw, &ta_doorbell_entity, "binary_sensor");
-    y = ha_field_row(p, y, "Camera entity:", settings.doorbell_camera, "camera.voordeur", tw, &ta_doorbell_camera, "camera");
-    y = ha_field_row(p, y, "Show seconds (3-300):", NULL, "30", SX(120), &ta_doorbell_seconds, NULL);
+    y = ha_field_row(p, y, tr("Trigger-entiteit:", "Trigger entity:"), settings.doorbell_entity, "binary_sensor.deurbel", tw, &ta_doorbell_entity, "binary_sensor");
+    y = ha_field_row(p, y, tr("Camera-entiteit:", "Camera entity:"), settings.doorbell_camera, "camera.voordeur", tw, &ta_doorbell_camera, "camera");
+    y = ha_field_row(p, y, tr("Seconden tonen (3-300):", "Show seconds (3-300):"), NULL, "30", SX(120), &ta_doorbell_seconds, NULL);
     if (ta_doorbell_seconds) {
         char sec_str[8];
         snprintf(sec_str, sizeof(sec_str), "%d", settings.doorbell_seconds);
         lv_textarea_set_text(ta_doorbell_seconds, sec_str);
     }
-    y = ha_field_row(p, y, "MJPEG stream URL:", settings.doorbell_stream_url, "http://.../stream.mjpeg", tw, &ta_doorbell_stream, NULL);
+    y = ha_field_row(p, y, tr("MJPEG-stream-URL:", "MJPEG stream URL:"), settings.doorbell_stream_url, "http://.../stream.mjpeg", tw, &ta_doorbell_stream, NULL);
     y += 8;
 
     /* ── Family / Life360 ── */
     lsec = lv_label_create(p);
     lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
-    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Family \xE2\x94\x80\xE2\x94\x80");
+    lv_label_set_text(lsec, tr("\xE2\x94\x80\xE2\x94\x80 Gezin \xE2\x94\x80\xE2\x94\x80", "\xE2\x94\x80\xE2\x94\x80 Family \xE2\x94\x80\xE2\x94\x80"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
-    y = ha_field_row(p, y, "Person A entity:", settings.life360_a_entity, "device_tracker.life360_alice", tw, &ta_life360_a_entity, "device_tracker");
-    y = ha_field_row(p, y, "Person A name:", settings.life360_a_name, "Alice", tw, &ta_life360_a_name, NULL);
-    y = ha_field_row(p, y, "Person B entity:", settings.life360_b_entity, "device_tracker.life360_bob", tw, &ta_life360_b_entity, "device_tracker");
-    y = ha_field_row(p, y, "Person B name:", settings.life360_b_name, "Bob", tw, &ta_life360_b_name, NULL);
+    y = ha_field_row(p, y, tr("Persoon A entiteit:", "Person A entity:"), settings.life360_a_entity, "device_tracker.life360_alice", tw, &ta_life360_a_entity, "device_tracker");
+    y = ha_field_row(p, y, tr("Persoon A naam:", "Person A name:"), settings.life360_a_name, "Alice", tw, &ta_life360_a_name, NULL);
+    y = ha_field_row(p, y, tr("Persoon B entiteit:", "Person B entity:"), settings.life360_b_entity, "device_tracker.life360_bob", tw, &ta_life360_b_entity, "device_tracker");
+    y = ha_field_row(p, y, tr("Persoon B naam:", "Person B name:"), settings.life360_b_name, "Bob", tw, &ta_life360_b_name, NULL);
     y += 8;
 
     /* ── Calendar ── */
     lsec = lv_label_create(p);
     lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
-    lv_label_set_text(lsec, "\xE2\x94\x80\xE2\x94\x80 Calendar \xE2\x94\x80\xE2\x94\x80");
+    lv_label_set_text(lsec, tr("\xE2\x94\x80\xE2\x94\x80 Agenda \xE2\x94\x80\xE2\x94\x80", "\xE2\x94\x80\xE2\x94\x80 Calendar \xE2\x94\x80\xE2\x94\x80"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
-    y = ha_field_row(p, y, "HA calendar entity:", settings.calendar_ha_entity, "calendar.gezin", tw, &ta_calendar_ha_entity, "calendar");
+    y = ha_field_row(p, y, tr("HA-agenda-entiteit:", "HA calendar entity:"), settings.calendar_ha_entity, "calendar.gezin", tw, &ta_calendar_ha_entity, "calendar");
     y += 16;
 
     /* Save button */
@@ -2120,7 +2178,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_obj_add_event_cb(b_save, on_ha_entities_save, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bsl = lv_label_create(b_save);
     lv_obj_set_style_text_color(bsl, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(bsl, "Save & close");
+    lv_label_set_text(bsl, tr("Opslaan & sluiten", "Save & close"));
     lv_obj_center(bsl);
 }
 
@@ -2137,7 +2195,7 @@ static lv_obj_t * dd_tile_slot[TILE_SLOT_COUNT];
  * Output buffer is owned by caller and must be large enough — 64 chars per
  * integration + 1 for separator. */
 static void build_slot_options(char * out, size_t cap) {
-    size_t n = snprintf(out, cap, "Built-in");
+    size_t n = snprintf(out, cap, "%s", tr("Ingebouwd", "Built-in"));
     int total = tile_slots_integration_count();
     for (int i = 0; i < total && n + INTEG_NAME_MAX + 2 < cap; i++) {
         const integration_meta_t * m = tile_slots_integration_at(i);
@@ -2182,7 +2240,7 @@ static lv_obj_t * marketplace_button(lv_obj_t * parent) {
     lv_obj_set_style_bg_color(b, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(b, on_modal_to_marketplace, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
-    lv_label_set_text(l, LV_SYMBOL_DOWNLOAD "  Open Marketplace");
+    lv_label_set_text_fmt(l, LV_SYMBOL_DOWNLOAD "  %s", tr("Marketplace openen", "Open Marketplace"));
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
     lv_obj_center(l);
     return b;
@@ -2190,7 +2248,7 @@ static lv_obj_t * marketplace_button(lv_obj_t * parent) {
 
 static void open_tile_slots_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Tile slots", 500);
+    lv_obj_t * p = modal_open(tr("Tegelslots", "Tile slots"), 500);
 
     if (tile_slots_integration_count() == 0) {
         lv_obj_t * msg = lv_label_create(p);
@@ -2199,9 +2257,12 @@ static void open_tile_slots_modal(lv_event_t * e) {
         lv_obj_set_width(msg, SX(800));
         lv_label_set_long_mode(msg, LV_LABEL_LONG_WRAP);
         lv_label_set_text(msg,
-            "No marketplace integrations installed yet. Open the "
-            "Marketplace to add one, then come back here to assign it "
-            "to a tile.");
+            tr("Nog geen marketplace-integraties geïnstalleerd. Open de "
+               "Marketplace om er een toe te voegen en kom dan terug om die "
+               "aan een tegel toe te wijzen.",
+               "No marketplace integrations installed yet. Open the "
+               "Marketplace to add one, then come back here to assign it "
+               "to a tile."));
         lv_obj_align(msg, LV_ALIGN_TOP_LEFT, SX(4), SY(80));
         marketplace_button(p);
         return;
@@ -2256,8 +2317,10 @@ static void open_tile_slots_modal(lv_event_t * e) {
     lv_obj_set_width(hint, SX(540));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint,
-        "Energy/Family/Vent/Water are the page-1 tiles; \"Page 2\" slots show on "
-        "the swipe page. \"Built-in\" keeps the default content.");
+        tr("Energie/Gezin/Vent/Water zijn de tegels op pagina 1; \"Pagina 2\"-slots "
+           "staan op de swipe-pagina. \"Ingebouwd\" houdt de standaardinhoud.",
+           "Energy/Family/Vent/Water are the page-1 tiles; \"Page 2\" slots show on "
+           "the swipe page. \"Built-in\" keeps the default content."));
     lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, SX(4), SY(-8));
     marketplace_button(p);
 }
@@ -2270,7 +2333,7 @@ void screen_settings_open_tile_slots_modal(void) {
 
 static void open_about_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("About", 320);
+    lv_obj_t * p = modal_open(tr("Over", "About"), 320);
 
     /* Same identity as the home ft-logo modal so both Abouts read identically:
        freetoon · version · beta · author/MIT, then the live update status. */
@@ -2289,7 +2352,7 @@ static void open_about_modal(lv_event_t * e) {
     lv_obj_t * cred = lv_label_create(p);
     lv_obj_set_style_text_color(cred, lv_color_hex(0x6f8aa0), 0);
     lv_obj_set_style_text_font(cred, SF(14), 0);
-    lv_label_set_text(cred, "alternative UI by Ierlandfan  -  MIT License");
+    lv_label_set_text(cred, tr("alternatieve UI door Ierlandfan  -  MIT-licentie", "alternative UI by Ierlandfan  -  MIT License"));
     lv_obj_align(cred, LV_ALIGN_TOP_LEFT, SX(4), SY(120));
 
     lbl_about_status = lv_label_create(p);
@@ -2436,7 +2499,7 @@ static void * check_thread(void * arg) {
 
 static void on_test_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_test_result, "Testing…");
+    lv_label_set_text(lbl_test_result, tr("Testen…", "Testing…"));
     pthread_t t;
     if (pthread_create(&t, NULL, test_thread, NULL) == 0) pthread_detach(t);
 }
@@ -2525,14 +2588,14 @@ static void * ket_thread(void * arg) {
 
 static void on_ket_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_ket_result, "Testing keteladapter…");
+    lv_label_set_text(lbl_ket_result, tr("Keteladapter testen…", "Testing keteladapter…"));
     pthread_t t;
     if (pthread_create(&t, NULL, ket_thread, NULL) == 0) pthread_detach(t);
 }
 
 static void on_check_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_check_result, "Querying OTGW…");
+    lv_label_set_text(lbl_check_result, tr("OTGW opvragen…", "Querying OTGW…"));
     pthread_t t;
     if (pthread_create(&t, NULL, check_thread, NULL) == 0) pthread_detach(t);
 }
@@ -2552,9 +2615,9 @@ static lv_obj_t * lbl_wireless = NULL;
 static const char * mode_label(const char * m) {
     /* Hyphens (not em-dashes): Montserrat at this size lacks the em-dash
      * glyph and would render it as a missing-glyph square. */
-    if (strcmp(m, "off")      == 0) return "Direct - keteladapter is the OT master (original qt-gui behaviour, no bridge script)";
-    if (strcmp(m, "wireless") == 0) return "Wireless - bridge fakes Quby, OTGW drives boiler";
-    return                             "Proxy - bridge sniffs Quby, native heat path preserved";
+    if (strcmp(m, "off")      == 0) return tr("Direct - keteladapter is de OT-master (origineel qt-gui-gedrag, geen bridge-script)", "Direct - keteladapter is the OT master (original qt-gui behaviour, no bridge script)");
+    if (strcmp(m, "wireless") == 0) return tr("Draadloos - bridge bootst Quby na, OTGW stuurt de ketel", "Wireless - bridge fakes Quby, OTGW drives boiler");
+    return                             tr("Proxy - bridge luistert Quby af, eigen warmtepad behouden", "Proxy - bridge sniffs Quby, native heat path preserved");
 }
 
 static void paint_mode_buttons(void) {
@@ -2586,8 +2649,10 @@ static void set_mode_and_repaint(const char * m) {
     lv_label_set_text(lbl_otmode, mode_label(m));
     paint_mode_buttons();
     lv_label_set_text(lbl_apply_warning,
-        "Tap Apply to write inittab + restart bridge/thermstat.\n"
-        "Heat will be off for ~10-15s during the switch.");
+        tr("Tik op Toepassen om inittab te schrijven + bridge/thermstat te herstarten.\n"
+           "Verwarming is ~10-15s uit tijdens het omschakelen.",
+           "Tap Apply to write inittab + restart bridge/thermstat.\n"
+           "Heat will be off for ~10-15s during the switch."));
     /* OTGW host/user/pass only meaningful for proxy + wireless (both talk
      * to OTGW). Off mode doesn't need them but no harm keeping editable. */
     int needs_otgw = strcmp(m, "off") != 0;
@@ -2626,8 +2691,10 @@ static void on_apply_click(lv_event_t * e) {
         settings.ot_bridge_mode);
     system(cmd);
     lv_label_set_text(lbl_apply_warning,
-        "Applied — bridge/thermstat restarting. "
-        "Re-open this modal in ~15s to verify.");
+        tr("Toegepast — bridge/thermstat herstart. "
+           "Heropen dit venster over ~15s om te controleren.",
+           "Applied — bridge/thermstat restarting. "
+           "Re-open this modal in ~15s to verify."));
 }
 
 /* Per-tick: pick up async test/check results and update the modal labels. */
@@ -2676,15 +2743,15 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * mode_lbl = lv_label_create(p);
     lv_obj_set_style_text_color(mode_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(mode_lbl, SF(22), 0);
-    lv_label_set_text(mode_lbl, "Mode:");
+    lv_label_set_text(mode_lbl, tr("Modus:", "Mode:"));
     lv_obj_align(mode_lbl, LV_ALIGN_TOP_LEFT, SX(4), y + 12);
 
     const struct { lv_obj_t ** btn_slot; lv_obj_t ** lbl_slot;
                    const char * caption;
                    lv_event_cb_t cb; int x; } picks[] = {
-        { &btn_off,      &lbl_off,      "Direct",   on_mode_off_click,      120 },
-        { &btn_proxy,    &lbl_proxy,    "Proxy",    on_mode_proxy_click,    270 },
-        { &btn_wireless, &lbl_wireless, "Wireless", on_mode_wireless_click, 470 },
+        { &btn_off,      &lbl_off,      tr("Direct", "Direct"),     on_mode_off_click,      120 },
+        { &btn_proxy,    &lbl_proxy,    tr("Proxy", "Proxy"),       on_mode_proxy_click,    270 },
+        { &btn_wireless, &lbl_wireless, tr("Draadloos", "Wireless"), on_mode_wireless_click, 470 },
     };
     for (unsigned i = 0; i < sizeof picks / sizeof picks[0]; i++) {
         lv_obj_t * b = lv_btn_create(p);
@@ -2716,7 +2783,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * lbl_host = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_host, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_host, SF(22), 0);
-    lv_label_set_text(lbl_host, "OTGW host:");
+    lv_label_set_text(lbl_host, tr("OTGW-host:", "OTGW host:"));
     lv_obj_align(lbl_host, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_host = lv_textarea_create(p); ta_make_numeric(ta_otgw_host);
     lv_obj_set_size(ta_otgw_host, SX(380), SY(44));
@@ -2729,7 +2796,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * lbl_user = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_user, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_user, SF(22), 0);
-    lv_label_set_text(lbl_user, "OTGW user (opt):");
+    lv_label_set_text(lbl_user, tr("OTGW-gebruiker (opt):", "OTGW user (opt):"));
     lv_obj_align(lbl_user, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_user = lv_textarea_create(p);
     lv_obj_set_size(ta_otgw_user, SX(380), SY(44));
@@ -2741,7 +2808,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * lbl_pass = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_pass, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_pass, SF(22), 0);
-    lv_label_set_text(lbl_pass, "OTGW pass (opt):");
+    lv_label_set_text(lbl_pass, tr("OTGW-wachtwoord (opt):", "OTGW pass (opt):"));
     lv_obj_align(lbl_pass, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_pass = lv_textarea_create(p);
     lv_obj_set_size(ta_otgw_pass, SX(380), SY(44));
@@ -2766,7 +2833,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_test, on_test_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_test_lbl = lv_label_create(b_test);
-    lv_label_set_text(b_test_lbl, "Test OTGW");
+    lv_label_set_text(b_test_lbl, tr("Test OTGW", "Test OTGW"));
     lv_obj_center(b_test_lbl);
 
     lv_obj_t * b_check = lv_btn_create(p);
@@ -2775,7 +2842,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_check, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_check, on_check_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_check_lbl = lv_label_create(b_check);
-    lv_label_set_text(b_check_lbl, "Check GW mode");
+    lv_label_set_text(b_check_lbl, tr("GW-modus checken", "Check GW mode"));
     lv_obj_center(b_check_lbl);
 
     lv_obj_t * b_ket = lv_btn_create(p);
@@ -2784,7 +2851,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_ket, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_ket, on_ket_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_ket_lbl = lv_label_create(b_ket);
-    lv_label_set_text(b_ket_lbl, "Test keteladapter");
+    lv_label_set_text(b_ket_lbl, tr("Test keteladapter", "Test keteladapter"));
     lv_obj_center(b_ket_lbl);
     y += 65;
 
@@ -2795,7 +2862,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0x884422), 0);
     lv_obj_add_event_cb(b_apply, on_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_apply_lbl = lv_label_create(b_apply);
-    lv_label_set_text(b_apply_lbl, "Apply mode");
+    lv_label_set_text(b_apply_lbl, tr("Modus toepassen", "Apply mode"));
     lv_obj_center(b_apply_lbl);
     y += 60;
 
@@ -2806,7 +2873,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_label_set_long_mode(lbl_test_result, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl_test_result, SX(770));
     lv_obj_align(lbl_test_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_test_result, "OTGW test: (not run)");
+    lv_label_set_text(lbl_test_result, tr("OTGW-test: (niet uitgevoerd)", "OTGW test: (not run)"));
     y += 35;
 
     lbl_check_result = lv_label_create(p);
@@ -2815,7 +2882,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_check_result, SX(770));
     lv_label_set_long_mode(lbl_check_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_check_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_check_result, "GW mode check: (not run)");
+    lv_label_set_text(lbl_check_result, tr("GW-moduscheck: (niet uitgevoerd)", "GW mode check: (not run)"));
     y += 35;
 
     lbl_ket_result = lv_label_create(p);
@@ -2824,7 +2891,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_ket_result, SX(770));
     lv_label_set_long_mode(lbl_ket_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_ket_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_ket_result, "Keteladapter test: (not run)");
+    lv_label_set_text(lbl_ket_result, tr("Keteladapter-test: (niet uitgevoerd)", "Keteladapter test: (not run)"));
     y += 45;
 
     lbl_apply_warning = lv_label_create(p);
@@ -2834,8 +2901,10 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_apply_warning, SX(770));
     lv_obj_align(lbl_apply_warning, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_apply_warning,
-        "Apply rewrites /etc/inittab and restarts quby_bridge + happ_thermstat. "
-        "Heat will pause for ~10s during the switch.");
+        tr("Toepassen herschrijft /etc/inittab en herstart quby_bridge + happ_thermstat. "
+           "Verwarming pauzeert ~10s tijdens het omschakelen.",
+           "Apply rewrites /etc/inittab and restarts quby_bridge + happ_thermstat. "
+           "Heat will pause for ~10s during the switch."));
 
     /* Reset async-result flags so this modal-open starts clean. */
     g_test_pending = 0;
@@ -3012,17 +3081,17 @@ static void on_pwa_reset_click(lv_event_t * e) {
 }
 static void open_web_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Web Access", 420);
+    lv_obj_t * p = modal_open(tr("Webtoegang", "Web Access"), 420);
     int y = 70;
 
-    lv_obj_t * r_en = panel_row(p, y, "Login required (browser)", NULL);
+    lv_obj_t * r_en = panel_row(p, y, tr("Login vereist (browser)", "Login required (browser)"), NULL);
     row_switch(r_en, settings.pwa_login_enabled, on_pwa_enabled_change);
     y += 82;
 
     lv_obj_t * lu = lv_label_create(p);
     lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
-    lv_label_set_text(lu, "Username:");
+    lv_label_set_text(lu, tr("Gebruikersnaam:", "Username:"));
     lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_pwa_user = lv_textarea_create(p);
     lv_obj_set_size(ta_pwa_user, SX(420), SY(44));
@@ -3034,7 +3103,7 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_t * lp = lv_label_create(p);
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
-    lv_label_set_text(lp, "Password:");
+    lv_label_set_text(lp, tr("Wachtwoord:", "Password:"));
     lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_pwa_pass = lv_textarea_create(p);
     lv_obj_set_size(ta_pwa_pass, SX(420), SY(44));
@@ -3050,7 +3119,7 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_pwa_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
-    lv_label_set_text(la, "Save"); lv_obj_center(la);
+    lv_label_set_text(la, tr("Opslaan", "Save")); lv_obj_center(la);
 
     /* "Forgot password" / reset button — alongside Save. Clearing
      * the field + Save does the same thing, but a dedicated button is
@@ -3061,7 +3130,7 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_reset, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(b_reset, on_pwa_reset_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lr = lv_label_create(b_reset);
-    lv_label_set_text(lr, "Reset password"); lv_obj_center(lr);
+    lv_label_set_text(lr, tr("Wachtwoord resetten", "Reset password")); lv_obj_center(lr);
 
     /* Note label — explains the empty-password fallback so users aren't
      * surprised when clearing the field doesn't fully disable login. */
@@ -3069,9 +3138,12 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(note, lv_color_hex(0x99aabb), 0);
     lv_obj_set_style_text_font(note, SF(14), 0);
     lv_label_set_text(note,
-        "Empty password = next browser visit prompts to set one.\n"
-        "Reset password = same, in one tap (when you forgot it).\n"
-        "Turn the toggle off to disable login entirely.");
+        tr("Leeg wachtwoord = volgende browserbezoek vraagt er een in te stellen.\n"
+           "Wachtwoord resetten = hetzelfde, in één tik (als je het vergeten bent).\n"
+           "Zet de schakelaar uit om login volledig uit te schakelen.",
+           "Empty password = next browser visit prompts to set one.\n"
+           "Reset password = same, in one tap (when you forgot it).\n"
+           "Turn the toggle off to disable login entirely."));
     lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
 }
 
@@ -3099,17 +3171,17 @@ static void on_pin_apply_click(lv_event_t * e) {
 }
 static void open_pin_settings_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("PIN code", 380);
+    lv_obj_t * p = modal_open(tr("Pincode", "PIN code"), 380);
     int y = 70;
 
-    lv_obj_t * r_en = panel_row(p, y, "PIN required for changes", NULL);
+    lv_obj_t * r_en = panel_row(p, y, tr("Pincode vereist voor wijzigingen", "PIN required for changes"), NULL);
     row_switch(r_en, settings.pin_enabled, on_pin_enabled_change);
     y += 82;
 
     lv_obj_t * lp = lv_label_create(p);
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
-    lv_label_set_text(lp, "PIN (4-6 digits):");
+    lv_label_set_text(lp, tr("Pincode (4-6 cijfers):", "PIN (4-6 digits):"));
     lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_pin_code = lv_textarea_create(p); ta_make_numeric(ta_pin_code);
     lv_obj_set_size(ta_pin_code, SX(260), SY(44));
@@ -3126,16 +3198,20 @@ static void open_pin_settings_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_pin_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
-    lv_label_set_text(la, "Save"); lv_obj_center(la);
+    lv_label_set_text(la, tr("Opslaan", "Save")); lv_obj_center(la);
 
     lv_obj_t * note = lv_label_create(p);
     lv_obj_set_style_text_color(note, lv_color_hex(0x99aabb), 0);
     lv_obj_set_style_text_font(note, SF(14), 0);
     lv_label_set_text(note,
-        "When enabled, the PIN gates: opening Settings,\n"
-        "thermostat presets (Comfort/Home/Sleep/Away),\n"
-        "+/- setpoint nudges, and schedule/manual toggle.\n"
-        "Empty PIN = gate stays open even if toggle is on.");
+        tr("Indien aan, beschermt de pincode: Instellingen openen,\n"
+           "thermostaatvoorkeuren (Comfort/Thuis/Slapen/Weg),\n"
+           "+/- streefwaarde-aanpassingen en schema/handmatig-schakelaar.\n"
+           "Lege pincode = beveiliging blijft open, ook al staat hij aan.",
+           "When enabled, the PIN gates: opening Settings,\n"
+           "thermostat presets (Comfort/Home/Sleep/Away),\n"
+           "+/- setpoint nudges, and schedule/manual toggle.\n"
+           "Empty PIN = gate stays open even if toggle is on."));
     lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y + 64);
 }
 
@@ -3195,7 +3271,7 @@ static void * mqtt_test_thread(void * arg) {
 
 static void on_mqtt_test_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_mqtt_result, "Testing connection…");
+    lv_label_set_text(lbl_mqtt_result, tr("Verbinding testen…", "Testing connection…"));
     pthread_t t;
     if (pthread_create(&t, NULL, mqtt_test_thread, NULL) == 0) pthread_detach(t);
 }
@@ -3229,8 +3305,8 @@ static void * mqtt_discover_thread(void * arg) {
                                  on_disc_topic, NULL);
     pthread_mutex_lock(&g_disc_mtx);
     snprintf(g_test_result, sizeof(g_test_result),
-             n < 0 ? "Discovery failed (check creds/host)"
-                   : "Discovery done: %d topic%s seen",
+             n < 0 ? tr("Ontdekken mislukt (controleer inlog/host)", "Discovery failed (check creds/host)")
+                   : tr("Ontdekken klaar: %d topic%s gezien", "Discovery done: %d topic%s seen"),
              n, n == 1 ? "" : "s");
     g_test_done = 1;
     g_disc_running = 0;
@@ -3244,7 +3320,7 @@ static void on_mqtt_discover_click(lv_event_t * e) {
     if (g_disc_running) { pthread_mutex_unlock(&g_disc_mtx); return; }
     g_disc_running = 1;
     pthread_mutex_unlock(&g_disc_mtx);
-    lv_label_set_text(lbl_mqtt_result, "Subscribing to # for 5s…");
+    lv_label_set_text(lbl_mqtt_result, tr("5s op # abonneren…", "Subscribing to # for 5s…"));
     pthread_t t;
     if (pthread_create(&t, NULL, mqtt_discover_thread, NULL) == 0) pthread_detach(t);
 }
@@ -3341,7 +3417,8 @@ static void on_mqtt_apply_click(lv_event_t * e) {
     }
     mqtt_client_restart();
     lv_label_set_text(lbl_mqtt_result,
-        "Applied — subscriber reconnecting with new settings.");
+        tr("Toegepast — abonnee verbindt opnieuw met de nieuwe instellingen.",
+           "Applied — subscriber reconnecting with new settings."));
 }
 
 static void on_mqtt_enabled_change(lv_event_t * e) {
@@ -3359,7 +3436,7 @@ static void open_mqtt_modal(lv_event_t * e) {
 
     /* Enabled toggle — lets MQTT be turned off entirely (the broker subscriber
      * otherwise always runs whenever a host is configured). */
-    lv_obj_t * r_en = panel_row(p, y, "MQTT enabled", NULL);
+    lv_obj_t * r_en = panel_row(p, y, tr("MQTT inschakelen", "MQTT enabled"), NULL);
     row_switch(r_en, settings.mqtt_enabled, on_mqtt_enabled_change);
     y += 82;
 
@@ -3367,7 +3444,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_t * lbl_h = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_h, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_h, SF(22), 0);
-    lv_label_set_text(lbl_h, "Broker host:");
+    lv_label_set_text(lbl_h, tr("Broker-host:", "Broker host:"));
     lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_mqtt_host = lv_textarea_create(p); ta_make_numeric(ta_mqtt_host);
     lv_obj_set_size(ta_mqtt_host, SX(380), SY(44));
@@ -3378,7 +3455,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_t * lbl_p = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_p, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_p, SF(22), 0);
-    lv_label_set_text(lbl_p, "Port:");
+    lv_label_set_text(lbl_p, tr("Poort:", "Port:"));
     lv_obj_align(lbl_p, LV_ALIGN_TOP_LEFT, SX(640), y);
     ta_mqtt_port = lv_textarea_create(p); ta_make_numeric(ta_mqtt_port);
     lv_obj_set_size(ta_mqtt_port, SX(100), SY(44));
@@ -3393,7 +3470,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_t * lbl_u = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_u, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_u, SF(22), 0);
-    lv_label_set_text(lbl_u, "User (opt):");
+    lv_label_set_text(lbl_u, tr("Gebruiker (opt):", "User (opt):"));
     lv_obj_align(lbl_u, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_mqtt_user = lv_textarea_create(p);
     lv_obj_set_size(ta_mqtt_user, SX(380), SY(44));
@@ -3406,7 +3483,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_t * lbl_pw = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_pw, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_pw, SF(22), 0);
-    lv_label_set_text(lbl_pw, "Pass (opt):");
+    lv_label_set_text(lbl_pw, tr("Wachtwoord (opt):", "Pass (opt):"));
     lv_obj_align(lbl_pw, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_mqtt_pass = lv_textarea_create(p);
     lv_obj_set_size(ta_mqtt_pass, SX(380), SY(44));
@@ -3423,7 +3500,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_test, on_mqtt_test_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl1 = lv_label_create(b_test);
-    lv_label_set_text(bl1, "Test connection"); lv_obj_center(bl1);
+    lv_label_set_text(bl1, tr("Verbinding testen", "Test connection")); lv_obj_center(bl1);
 
     lv_obj_t * b_disc = lv_btn_create(p);
     lv_obj_set_size(b_disc, SX(250), SY(50));
@@ -3431,7 +3508,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_disc, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_disc, on_mqtt_discover_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl2 = lv_label_create(b_disc);
-    lv_label_set_text(bl2, "Discover topics (5s)"); lv_obj_center(bl2);
+    lv_label_set_text(bl2, tr("Topics ontdekken (5s)", "Discover topics (5s)")); lv_obj_center(bl2);
 
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(200), SY(50));
@@ -3439,7 +3516,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_mqtt_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl3 = lv_label_create(b_apply);
-    lv_label_set_text(bl3, "Apply + restart"); lv_obj_center(bl3);
+    lv_label_set_text(bl3, tr("Toepassen + herstart", "Apply + restart")); lv_obj_center(bl3);
     y += 60;
 
     /* Result line */
@@ -3449,7 +3526,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_mqtt_result, SX(770));
     lv_label_set_long_mode(lbl_mqtt_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_mqtt_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_mqtt_result, "Ready. Test the broker or hit Discover.");
+    lv_label_set_text(lbl_mqtt_result, tr("Klaar. Test de broker of kies Ontdekken.", "Ready. Test the broker or hit Discover."));
     y += 40;
 
     /* Discovered-topic checklist container — scrollable column */
@@ -3498,7 +3575,7 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_set_ext_click_area(btn_back, 20);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * back_lbl = lv_label_create(btn_back);
-    lv_label_set_text(back_lbl, "< Back");
+    lv_label_set_text(back_lbl, tr("< Terug", "< Back"));
     lv_obj_set_style_text_color(back_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(back_lbl, SF(22), 0);
     lv_obj_center(back_lbl);
@@ -3506,7 +3583,7 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_label_set_text(title, "Settings");
+    lv_label_set_text(title, tr("Instellingen", "Settings"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(30));
 
     /* Category tiles in a compact 4-column grid. 232x104 each, so 4 rows
@@ -3518,60 +3595,60 @@ lv_obj_t * screen_settings_create(void) {
     #define GX(i) (SX(MX + ((i) % COLS) * (SETT_TILE_W + GAPX)))
     #define GY(i) (SY(TOP + ((i) / COLS) * (SETT_TILE_H + GAPY)))
     int n = 0;
-    make_tile(GX(n), GY(n), &icon_wx_sun, NULL, "Display",
-              "dim, timeout, brightness", open_display_modal); n++;
-    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, "Weather",
-              "weather on dim", open_weather_modal); n++;
-    make_tile(GX(n), GY(n), &icon_trash, NULL, "Waste",
-              "pickup alerts", open_waste_modal); n++;
-    make_tile(GX(n), GY(n), &icon_flame, NULL, "Heating",
-              "offset, boiler type", open_heating_modal); n++;
+    make_tile(GX(n), GY(n), &icon_wx_sun, NULL, tr("Scherm", "Display"),
+              tr("dimmen, wachttijd, helderheid", "dim, timeout, brightness"), open_display_modal); n++;
+    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, tr("Weer", "Weather"),
+              tr("weer op dimscherm", "weather on dim"), open_weather_modal); n++;
+    make_tile(GX(n), GY(n), &icon_trash, NULL, tr("Afval", "Waste"),
+              tr("ophaalmeldingen", "pickup alerts"), open_waste_modal); n++;
+    make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Verwarming", "Heating"),
+              tr("correctie, keteltype", "offset, boiler type"), open_heating_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
-              "off / proxy / wireless", open_otbridge_modal); n++;
+              tr("uit / proxy / draadloos", "off / proxy / wireless"), open_otbridge_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "MQTT",
-              "broker + topics", open_mqtt_modal); n++;
-    make_tile(GX(n), GY(n), &icon_radiator, NULL, "Presets",
-              "scheme setpoints", open_presets_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "About",
-              "status & diagnostics", open_about_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, "Clean",
-              "30 s screen lock", open_clean_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, "Integrations",
-              "P1 / water / vent / HA", open_integrations_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, "UI mode",
-              "freetoon vs qt-gui", open_uimode_modal); n++;
+              tr("broker + topics", "broker + topics"), open_mqtt_modal); n++;
+    make_tile(GX(n), GY(n), &icon_radiator, NULL, tr("Voorkeuren", "Presets"),
+              tr("schema-streefwaarden", "scheme setpoints"), open_presets_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Over", "About"),
+              tr("status & diagnose", "status & diagnostics"), open_about_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),
+              tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, tr("Integraties", "Integrations"),
+              tr("P1 / water / vent / HA", "P1 / water / vent / HA"), open_integrations_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, tr("UI-modus", "UI mode"),
+              tr("freetoon vs qt-gui", "freetoon vs qt-gui"), open_uimode_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
-              "install integrations", open_marketplace); n++;
+              tr("integraties installeren", "install integrations"), open_marketplace); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Crypto",
-              "kies munten", open_crypto_picker); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Tiles",
-              "assign home tiles", open_tile_slots_modal); n++;
+              tr("kies munten", "pick coins"), open_crypto_picker); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
+              tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, "Z-Wave",
-              "built-in devices", open_zwave); n++;
+              tr("ingebouwde apparaten", "built-in devices"), open_zwave); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "WiFi",
-              "scan & connect", open_wifi); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, "Adapters",
-              "meter & boiler", open_adapters); n++;
+              tr("zoeken & verbinden", "scan & connect"), open_wifi); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, tr("Adapters", "Adapters"),
+              tr("meter & ketel", "meter & boiler"), open_adapters); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
-              "lights & blinds", open_domoticz); n++;
+              tr("licht & zonwering", "lights & blinds"), open_domoticz); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Home Assistant",
-              "host, token, entities", open_ha_entities_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, "Client mode",
-              "mirror a master Toon", open_client_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, "Auto-rotate",
-              "cycle a tile's content", open_rotate_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Newsreader",
-              "RSS headlines ticker", open_news_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Agenda",
-              "HA + iCal events", open_calendar_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, "Indeling",
-              "tile layout editor", open_layout_editor); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, "Restart UI",
-              "reload settings", open_restart_confirm); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "Web Access",
-              "browser login", open_web_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, "PIN code",
-              "lock changes", open_pin_settings_modal); n++;
+              tr("host, token, entiteiten", "host, token, entities"), open_ha_entities_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, tr("Clientmodus", "Client mode"),
+              tr("een master-Toon spiegelen", "mirror a master Toon"), open_client_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, tr("Auto-wisselen", "Auto-rotate"),
+              tr("inhoud van een tegel wisselen", "cycle a tile's content"), open_rotate_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Nieuwslezer", "Newsreader"),
+              tr("RSS-koppenticker", "RSS headlines ticker"), open_news_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Agenda", "Calendar"),
+              tr("HA + iCal-afspraken", "HA + iCal events"), open_calendar_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Indeling", "Layout"),
+              tr("tegelindeling bewerken", "tile layout editor"), open_layout_editor); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),
+              tr("instellingen herladen", "reload settings"), open_restart_confirm); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, tr("Webtoegang", "Web Access"),
+              tr("browser-login", "browser login"), open_web_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, tr("Pincode", "PIN code"),
+              tr("wijzigingen vergrendelen", "lock changes"), open_pin_settings_modal); n++;
     #undef GX
     #undef GY
 

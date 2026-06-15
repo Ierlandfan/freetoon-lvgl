@@ -10,6 +10,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "homeassistant.h"
 #include "settings.h"
 #include <stdio.h>
@@ -99,7 +100,7 @@ static void rebuild(void) {
         lv_obj_align(tp, LV_ALIGN_LEFT_MID, 4, 12);
 
         /* Home-pin toggle + remove. */
-        lv_obj_t * pinb = small_btn(c, D->pin_home ? "Home " LV_SYMBOL_OK : "Home",
+        lv_obj_t * pinb = small_btn(c, D->pin_home ? tr("Home " LV_SYMBOL_OK, "Home " LV_SYMBOL_OK) : tr("Home", "Home"),
                                     D->pin_home ? COL_PIN_ON : COL_PIN_OFF,
                                     86, 36, on_pin, i);
         lv_obj_align(pinb, LV_ALIGN_RIGHT_MID, -76, 0);
@@ -124,7 +125,7 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_label_set_text(title, "Devices");
+    lv_label_set_text(title, tr("Apparaten", "Devices"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 24, 14);
 
     lv_obj_t * back = lv_btn_create(scr_root);
@@ -136,7 +137,7 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(bl, "< Back");
+    lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 
     /* Add-buttons row: one per device type. */
@@ -150,9 +151,9 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_obj_set_flex_flow(addrow, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(addrow, 6, 0);
     const struct { int type; const char * txt; } adds[] = {
-        { HADEV_LIGHT, "+ Light" }, { HADEV_COVER, "+ Cover" },
-        { HADEV_SWITCH, "+ Switch" }, { HADEV_SCRIPT, "+ Script" },
-        { HADEV_SCENE, "+ Scene" },
+        { HADEV_LIGHT, tr("+ Lamp", "+ Light") }, { HADEV_COVER, tr("+ Scherm", "+ Cover") },
+        { HADEV_SWITCH, tr("+ Schakelaar", "+ Switch") }, { HADEV_SCRIPT, tr("+ Script", "+ Script") },
+        { HADEV_SCENE, tr("+ Scène", "+ Scene") },
     };
     for (size_t i = 0; i < sizeof(adds)/sizeof(adds[0]); i++)
         small_btn(addrow, adds[i].txt, 0x2e5e8a, SX(140), SY(40), on_add, adds[i].type);
@@ -174,8 +175,10 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_label_set_long_mode(empty_hint, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(empty_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(empty_hint,
-        "No devices yet. Use the buttons above to add a light, cover,\n"
-        "switch, script or scene from your Home Assistant.");
+        tr("Nog geen apparaten. Gebruik de knoppen hierboven om een lamp, scherm,\n"
+           "schakelaar, script of scène uit je Home Assistant toe te voegen.",
+           "No devices yet. Use the buttons above to add a light, cover,\n"
+           "switch, script or scene from your Home Assistant."));
     lv_obj_align(empty_hint, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
 

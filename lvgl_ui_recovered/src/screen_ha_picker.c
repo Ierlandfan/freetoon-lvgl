@@ -7,6 +7,7 @@
  */
 #include "screens.h"
 #include "display.h"        /* SX()/SY()/SF() */
+#include "i18n.h"
 #include "homeassistant.h"  /* ha_discover_entities, ha_discovered_t */
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,7 +63,9 @@ static void load_entities(void) {
 
     if (ok != 0 || count == 0) {
         char msg[80];
-        snprintf(msg, sizeof(msg), "No %s entities found — check HA connection",
+        snprintf(msg, sizeof(msg),
+                 tr("Geen %s-entiteiten gevonden — controleer HA-verbinding",
+                    "No %s entities found — check HA connection"),
                  g_domain);
         lv_list_add_text(lst_results, msg);
         return;
@@ -112,7 +115,7 @@ lv_obj_t * screen_ha_picker_create(void) {
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
     lv_obj_t * bl = lv_label_create(back);
-    lv_label_set_text(bl, LV_SYMBOL_LEFT " Back");
+    lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     /* Refresh button */
@@ -127,7 +130,7 @@ lv_obj_t * screen_ha_picker_create(void) {
     lv_obj_set_style_text_font(lbl_title, SF(22), 0);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xffffff), 0);
     char title[64];
-    snprintf(title, sizeof(title), "Pick %s entity", g_domain);
+    snprintf(title, sizeof(title), tr("Kies %s-entiteit", "Pick %s entity"), g_domain);
     lv_label_set_text(lbl_title, title);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, SY(14));
 

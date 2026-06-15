@@ -14,6 +14,7 @@
  * authoritative list of DIDs OTGW is currently tracking. ~33 fields today.
  */
 #include "screens.h"
+#include "i18n.h"
 #include "display.h"
 #include "http.h"
 #include "settings.h"
@@ -101,20 +102,20 @@ static void rebuild_list(void) {
         rows++;
     }
     if (lbl_status)
-        lv_label_set_text_fmt(lbl_status, "%d fields", rows);
+        lv_label_set_text_fmt(lbl_status, tr("%d velden", "%d fields"), rows);
 }
 
 static void on_refresh(lv_timer_t * t) {
     (void)t;
     if (!settings.otgw_host[0]) {
-        if (lbl_status) lv_label_set_text(lbl_status, "no OTGW host configured");
+        if (lbl_status) lv_label_set_text(lbl_status, tr("geen OTGW-host ingesteld", "no OTGW host configured"));
         return;
     }
     char url[160];
     snprintf(url, sizeof(url), "http://%s/api/v1/otgw/otmonitor", settings.otgw_host);
     int rc = http_fetch(url, last_json, sizeof(last_json));
     if (rc == 0) rebuild_list();
-    else if (lbl_status) lv_label_set_text(lbl_status, "fetch failed");
+    else if (lbl_status) lv_label_set_text(lbl_status, tr("ophalen mislukt", "fetch failed"));
 }
 
 static void on_back(lv_event_t * e) {
@@ -131,7 +132,7 @@ lv_obj_t * screen_heater_advanced_create(void) {
     lv_obj_t * hdr = lv_label_create(scr_root);
     lv_obj_set_style_text_font(hdr, SF(28), 0);
     lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(hdr, "Boiler — Advanced (OTGW)");
+    lv_label_set_text(hdr, tr("Ketel — Geavanceerd (OTGW)", "Boiler — Advanced (OTGW)"));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, SX(20), SY(16));
 
     /* back button */
@@ -142,14 +143,14 @@ lv_obj_t * screen_heater_advanced_create(void) {
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(bl, "Back");
+    lv_label_set_text(bl, tr("Terug", "Back"));
     lv_obj_center(bl);
 
     /* status (field count or error) */
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_font(lbl_status, SF(14), 0);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(0x888888), 0);
-    lv_label_set_text(lbl_status, "loading...");
+    lv_label_set_text(lbl_status, tr("laden...", "loading..."));
     lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(20), SY(56));
 
     /* scrollable column for the field list */

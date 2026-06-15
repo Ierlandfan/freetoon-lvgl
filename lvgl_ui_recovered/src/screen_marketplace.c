@@ -15,6 +15,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "http.h"
 #include "settings.h"
 #include "icons.h"
@@ -110,7 +111,7 @@ static void parse_catalog(void) {
 static void * fetch_thread(void * arg) {
     (void)arg;
     if (status_lbl)
-        lv_label_set_text(status_lbl, "Fetching catalog...");
+        lv_label_set_text(status_lbl, tr("Catalogus ophalen...", "Fetching catalog..."));
     /* http_fetch returns 0 on success / -1 on failure (NOT a byte count) and
      * fills catalog_buf. Treat a non-zero rc OR an empty body as failure. */
     int rc = http_fetch(CATALOG_URL, catalog_buf, sizeof catalog_buf);
@@ -118,7 +119,8 @@ static void * fetch_thread(void * arg) {
     if (rc != 0 || catalog_len <= 0) {
         if (status_lbl)
             lv_label_set_text(status_lbl,
-                "Catalog fetch failed - check your internet.");
+                tr("Catalogus ophalen mislukt - controleer je internet.",
+                   "Catalog fetch failed - check your internet."));
         return NULL;
     }
     parse_catalog();
@@ -127,7 +129,9 @@ static void * fetch_thread(void * arg) {
      * shared state and let the on_screen_show handler repaint. */
     if (status_lbl) {
         char msg[64];
-        snprintf(msg, sizeof msg, "%d integrations available", entry_count);
+        snprintf(msg, sizeof msg,
+                 tr("%d integraties beschikbaar", "%d integrations available"),
+                 entry_count);
         lv_label_set_text(status_lbl, msg);
     }
     return NULL;
@@ -151,7 +155,7 @@ extern void wasm_push_event(const char * topic, const char * payload);
 
 static void * install_thread(void * arg) {
     integration_t * e = (integration_t *)arg;
-    if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, "Installing...");
+    if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Installeren...", "Installing..."));
     if (e->btn_install)
         lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_BUSY), 0);
 
@@ -161,7 +165,7 @@ static void * install_thread(void * arg) {
     char payload[96];
     snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", e->id);
     wasm_push_event("/api/install", payload);
-    if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, "Sent to master");
+    if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Naar master gestuurd", "Sent to master"));
     if (e->btn_install)
         lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_OK), 0);
     return NULL;
@@ -171,11 +175,11 @@ static void * install_thread(void * arg) {
     int rc = system(cmd);
 
     if (rc == 0) {
-        if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, "Installed");
+        if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Geïnstalleerd", "Installed"));
         if (e->btn_install)
             lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_OK), 0);
     } else {
-        if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, "Failed");
+        if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Mislukt", "Failed"));
         if (e->btn_install)
             lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_WARN), 0);
     }
@@ -191,13 +195,13 @@ static void on_install_clicked(lv_event_t * e) {
     char payload[96];
     snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", ent->id);
     wasm_push_event("/api/install", payload);
-    if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, "Sent to master");
+    if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Naar master gestuurd", "Sent to master"));
     if (ent->btn_install)
         lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_OK), 0);
 #else
     if (!install_helper_ok()) {
         if (ent->btn_install_lbl)
-            lv_label_set_text(ent->btn_install_lbl, "Need helper");
+            lv_label_set_text(ent->btn_install_lbl, tr("Helper nodig", "Need helper"));
         return;
     }
     pthread_t t;
@@ -258,7 +262,8 @@ static void build_rows(void) {
         lv_obj_set_style_text_font(ent->btn_install_lbl,
                                     SF(22), 0);
         lv_label_set_text(ent->btn_install_lbl,
-                          install_helper_ok() ? "Install" : "No helper");
+                          install_helper_ok() ? tr("Installeren", "Install")
+                                              : tr("Geen helper", "No helper"));
         lv_obj_center(ent->btn_install_lbl);
     }
 }
@@ -285,7 +290,7 @@ lv_obj_t * screen_marketplace_create(void) {
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_label_set_text(title, "Marketplace");
+    lv_label_set_text(title, tr("Marktplaats", "Marketplace"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(24));
 
     lv_obj_t * back = lv_btn_create(scr_root);
@@ -298,14 +303,14 @@ lv_obj_t * screen_marketplace_create(void) {
     lv_obj_t * bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_label_set_text(bl, "< Back");
+    lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 
     /* Status line shown above the list while we fetch + report errors. */
     status_lbl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(status_lbl, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(status_lbl, SF(18), 0);
-    lv_label_set_text(status_lbl, "Fetching catalog...");
+    lv_label_set_text(status_lbl, tr("Catalogus ophalen...", "Fetching catalog..."));
     lv_obj_align(status_lbl, LV_ALIGN_TOP_LEFT, SX(22), SY(80));
 
     /* Scrollable container for the rows */

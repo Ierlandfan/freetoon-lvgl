@@ -9,6 +9,7 @@
  */
 #include "screens.h"
 #include "display.h"   /* SF()/SX()/SY() scaling for Toon 1 */
+#include "i18n.h"
 #include "inbox.h"
 #include <stdio.h>
 #include <string.h>
@@ -49,7 +50,7 @@ static void rebuild_list(void) {
         lv_obj_t * empty = lv_label_create(list_panel);
         lv_obj_set_style_text_color(empty, lv_color_hex(0x88aabb), 0);
         lv_obj_set_style_text_font(empty, SF(22), 0);
-        lv_label_set_text(empty, "Geen berichten.");
+        lv_label_set_text(empty, tr("Geen berichten.", "No messages."));
         lv_obj_align(empty, LV_ALIGN_TOP_LEFT, 0, 12);
         return;
     }
@@ -107,7 +108,7 @@ static void rebuild_list(void) {
         lv_obj_set_style_radius(btn, 10, 0);
         lv_obj_add_event_cb(btn, on_row_delete, LV_EVENT_CLICKED, &row_ud[i]);
         lv_obj_t * btn_lbl = lv_label_create(btn);
-        lv_label_set_text(btn_lbl, "Delete");
+        lv_label_set_text(btn_lbl, tr("Verwijder", "Delete"));
         lv_obj_set_style_text_color(btn_lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(btn_lbl, SF(18), 0);
         lv_obj_center(btn_lbl);
@@ -136,7 +137,7 @@ void screen_inbox_show(void) {
     lv_obj_set_ext_click_area(close, 20);
     lv_obj_add_event_cb(close, on_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(close);
-    lv_label_set_text(cl, "Sluit");
+    lv_label_set_text(cl, tr("Sluit", "Close"));
     lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(cl, SF(22), 0);
     lv_obj_center(cl);
@@ -144,7 +145,7 @@ void screen_inbox_show(void) {
     lv_obj_t * title = lv_label_create(modal);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_label_set_text(title, "Inbox");
+    lv_label_set_text(title, tr("Inbox", "Inbox"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(26));
 
     /* Scrollable list area */

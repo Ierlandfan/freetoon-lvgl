@@ -5,6 +5,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "boxtalk.h"
 #include "settings.h"
 #include "homewizard.h"
@@ -232,7 +233,7 @@ static void refresh_cb(lv_timer_t * t) {
      * actively heating toward it (see screen_home.c for the same idea). */
     if (toon_state.setpoint > 0) {
         if (toon_state.burner_on)
-            lv_label_set_text_fmt(lbl_setpoint, "to %.1f°C", toon_state.setpoint);
+            lv_label_set_text_fmt(lbl_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
         else
             lv_label_set_text_fmt(lbl_setpoint, "%.1f°C", toon_state.setpoint);
     } else {
@@ -264,7 +265,8 @@ static void refresh_cb(lv_timer_t * t) {
                 snprintf(co2,  sizeof co2,  "CO2 %d ppm", toon_state.eco2);
             const char * aql = air_quality_label(toon_state.eco2, toon_state.tvoc);
             if (*aql)
-                snprintf(buf, sizeof buf, "%s    %s    %s    Air: %s",
+                snprintf(buf, sizeof buf, tr("%s    %s    %s    Lucht: %s",
+                                              "%s    %s    %s    Air: %s"),
                          tvoc, co2, bar, aql);
             else
                 snprintf(buf, sizeof buf, "%s    %s    %s", tvoc, co2, bar);
@@ -332,7 +334,7 @@ static void refresh_cb(lv_timer_t * t) {
             /* Itho reported itself offline via its MQTT LWT — show that
                (overrides the mode) and park the spinner. Normal case below
                shows what it's doing (mode + %). */
-            lv_label_set_text(dim_vent_lbl, "offline");
+            lv_label_set_text(dim_vent_lbl, tr("offline", "offline"));
             dim_vent_apply_anim(0);
             lv_obj_clear_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
@@ -371,8 +373,8 @@ static void refresh_cb(lv_timer_t * t) {
     if (dim_lbl_city) {
         if (settings.show_dim_weather && weather_state.connected) {
             const char * city = settings.weather_location[0]
-                                ? settings.weather_location : "Forecast";
-            lv_label_set_text_fmt(dim_lbl_city, "%s  -  %.1f°C now",
+                                ? settings.weather_location : tr("Verwachting", "Forecast");
+            lv_label_set_text_fmt(dim_lbl_city, tr("%s  -  %.1f°C nu", "%s  -  %.1f°C now"),
                                   city, weather_state.current_temp);
             lv_obj_clear_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
         } else {
@@ -528,7 +530,7 @@ static void refresh_cb(lv_timer_t * t) {
                 }
 
                 long days_until = waste_days_until(wp.date);
-                const char * when = (days_until == 0) ? "Vandaag" : (days_until == 1) ? "Morgen" : NULL;
+                const char * when = (days_until == 0) ? tr("Vandaag", "Today") : (days_until == 1) ? tr("Morgen", "Tomorrow") : NULL;
                 if (when) lv_label_set_text_fmt(lbl_waste, "%s: %s", when, l_clean);
                 else {
                     int mo = atoi(wp.date + 5), dy = atoi(wp.date + 8);
@@ -537,7 +539,7 @@ static void refresh_cb(lv_timer_t * t) {
             } else {
                 lv_img_set_src(waste_icon, &icon_trash_lg);
                 lv_obj_set_style_img_recolor_opa(waste_icon, 100, 0); /* dimmed */
-                lv_label_set_text(lbl_waste, "Geen");
+                lv_label_set_text(lbl_waste, tr("Geen", "None"));
                 if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
             }
             lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
@@ -638,7 +640,7 @@ lv_obj_t * screen_dim_create(void) {
     lbl_setpoint = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_setpoint, &lv_font_montserrat_28, 0);
-    lv_label_set_text(lbl_setpoint, "to -- C");
+    lv_label_set_text(lbl_setpoint, tr("naar -- C", "to -- C"));
     lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, SY(115));
 
     /* Active program — sits directly under the setpoint and above the
@@ -767,7 +769,7 @@ lv_obj_t * screen_dim_create(void) {
     lbl_outside = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_outside, "Buiten");
+    lv_label_set_text(lbl_outside, tr("Buiten", "Outside"));
     lv_obj_set_width(lbl_outside, SX(210));
     lv_obj_set_style_text_align(lbl_outside, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, SX(-56), SY(140));

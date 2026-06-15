@@ -10,6 +10,7 @@
  */
 #include "screens.h"
 #include "display.h"
+#include "i18n.h"
 #include "weather.h"
 #include "icons.h"
 #include "settings.h"
@@ -131,7 +132,7 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
-    lv_label_set_text(bl, "< Back");
+    lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
@@ -186,7 +187,7 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_width(lbl_title, SX(540));
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, SX(440), SY(100));
-    lv_label_set_text(lbl_title, "Weersverwachting");
+    lv_label_set_text(lbl_title, tr("Weersverwachting", "Weather forecast"));
 
     /* Body text — wrap inside a vertically-scrollable container so the
      * full weather report is readable. Previously the LONG_DOT mode
@@ -204,7 +205,7 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_style_text_font(lbl_body, SF(18), 0);
     lv_obj_set_width(lbl_body, SX(540));
     lv_label_set_long_mode(lbl_body, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(lbl_body, "(laden...)");
+    lv_label_set_text(lbl_body, tr("(laden...)", "(loading...)"));
 
     /* 5-day forecast strip — same column anatomy as the home band: day
        label top-left, max°(min°) top-right, big icon centred, wind arrow

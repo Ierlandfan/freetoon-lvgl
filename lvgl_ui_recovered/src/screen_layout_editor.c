@@ -16,6 +16,7 @@
 #include "display.h"   /* SF()/SX()/SY() scaling for Toon 1 */
 #include "layout.h"
 #include "settings.h"
+#include "i18n.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -252,10 +253,10 @@ static void create_rect(int i) {
 
 static void update_sel_label(void) {
     if (!sel_lbl) return;
-    if (sel < 0) { lv_label_set_text(sel_lbl, "Tik een tegel om te selecteren"); return; }
+    if (sel < 0) { lv_label_set_text(sel_lbl, tr("Tik een tegel om te selecteren", "Tap a tile to select")); return; }
     layout_tile_t * t = &edit.tiles[sel];
     lv_label_set_text_fmt(sel_lbl, "%s  %dx%d  %s",
-        layout_type_name(t->type), t->w, t->h, t->visible ? "" : "(verborgen)");
+        layout_type_name(t->type), t->w, t->h, t->visible ? "" : tr("(verborgen)", "(hidden)"));
 }
 
 /* ---- insert palette ("+ Tegel") --------------------------------------- */
@@ -263,7 +264,7 @@ static void update_sel_label(void) {
 /* Insert a tile of `type` at the picked size: drop it in the first free hole;
  * if the grid is full, place it top-left and push the rest down (re-pack). */
 static void do_insert(int type, int w, int h) {
-    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, "Maximum bereikt"); return; }
+    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, tr("Maximum bereikt", "Maximum reached")); return; }
     if (w > LAYOUT_COLS) w = LAYOUT_COLS;
     if (h > LAYOUT_ROWS) h = LAYOUT_ROWS;
     int i = edit.count;
@@ -278,7 +279,7 @@ static void do_insert(int type, int w, int h) {
                                       .w = w, .h = h, .visible = 1, .slot = -1 };
         s.count++;
         if (!layout_reflow_push(&s, i)) {
-            lv_label_set_text(sel_lbl, "Geen ruimte - kies een kleinere tegel of verberg er een");
+            lv_label_set_text(sel_lbl, tr("Geen ruimte - kies een kleinere tegel of verberg er een", "No room - pick a smaller tile or hide one"));
             return;
         }
         edit = s;
@@ -318,7 +319,7 @@ static void populate_types(void) {
     }
     if (!added) {
         lv_obj_t * l = lv_label_create(type_grid);
-        lv_label_set_text(l, "Geen types passen in deze grootte - kies een grotere tegel");
+        lv_label_set_text(l, tr("Geen types passen in deze grootte - kies een grotere tegel", "No types fit this size - pick a larger tile"));
         lv_obj_set_style_text_color(l, lv_color_hex(0xccddee), 0);
     }
 }
@@ -340,7 +341,7 @@ static void on_chooser_close(lv_event_t * e) { (void)e; close_chooser(); }
 static void on_add(lv_event_t * e) {
     (void)e;
     if (chooser) return;
-    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, "Maximum bereikt"); return; }
+    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, tr("Maximum bereikt", "Maximum reached")); return; }
 
     chooser = lv_obj_create(modal);
     lv_obj_set_size(chooser, SCR_W * 72 / 100, SCR_H * 84 / 100);
@@ -353,7 +354,7 @@ static void on_add(lv_event_t * e) {
     lv_obj_set_flex_flow(chooser, LV_FLEX_FLOW_COLUMN);
 
     lv_obj_t * title = lv_label_create(chooser);
-    lv_label_set_text(title, "Tegel toevoegen  -  kies grootte, dan type");
+    lv_label_set_text(title, tr("Tegel toevoegen  -  kies grootte, dan type", "Add tile  -  pick size, then type"));
     lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
     lv_obj_set_style_text_font(title, SF(14), 0);
 
@@ -398,7 +399,7 @@ static void on_add(lv_event_t * e) {
     lv_obj_set_style_bg_color(close, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(close, on_chooser_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(close);
-    lv_label_set_text(cl, "Annuleer");
+    lv_label_set_text(cl, tr("Annuleer", "Cancel"));
     lv_obj_center(cl);
 }
 
@@ -422,7 +423,7 @@ static void on_resize(lv_event_t * e) {
         else if (row > 0) { row--; h++; }
     }
     if (w == t->w && h == t->h && col == t->col && row == t->row) {
-        lv_label_set_text(sel_lbl, "Kan niet verder - min. grootte of schermrand bereikt");
+        lv_label_set_text(sel_lbl, tr("Kan niet verder - min. grootte of schermrand bereikt", "Can't go further - min. size or screen edge reached"));
         return;
     }
     /* Re-pack the rest around the new size; revert if it can't be made to fit. */
@@ -446,7 +447,7 @@ static void on_toggle_vis(lv_event_t * e) {
         if (would_overlap(sel, t->col, t->row, t->w, t->h)) {
             int c, r;
             if (find_free_cell(sel, t->w, t->h, &c, &r)) { t->col = c; t->row = r; }
-            else { lv_label_set_text(sel_lbl, "Geen ruimte om te tonen - verberg eerst iets"); return; }
+            else { lv_label_set_text(sel_lbl, tr("Geen ruimte om te tonen - verberg eerst iets", "No room to show - hide something first")); return; }
         }
     }
     t->visible = !t->visible;
@@ -499,7 +500,7 @@ static void show_delete_confirm(int i) {
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(0xeaf2ff), 0);
     lv_obj_set_style_text_font(t, SF(18), 0);
-    lv_label_set_text_fmt(t, "%s verwijderen?", layout_type_name(edit.tiles[i].type));
+    lv_label_set_text_fmt(t, tr("%s verwijderen?", "Delete %s?"), layout_type_name(edit.tiles[i].type));
     lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 16);
 
     lv_obj_t * del = lv_btn_create(card);
@@ -507,20 +508,20 @@ static void show_delete_confirm(int i) {
     lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, SX(-10), SY(-14));
     lv_obj_set_style_bg_color(del, lv_color_hex(0x6e2e2e), 0);
     lv_obj_add_event_cb(del, on_confirm_ok, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, "Verwijder"); lv_obj_center(dl);
+    lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijder", "Delete")); lv_obj_center(dl);
 
     lv_obj_t * ca = lv_btn_create(card);
     lv_obj_set_size(ca, SX(150), SY(50));
     lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, SX(10), SY(-14));
     lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(ca, on_confirm_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, "Annuleer"); lv_obj_center(cal);
+    lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, tr("Annuleer", "Cancel")); lv_obj_center(cal);
 }
 
 /* Toolbar "Verwijder" — routes through the same confirm dialog as the long-press. */
 static void on_delete_tile(lv_event_t * e) {
     (void)e;
-    if (sel < 0) { lv_label_set_text(sel_lbl, "Tik eerst een tegel"); return; }
+    if (sel < 0) { lv_label_set_text(sel_lbl, tr("Tik eerst een tegel", "Tap a tile first")); return; }
     show_delete_confirm(sel);
 }
 static void on_reset(lv_event_t * e) {
@@ -594,12 +595,12 @@ static void open_name_modal(lv_event_t * e) {
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(0xeaf2ff), 0);
     lv_obj_set_style_text_font(t, SF(18), 0);
-    lv_label_set_text(t, "Naam van de indeling");
+    lv_label_set_text(t, tr("Naam van de indeling", "Layout name"));
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 6, 6);
 
     name_ta = lv_textarea_create(card);
     lv_textarea_set_one_line(name_ta, true);
-    lv_textarea_set_placeholder_text(name_ta, "bv. Dag, Nacht, Gasten");
+    lv_textarea_set_placeholder_text(name_ta, tr("bv. Dag, Nacht, Gasten", "e.g. Day, Night, Guests"));
     lv_obj_set_width(name_ta, SCR_W * 70 / 100 - 40);
     lv_obj_align(name_ta, LV_ALIGN_TOP_MID, 0, 40);
 
@@ -608,14 +609,14 @@ static void open_name_modal(lv_event_t * e) {
     lv_obj_align(ok, LV_ALIGN_TOP_RIGHT, SX(-6), SY(90));
     lv_obj_set_style_bg_color(ok, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(ok, on_name_ok, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * okl = lv_label_create(ok); lv_label_set_text(okl, "Opslaan"); lv_obj_center(okl);
+    lv_obj_t * okl = lv_label_create(ok); lv_label_set_text(okl, tr("Opslaan", "Save")); lv_obj_center(okl);
 
     lv_obj_t * ca = lv_btn_create(card);
     lv_obj_set_size(ca, SX(130), SY(42));
     lv_obj_align(ca, LV_ALIGN_TOP_LEFT, SX(6), SY(90));
     lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(ca, on_name_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, "Annuleer"); lv_obj_center(cal);
+    lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, tr("Annuleer", "Cancel")); lv_obj_center(cal);
 
     lv_obj_t * kb = lv_keyboard_create(card);
     lv_obj_set_size(kb, SCR_W * 70 / 100 - 20, SCR_H / 2 - 30);
@@ -685,7 +686,7 @@ static void preset_row(const char * name, int idx, int deletable) {
     lv_obj_set_style_text_color(l, lv_color_hex(active ? 0x66dd88 : 0xccddee), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text_fmt(l, "%s%s", active ? LV_SYMBOL_OK " " : "",
-                          (idx < 0) ? "Standaard" : name);
+                          (idx < 0) ? tr("Standaard", "Default") : name);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 4, 0);
 
     /* right-aligned button cluster (flex so widths/gaps just work) */
@@ -699,10 +700,10 @@ static void preset_row(const char * name, int idx, int deletable) {
     lv_obj_clear_flag(btns, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(btns, LV_FLEX_FLOW_ROW);
 
-    row_btn(btns, "Startscherm", 0x2e6e3a, on_preset_apply, idx, 130);  /* show on home now */
-    row_btn(btns, "Bewerk",      0x2a4060, on_preset_load,  idx, 88);   /* edit in editor   */
+    row_btn(btns, tr("Startscherm", "Home"), 0x2e6e3a, on_preset_apply, idx, 130);  /* show on home now */
+    row_btn(btns, tr("Bewerk", "Edit"),      0x2a4060, on_preset_load,  idx, 88);   /* edit in editor   */
     if (deletable)
-        row_btn(btns, "Verwijder", 0x6e2e2e, on_preset_delete, idx, 96);
+        row_btn(btns, tr("Verwijder", "Delete"), 0x6e2e2e, on_preset_delete, idx, 96);
 }
 
 static void preset_mgr_refresh(void) {
@@ -729,7 +730,7 @@ static void open_preset_mgr(lv_event_t * e) {
     lv_obj_t * title = lv_label_create(preset_mgr);
     lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
     lv_obj_set_style_text_font(title, SF(18), 0);
-    lv_label_set_text(title, "Indelingen  -  Startscherm = tonen op home, Bewerk = aanpassen");
+    lv_label_set_text(title, tr("Indelingen  -  Startscherm = tonen op home, Bewerk = aanpassen", "Layouts  -  Home = show on home, Edit = change"));
 
     preset_list = lv_obj_create(preset_mgr);
     lv_obj_set_width(preset_list, LV_PCT(100));
@@ -755,13 +756,13 @@ static void open_preset_mgr(lv_event_t * e) {
     lv_obj_set_flex_grow(cp, 1); lv_obj_set_height(cp, 44);
     lv_obj_set_style_bg_color(cp, lv_color_hex(0x2e4e6e), 0);
     lv_obj_add_event_cb(cp, on_copy_p2, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cpl = lv_label_create(cp); lv_label_set_text(cpl, "Kopieer pagina 1 -> 2"); lv_obj_center(cpl);
+    lv_obj_t * cpl = lv_label_create(cp); lv_label_set_text(cpl, tr("Kopieer pagina 1 -> 2", "Copy page 1 -> 2")); lv_obj_center(cpl);
 
     lv_obj_t * rs = lv_btn_create(actions);
     lv_obj_set_width(rs, 150); lv_obj_set_height(rs, 44);
     lv_obj_set_style_bg_color(rs, lv_color_hex(0x665522), 0);
     lv_obj_add_event_cb(rs, on_reset, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * rsl = lv_label_create(rs); lv_label_set_text(rsl, "Standaard"); lv_obj_center(rsl);
+    lv_obj_t * rsl = lv_label_create(rs); lv_label_set_text(rsl, tr("Standaard", "Default")); lv_obj_center(rsl);
 
     lv_obj_t * footer = lv_obj_create(preset_mgr);
     lv_obj_set_width(footer, LV_PCT(100));
@@ -776,13 +777,13 @@ static void open_preset_mgr(lv_event_t * e) {
     lv_obj_set_flex_grow(saveas, 1); lv_obj_set_height(saveas, 44);
     lv_obj_set_style_bg_color(saveas, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(saveas, on_save_as, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * sl = lv_label_create(saveas); lv_label_set_text(sl, "Opslaan als nieuwe..."); lv_obj_center(sl);
+    lv_obj_t * sl = lv_label_create(saveas); lv_label_set_text(sl, tr("Opslaan als nieuwe...", "Save as new...")); lv_obj_center(sl);
 
     lv_obj_t * cl = lv_btn_create(footer);
     lv_obj_set_width(cl, 120); lv_obj_set_height(cl, 44);
     lv_obj_set_style_bg_color(cl, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(cl, on_preset_close, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cll = lv_label_create(cl); lv_label_set_text(cll, "Sluit"); lv_obj_center(cll);
+    lv_obj_t * cll = lv_label_create(cl); lv_label_set_text(cll, tr("Sluit", "Close")); lv_obj_center(cll);
 }
 static void on_cancel(lv_event_t * e) {
     (void)e;
@@ -842,9 +843,9 @@ static void on_page_toggle(lv_event_t * e) {
     edit_page ^= 1;
     sel = -1;
     if (page_btn) lv_label_set_text(lv_obj_get_child(page_btn, 0),
-                                    edit_page == 0 ? "Pagina 1" : "Pagina 2");
+                                    edit_page == 0 ? tr("Pagina 1", "Page 1") : tr("Pagina 2", "Page 2"));
     build_canvas_rects();
-    lv_label_set_text_fmt(sel_lbl, "Pagina %d - tik een tegel om te selecteren", edit_page + 1);
+    lv_label_set_text_fmt(sel_lbl, tr("Pagina %d - tik een tegel om te selecteren", "Page %d - tap a tile to select"), edit_page + 1);
 }
 
 /* Copy the SHAPE of page-0's visible tiles onto page 1 as generic slots (no
@@ -871,9 +872,9 @@ static void on_copy_p2(lv_event_t * e) {
     copy_page0_to_page1();
     preset_mgr_close();
     edit_page = 1;
-    if (page_btn) lv_label_set_text(lv_obj_get_child(page_btn, 0), "Pagina 2");
+    if (page_btn) lv_label_set_text(lv_obj_get_child(page_btn, 0), tr("Pagina 2", "Page 2"));
     build_canvas_rects();
-    if (sel_lbl) lv_label_set_text(sel_lbl, "Pagina 2 - gekopieerd; sleep + wijs integraties toe");
+    if (sel_lbl) lv_label_set_text(sel_lbl, tr("Pagina 2 - gekopieerd; sleep + wijs integraties toe", "Page 2 - copied; drag + assign integrations"));
 }
 
 /* Create-style wrapper so the headless sim (render_one expects a screen) can
@@ -947,23 +948,23 @@ void screen_layout_editor_show(void) {
 
     /* Widths tightened so the new "Verwijder" button fits on both 1024 and 800. */
     int x = SX(8);
-    tb_btn(bar, x, SX(62), "Sluit",      on_cancel,       NULL, 0x444444); x += SX(68);
-    page_btn = tb_btn(bar, x, SX(78), "Pagina 1", on_page_toggle, NULL, 0x4a3a6a); x += SX(84);
+    tb_btn(bar, x, SX(62), tr("Sluit", "Close"),      on_cancel,       NULL, 0x444444); x += SX(68);
+    page_btn = tb_btn(bar, x, SX(78), tr("Pagina 1", "Page 1"), on_page_toggle, NULL, 0x4a3a6a); x += SX(84);
     tb_btn(bar, x, SX(40), "W-", on_resize, (void *)(intptr_t)0, 0x2a4060); x += SX(44);
     tb_btn(bar, x, SX(40), "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += SX(44);
     tb_btn(bar, x, SX(40), "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += SX(44);
     tb_btn(bar, x, SX(40), "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += SX(46);
-    tb_btn(bar, x, SX(82), "Verberg",    on_toggle_vis,   NULL, 0x553355); x += SX(88);
-    tb_btn(bar, x, SX(84), "Verwijder",  on_delete_tile,  NULL, 0x6e2e2e); x += SX(90);
-    tb_btn(bar, x, SX(70), "+ Tegel",    on_add,          NULL, 0x2e5e6e); x += SX(76);
-    tb_btn(bar, x, SX(92), "Indelingen", open_preset_mgr, NULL, 0x2e4e6e); x += SX(98);
+    tb_btn(bar, x, SX(82), tr("Verberg", "Hide"),    on_toggle_vis,   NULL, 0x553355); x += SX(88);
+    tb_btn(bar, x, SX(84), tr("Verwijder", "Delete"),  on_delete_tile,  NULL, 0x6e2e2e); x += SX(90);
+    tb_btn(bar, x, SX(70), tr("+ Tegel", "+ Tile"),    on_add,          NULL, 0x2e5e6e); x += SX(76);
+    tb_btn(bar, x, SX(92), tr("Indelingen", "Layouts"), open_preset_mgr, NULL, 0x2e4e6e); x += SX(98);
 
     sel_lbl = lv_label_create(bar);
     lv_obj_set_style_text_color(sel_lbl, lv_color_hex(0xccddee), 0);
     lv_obj_set_style_text_font(sel_lbl, SF(14), 0);
     lv_obj_align(sel_lbl, LV_ALIGN_LEFT_MID, x + SX(6), 0);
 
-    lv_obj_t * save = tb_btn(bar, SCR_W - SX(96), SX(88), "Opslaan", on_save, NULL, 0x2e6e3a);
+    lv_obj_t * save = tb_btn(bar, SCR_W - SX(96), SX(88), tr("Opslaan", "Save"), on_save, NULL, 0x2e6e3a);
     (void)save;
     update_sel_label();
 }

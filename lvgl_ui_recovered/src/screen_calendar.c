@@ -6,6 +6,7 @@
 #include "lvgl/lvgl.h"
 #include "screens.h"
 #include "display.h"   /* SF()/SX()/SY() scaling for Toon 1 */
+#include "i18n.h"
 #include "calendar.h"
 #include "settings.h"
 #include <stdio.h>
@@ -21,9 +22,13 @@ static void on_close(lv_event_t * e) {
 
 /* "YYYY-MM-DD" → "wo 27 mei" (Dutch). Falls back to the raw date on error. */
 static void pretty_date(const char * iso, char * out, size_t osz) {
-    static const char * wd[] = { "zo","ma","di","wo","do","vr","za" };
-    static const char * mo[] = { "jan","feb","mrt","apr","mei","jun",
-                                 "jul","aug","sep","okt","nov","dec" };
+    const char * wd[] = {
+        tr("zo","Sun"), tr("ma","Mon"), tr("di","Tue"), tr("wo","Wed"),
+        tr("do","Thu"), tr("vr","Fri"), tr("za","Sat") };
+    const char * mo[] = {
+        tr("jan","Jan"), tr("feb","Feb"), tr("mrt","Mar"), tr("apr","Apr"),
+        tr("mei","May"), tr("jun","Jun"), tr("jul","Jul"), tr("aug","Aug"),
+        tr("sep","Sep"), tr("okt","Oct"), tr("nov","Nov"), tr("dec","Dec") };
     int y, m, d;
     if (sscanf(iso, "%d-%d-%d", &y, &m, &d) != 3 || m < 1 || m > 12) {
         snprintf(out, osz, "%s", iso); return;
@@ -61,7 +66,7 @@ void screen_calendar_show(void) {
     lv_obj_set_ext_click_area(close, 20);
     lv_obj_add_event_cb(close, on_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(close);
-    lv_label_set_text(cl, "Sluit");
+    lv_label_set_text(cl, tr("Sluit", "Close"));
     lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(cl, SF(22), 0);
     lv_obj_center(cl);
@@ -69,7 +74,7 @@ void screen_calendar_show(void) {
     lv_obj_t * title = lv_label_create(modal);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_label_set_text(title, "Agenda");
+    lv_label_set_text(title, tr("Agenda", "Calendar"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(26));
 
     lv_obj_t * list = lv_obj_create(modal);
@@ -82,7 +87,8 @@ void screen_calendar_show(void) {
 
     if (!settings.calendar_enabled || (!settings.calendar_ha_entity[0] && !settings.calendar_ics_url[0])) {
         lv_obj_t * m = lv_label_create(list);
-        lv_label_set_text(m, "Agenda niet ingesteld.\nZet een HA-agenda of een iCal-URL in Instellingen.");
+        lv_label_set_text(m, tr("Agenda niet ingesteld.\nZet een HA-agenda of een iCal-URL in Instellingen.",
+                                "Calendar not set up.\nSet a HA calendar or iCal URL in Settings."));
         lv_obj_set_style_text_color(m, lv_color_hex(0x99aabb), 0);
         lv_obj_set_style_text_font(m, SF(22), 0);
         return;
@@ -90,8 +96,8 @@ void screen_calendar_show(void) {
     if (calendar_state.count == 0) {
         lv_obj_t * m = lv_label_create(list);
         lv_label_set_text(m, calendar_state.connected
-            ? "Geen aankomende afspraken."
-            : "Agenda laden... (of geen verbinding)");
+            ? tr("Geen aankomende afspraken.", "No upcoming events.")
+            : tr("Agenda laden... (of geen verbinding)", "Loading calendar... (or no connection)"));
         lv_obj_set_style_text_color(m, lv_color_hex(0x99aabb), 0);
         lv_obj_set_style_text_font(m, SF(22), 0);
         return;
@@ -115,7 +121,7 @@ void screen_calendar_show(void) {
         lv_label_set_long_mode(row, LV_LABEL_LONG_DOT);
         char line[120];
         snprintf(line, sizeof line, "   %s  %s",
-                 ev->time[0] ? ev->time : "hele dag", ev->summary);
+                 ev->time[0] ? ev->time : tr("hele dag", "all day"), ev->summary);
         lv_label_set_text(row, line);
         lv_obj_set_style_text_color(row, lv_color_hex(0xdddddd), 0);
         lv_obj_set_style_text_font(row, SF(18), 0);

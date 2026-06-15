@@ -3,6 +3,7 @@
  * setpoint adjustment. Reachable from the home tile.
  */
 #include "screens.h"
+#include "i18n.h"
 #include "display.h"
 #include "boxtalk.h"
 #include "homewizard.h"
@@ -79,10 +80,10 @@ static void refresh_cb(lv_timer_t * t) {
     lv_label_set_text(lbl_date, dt);
 
     if (toon_state.connected) {
-        lv_label_set_text_fmt(lbl_conn, "BoxTalk OK  msg=%d", toon_state.msg_count);
+        lv_label_set_text_fmt(lbl_conn, tr("BoxTalk OK  msg=%d", "BoxTalk OK  msg=%d"), toon_state.msg_count);
         lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0x66cc88), 0);
     } else {
-        lv_label_set_text(lbl_conn, "BoxTalk: connecting...");
+        lv_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
         lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
     }
 
@@ -112,9 +113,9 @@ static void refresh_cb(lv_timer_t * t) {
         lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
     }
     if (toon_state.humidity > 0)
-        lv_label_set_text_fmt(lbl_humidity, "RH %.0f%%", toon_state.humidity);
+        lv_label_set_text_fmt(lbl_humidity, tr("RV %.0f%%", "RH %.0f%%"), toon_state.humidity);
     if (toon_state.eco2 || toon_state.tvoc)
-        lv_label_set_text_fmt(lbl_voc, "eCO2 %d ppm", toon_state.eco2);
+        lv_label_set_text_fmt(lbl_voc, tr("eCO2 %d ppm", "eCO2 %d ppm"), toon_state.eco2);
 
     if (hw_state.connected_water) {
         /* 3 decimals — every litre poured ticks the displayed total. */
@@ -125,10 +126,10 @@ static void refresh_cb(lv_timer_t * t) {
             lv_label_set_text_fmt(lbl_water, "%.3f m3",
                                   hw_state.water_total_m3);
     } else {
-        lv_label_set_text(lbl_water, "Water -- m3");
+        lv_label_set_text(lbl_water, tr("Water -- m3", "Water -- m3"));
     }
     if (toon_state.setpoint > 0)
-        lv_label_set_text_fmt(lbl_setpoint, "Setpoint: %.1f°C", toon_state.setpoint);
+        lv_label_set_text_fmt(lbl_setpoint, tr("Streefwaarde: %.1f°C", "Setpoint: %.1f°C"), toon_state.setpoint);
 
     /* For the "flow" reading prefer boiler_out_temp — that's the freshest
      * OTGW CurrentBoilerTemperature coming through the bridge. The
@@ -144,13 +145,13 @@ static void refresh_cb(lv_timer_t * t) {
      * The old left-side flame/faucet/drop icons are now redundant — kept as
      * widgets but always hidden. */
     if (toon_state.burner_on) {
-        lv_label_set_text(lbl_burner, "Heating");
+        lv_label_set_text(lbl_burner, tr("Verwarmen", "Heating"));
         lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0xff6644), 0);
     } else if (toon_state.dhw_on) {
-        lv_label_set_text(lbl_burner, "Hot water");
+        lv_label_set_text(lbl_burner, tr("Warm water", "Hot water"));
         lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x44aaff), 0);
     } else {
-        lv_label_set_text(lbl_burner, "Boiler idle");
+        lv_label_set_text(lbl_burner, tr("Ketel rust", "Boiler idle"));
         lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
     }
     lv_obj_add_flag(img_flame,  LV_OBJ_FLAG_HIDDEN);
@@ -162,16 +163,16 @@ static void refresh_cb(lv_timer_t * t) {
        answered; return comes only from the boilerRetTemps query. */
     float flow = toon_state.boiler_out_temp > 0 ? toon_state.boiler_out_temp
                                                 : toon_state.boiler_temp;
-    if (flow > 0) lv_label_set_text_fmt(lbl_flow, "Flow  %.1f°C", flow);
-    else          lv_label_set_text(lbl_flow, "Flow  -- C");
+    if (flow > 0) lv_label_set_text_fmt(lbl_flow, tr("Aanvoer  %.1f°C", "Flow  %.1f°C"), flow);
+    else          lv_label_set_text(lbl_flow, tr("Aanvoer  -- C", "Flow  -- C"));
     if (toon_state.boiler_in_temp > 0)
-        lv_label_set_text_fmt(lbl_return, "Return  %.1f°C", toon_state.boiler_in_temp);
+        lv_label_set_text_fmt(lbl_return, tr("Retour  %.1f°C", "Return  %.1f°C"), toon_state.boiler_in_temp);
     else
         /* Many boilers leave OT DID 28 (CH return temp) unimplemented; OTGW
          * reports returnwatertemperature=0 in that case and happ_thermstat
          * forwards the zero unchanged. Mark it n/a so this row doesn't look
          * like a UI bug. */
-        lv_label_set_text(lbl_return, "Return  n/a");
+        lv_label_set_text(lbl_return, tr("Retour  n.v.t.", "Return  n/a"));
 
     /* Radiator+flame next to the big indoor-temp — visible while CH fires. */
     if (img_temp_flame) {
@@ -202,7 +203,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_ext_click_area(btn_back, 20);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_back_lbl = lv_label_create(btn_back);
-    lv_label_set_text(btn_back_lbl, "< Back");
+    lv_label_set_text(btn_back_lbl, tr("< Terug", "< Back"));
     lv_obj_set_style_text_color(btn_back_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(btn_back_lbl, SF(22), 0);
     lv_obj_center(btn_back_lbl);
@@ -228,7 +229,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_ext_click_area(btn_sched, 16);
     lv_obj_add_event_cb(btn_sched, on_open_schedule, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sched_lbl = lv_label_create(btn_sched);
-    lv_label_set_text(sched_lbl, "Schedule");
+    lv_label_set_text(sched_lbl, tr("Programma", "Schedule"));
     lv_obj_set_style_text_color(sched_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(sched_lbl, SF(22), 0);
     lv_obj_center(sched_lbl);
@@ -238,7 +239,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_text_font(lbl_conn, SF(18), 0);
     lv_obj_align(lbl_conn, LV_ALIGN_TOP_RIGHT, -20, 95);
-    lv_label_set_text(lbl_conn, "BoxTalk: connecting...");
+    lv_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
 
     /* Big indoor temp */
     lbl_temp = lv_label_create(scr_root);
@@ -264,8 +265,9 @@ lv_obj_t * screen_thermostat_create(void) {
      * schedule editor pills for instant recognition; Scheduled uses a
      * neutral teal so it doesn't fight any of the preset colours. */
     {
-        const char * names[6] = {"Scheduled", "Manual",
-                                 "Comfort", "Home", "Sleep", "Away"};
+        const char * names[6] = {tr("Programma", "Scheduled"), tr("Handmatig", "Manual"),
+                                 tr("Comfort", "Comfort"), tr("Thuis", "Home"),
+                                 tr("Slapen", "Sleep"), tr("Weg", "Away")};
         uint32_t     cols[6]  = {0x2f6b6b, 0x6a5424,
                                  0xcc7733, 0x3377cc, 0x553388, 0x557788};
         /* On Toon 1 the 130px buttons + gaps total 810px and run off the
@@ -300,21 +302,21 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_style_text_font(lbl_humidity, SF(22), 0);
     lv_obj_align(lbl_humidity, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-260) - (DISP_VER < 600 ? 8 : 0));
-    lv_label_set_text(lbl_humidity, "RH --%");
+    lv_label_set_text(lbl_humidity, tr("RV --%", "RH --%"));
 
     lbl_voc = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_voc, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_voc, SF(22), 0);
     lv_obj_align(lbl_voc, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-225) - (DISP_VER < 600 ? 8 : 0));
-    lv_label_set_text(lbl_voc, "eCO2 -- ppm");
+    lv_label_set_text(lbl_voc, tr("eCO2 -- ppm", "eCO2 -- ppm"));
 
     lbl_water = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_water, lv_color_hex(0x66aaff), 0);
     lv_obj_set_style_text_font(lbl_water, SF(22), 0);
     lv_obj_align(lbl_water, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-190) - (DISP_VER < 600 ? 8 : 0));
-    lv_label_set_text(lbl_water, "Water -- m3");
+    lv_label_set_text(lbl_water, tr("Water -- m3", "Water -- m3"));
 
     /* Setpoint row with +/- buttons. Wider than before so "Setpoint: NN.N C"
        has breathing room between the two buttons. */
@@ -347,7 +349,7 @@ lv_obj_t * screen_thermostat_create(void) {
                                (DISP_VER < 600 ? SF(28)
                                                : SF(48)), 0);
     lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, -8);
-    lv_label_set_text(lbl_setpoint, "Setpoint: --");
+    lv_label_set_text(lbl_setpoint, tr("Streefwaarde: --", "Setpoint: --"));
 
     lv_obj_t * btn_up = lv_btn_create(sp_row);
     lv_obj_set_size(btn_up, SX(110), SY(100));
@@ -394,7 +396,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_burner, SF(22), 0);
     lv_obj_align(lbl_burner, LV_ALIGN_TOP_LEFT, 180, SY(130));
-    lv_label_set_text(lbl_burner, "Boiler idle");
+    lv_label_set_text(lbl_burner, tr("Ketel rust", "Boiler idle"));
 
     /* CH water inlet/outlet block — right side, above the setpoint row.
        Outlet = flow temp (CurrentBoilerTemperature),
@@ -404,21 +406,21 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_style_text_font(lbl_ch_hdr, SF(18), 0);
     lv_obj_align(lbl_ch_hdr, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-250) - (DISP_VER < 600 ? 8 : 0));
-    lv_label_set_text(lbl_ch_hdr, "CH water");
+    lv_label_set_text(lbl_ch_hdr, tr("CV-water", "CH water"));
 
     lbl_flow = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_flow, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_text_font(lbl_flow, SF(22), 0);
     lv_obj_align(lbl_flow, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-220) - (DISP_VER < 600 ? 8 : 0));
-    lv_label_set_text(lbl_flow, "Flow  -- C");
+    lv_label_set_text(lbl_flow, tr("Aanvoer  -- C", "Flow  -- C"));
 
     lbl_return = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_return, lv_color_hex(0x66aaff), 0);
     lv_obj_set_style_text_font(lbl_return, SF(22), 0);
     lv_obj_align(lbl_return, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-192) - (DISP_VER < 600 ? 8 : 0));
-    lv_label_set_text(lbl_return, "Return  -- C");
+    lv_label_set_text(lbl_return, tr("Retour  -- C", "Return  -- C"));
 
     /* "Advanced" button — pushes OTGW raw-DID list. */
     lv_obj_t * adv = lv_btn_create(scr_root);
@@ -429,7 +431,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * advl = lv_label_create(adv);
     lv_obj_set_style_text_color(advl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(advl, SF(18), 0);
-    lv_label_set_text(advl, "Advanced");
+    lv_label_set_text(advl, tr("Geavanceerd", "Advanced"));
     lv_obj_center(advl);
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 500, NULL);

@@ -10,6 +10,7 @@
 #include "pin_modal.h"
 #include "settings.h"
 #include "display.h"
+#include "i18n.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -64,7 +65,8 @@ static void on_ok(lv_event_t * e) {
         return;
     }
     if (g_err_lbl) {
-        lv_label_set_text_fmt(g_err_lbl, "Incorrect — %d tries left",
+        lv_label_set_text_fmt(g_err_lbl, tr("Onjuist — nog %d pogingen",
+                                            "Incorrect — %d tries left"),
                               MAX_ATTEMPTS - g_attempts);
         lv_obj_set_style_text_color(g_err_lbl, lv_color_hex(0xff6060), 0);
     }
@@ -119,7 +121,7 @@ void pin_gate(pin_action_cb action, void * ctx) {
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * title = lv_label_create(panel);
-    lv_label_set_text(title, "Enter PIN");
+    lv_label_set_text(title, tr("Voer PIN in", "Enter PIN"));
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(title, SF(22), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
