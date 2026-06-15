@@ -662,11 +662,18 @@ static int handle_setpoint(int fd, const char * body) {
  * to /api/vent and the master forwards it to the local Itho via the existing
  * vent_send_vremote() (which can reach the Itho on the master's LAN). */
 static int handle_vent_post(int fd, const char * body) {
+    /* Two shapes: {"speed":N} (0..255 PWM, the slider) OR
+     * {"cmd":"low|high|auto|timerN"} (legacy preset buttons). */
+    float spd;
+    if (extract_float(body, "speed", &spd)) {
+        vent_set_speed_async((int)spd);
+        return send_status(fd, 200, "OK", "{\"ok\":1}");
+    }
     char cmd[24] = {0};
     extract_str(body, "cmd", cmd, sizeof cmd);
     if (!cmd[0])
         return send_status(fd, 400, "Bad Request",
-            "{\"err\":\"need {\\\"cmd\\\":\\\"low|high|auto|timerN\\\"}\"}");
+            "{\"err\":\"need {\\\"speed\\\":N} or {\\\"cmd\\\":\\\"low|high|auto|timerN\\\"}\"}");
     vent_send_vremote_async(cmd);
     return send_status(fd, 200, "OK", "{\"ok\":1}");
 }

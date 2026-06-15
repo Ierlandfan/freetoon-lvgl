@@ -85,10 +85,11 @@ static void dim_vent_apply_anim(int rpm) {
         lv_anim_del(dim_vent_fan, NULL);
         return;
     }
-    /* Same linear curve as the home tile: period_ms = 3500 - rpm, clamped. */
-    int period = 3500 - rpm;
-    if (period < 200)  period = 200;
-    if (period > 3500) period = 3500;
+    /* Same steeper curve as the home tile, mapped onto the CVE's real rpm
+       band (~1150 low → ~2700 high) so High visibly spins up. ~1.3 ms/rpm. */
+    int period = 2600 - (rpm - 1000) * 13 / 10;
+    if (period < 280)  period = 280;
+    if (period > 2600) period = 2600;
     /* Hysteresis: every poll the rpm jitters ±1 which would re-spin the
        anim from 0° if we treated each tiny period delta as a change. Only
        restart when the period actually moves > 100 ms. */
@@ -318,26 +319,16 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Vent — fan icon spin tracks fan_rpm; label shows preset + pct +
-       remaining ("High 100 %" or "Timer 25m 100 %"). Source intentionally
-       omitted on the dim screen to keep it clean — full audit is on the
-       home tile. */
+    /* Vent — fan icon spin tracks fan_rpm; label shows the ventilation MODE
+       (Low/High/Auto/Medium/Timer) + pct + remaining ("Auto 3 %" or
+       "Timer 25m 100 %"). The mode word comes from fan_info if the firmware
+       still publishes FanInfo, else from last_cmd (the itho/lastcmd MQTT
+       topic) — current firmware dropped FanInfo so last_cmd is the source.
+       Both are already swap-corrected to the user-intent label. Online/offline
+       (itho/lwt) is shown on the HOME tile, not here. */
     if (dim_vent_fan && dim_vent_lbl) {
         if (vent_state.connected) {
-            /* memcpy snapshot — same defence as screen_home.c, see comment
-             * there. fan_info is a non-volatile char[] written by another
-             * thread; without the local copy refresh_cb can read a stale
-             * (or partial) view of the chars. */
-            char fi_local[16];
-            memcpy(fi_local, (const char *)vent_state.fan_info,
-                   sizeof(fi_local));
-            fi_local[sizeof(fi_local) - 1] = 0;
-            const char * preset = fi_local[0] ? fi_local : "?";
-            char pretty[24] = {0};
-            snprintf(pretty, sizeof(pretty), "%c%s",
-                     (preset[0] >= 'a' && preset[0] <= 'z')
-                         ? preset[0] - 'a' + 'A' : preset[0],
-                     preset + 1);
+            const char * pretty = vent_mode_label();
             if (vent_state.remaining_min > 0)
                 lv_label_set_text_fmt(dim_vent_lbl, "%s %dm %d %%",
                                       pretty, vent_state.remaining_min,
@@ -731,17 +722,17 @@ lv_obj_t * screen_dim_create(void) {
        when text widths change. */
     lbl_outside_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_outside_temp, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_outside_temp, &lv_font_montserrat_28, 0);
     lv_label_set_text(lbl_outside_temp, "");
     lv_obj_set_width(lbl_outside_temp, SX(180));
     lv_obj_set_style_text_align(lbl_outside_temp, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-48), SY(36));
+    lv_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-48), SY(250));
 
     wx_icon = lv_img_create(scr_root);
     lv_img_set_src(wx_icon, &icon_wx_cloud_lg);
     lv_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
-    lv_obj_align(wx_icon, LV_ALIGN_TOP_RIGHT, SX(-116), SY(38));
+    lv_obj_align(wx_icon, LV_ALIGN_TOP_RIGHT, SX(-116), SY(252));
 
     lbl_outside = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
@@ -749,7 +740,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_outside, "Buiten");
     lv_obj_set_width(lbl_outside, SX(210));
     lv_obj_set_style_text_align(lbl_outside, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, SX(-56), SY(148));
+    lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, SX(-56), SY(362));
 
     /* Life360 — sits under the outside temp on the right edge, mirroring
      * the Family tile on the home screen. Right-aligned so longer street
@@ -761,7 +752,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_align(dim_lbl_life360_a, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_a, LV_LABEL_LONG_DOT);
     lv_label_set_text(dim_lbl_life360_a, "");
-    lv_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, SX(-24), SY(176));
+    lv_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, SX(-24), SY(388));
     lv_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_life360_b = lv_label_create(scr_root);
@@ -771,7 +762,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_align(dim_lbl_life360_b, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_b, LV_LABEL_LONG_DOT);
     lv_label_set_text(dim_lbl_life360_b, "");
-    lv_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, SX(-24), SY(200));
+    lv_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, SX(-24), SY(412));
     lv_obj_add_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
 
     /* Waste cluster (left column): mirror the weather cluster. Use the native

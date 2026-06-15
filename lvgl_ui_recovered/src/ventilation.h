@@ -1,11 +1,15 @@
 #ifndef TOON_VENTILATION_H
 #define TOON_VENTILATION_H
 
-/* Live state polled from the Itho-Wifi bridge at /api.html?get=ithostatus.
-   Updated every VENT_POLL_S seconds by a background thread. */
+/* Live state pushed from the Itho-Wifi bridge over MQTT (topics
+   itho/ithostatus + itho/lastcmd + itho/lwt). MQTT-only: no HTTP status
+   polling/fallback. The settings table is the one HTTP-fetched item. */
 typedef struct {
-    volatile int   connected;        /* 0/1 */
-    volatile int   speed_pct;        /* "ExhFanSpeed (%)" — actual fan output, 0..100 */
+    volatile int   connected;        /* freetoon↔broker MQTT link up 0/1 */
+    volatile int   itho_online;      /* Itho bridge online per its MQTT LWT
+                                        (topic itho/lwt: "online"/"offline").
+                                        -1 = unknown (no LWT retained msg yet). */
+    volatile int   speed_pct;        /* "Speed status" (was "ExhFanSpeed (%)") — fan output, 0..100 */
     volatile int   exh_fan_pct;      /* "Ventilation setpoint (%)" — commanded, 0..100 */
     volatile int   fan_rpm;          /* "Fan speed (rpm)" */
     volatile int   filter_dirty;     /* 0/1 */
@@ -26,6 +30,11 @@ extern vent_state_t vent_state;
 /* Start the poller. Returns 0 on success. */
 int vent_start(void);
 
+/* Clean, capitalised display label for the current mode (Low/High/Auto/
+ * Manual/Timer), derived from fan_info|last_cmd. Static buffer, LVGL thread
+ * only. "speed:N" → "Manual", "timerN" → "Timer". */
+const char * vent_mode_label(void);
+
 /* Send a command — uses the Itho virtual remote API. cmd ∈
  * {"away","low","medium","high","auto","autonight","timer1","timer2","timer3"}.
  * Returns 0 on HTTP 200. Blocks briefly (~1 s).
@@ -45,6 +54,12 @@ void vent_send_vremote_async(const char * cmd);
 /* Direct PWM speed set (0..255) via /api.html?speed=N&timer=0.
  * Returns 0 on success. */
 int vent_set_speed(int pwm);
+
+/* Same as vent_set_speed but the HTTP fetch runs on a detached thread so the
+ * LVGL loop stays responsive (slider release returns instantly). The expected
+ * % is written into vent_state.speed_pct/exh_fan_pct immediately; the next
+ * MQTT poll confirms. On this CVE the speed= path is the reliable control. */
+void vent_set_speed_async(int pwm);
 
 /* Bump current speed by `delta` PWM steps (clamped to 0..255).
  * Reads /api.html?get=currentspeed first, then issues vent_set_speed. */

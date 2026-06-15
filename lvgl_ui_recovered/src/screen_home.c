@@ -1021,14 +1021,17 @@ static void vent_apply_fan_anim(int rpm) {
         lv_anim_del(vent_fan_img, NULL);
         return;
     }
-    /* Linear rpm → ms/turn: faster fan = shorter period. Clamped to a
-       visually-perceptible range. Empirical anchors on this Itho:
-         ~700 rpm (FanInfo=high)  → ~2.8 s/turn — slow but visible
-         ~2500 rpm (FanInfo=low)  → ~1.0 s/turn — clearly faster
-         3500+ rpm (boost)        →  ~0.2 s/turn — blur */
-    int period = 3500 - rpm;
-    if (period < 200)  period = 200;
-    if (period > 3500) period = 3500;
+    /* Linear rpm → ms/turn mapped onto this CVE's REAL rpm band so the spin
+       visibly tracks Low→High. After the 2026-06-15 remote fix the band is
+       ~1150 rpm (low/idle) → ~2700 rpm (high) → ~2900 (boost). The old
+       3500-rpm curve only reached ~800 ms at high (not obviously fast); this
+       steeper curve (~1.3 ms/rpm) gives:
+         ~1150 rpm → ~2.4 s/turn — slow
+         ~1800 rpm → ~1.6 s/turn — medium
+         ~2700 rpm → ~0.4 s/turn — fast blur */
+    int period = 2600 - (rpm - 1000) * 13 / 10;
+    if (period < 280)  period = 280;
+    if (period > 2600) period = 2600;
     /* Hysteresis: rpm jitters ±1 every 8 s poll. Without this every poll
        would lv_anim_del + restart the spin, snapping the icon back to 0°
        (visible glitch — that's what "spinner acting weird" actually was). */
@@ -1631,6 +1634,19 @@ static void refresh_cb(lv_timer_t * t) {
             if (vent_btn_high)  lv_obj_set_style_border_width(vent_btn_high,  0, 0);
             if (vent_btn_auto)  lv_obj_set_style_border_width(vent_btn_auto,  0, 0);
             if (vent_btn_timer) lv_obj_set_style_border_width(vent_btn_timer, 0, 0);
+        } else if (vent_state.connected && vent_state.itho_online == 0) {
+            /* Itho bridge reported itself OFFLINE via its MQTT LWT
+             * (topic itho/lwt). The broker link is up but the add-on/unit
+             * is gone — surface it here on the home/main tile. The dim
+             * screen deliberately shows only the mode, not online/offline. */
+            lv_label_set_text(lbl_boiler_state, "Itho offline");
+            if (tile_vent)
+                fit_font(lbl_boiler_state, "Itho offline",
+                         lv_obj_get_content_width(tile_vent) - SX(64), 18);
+            if (vent_btn_low)   lv_obj_set_style_border_width(vent_btn_low,   0, 0);
+            if (vent_btn_high)  lv_obj_set_style_border_width(vent_btn_high,  0, 0);
+            if (vent_btn_auto)  lv_obj_set_style_border_width(vent_btn_auto,  0, 0);
+            if (vent_btn_timer) lv_obj_set_style_border_width(vent_btn_timer, 0, 0);
         } else if (vent_state.connected) {
             /* Same snapshot trick as last_source — fan_info is a non-
              * volatile char[] written by another thread; memcpy a local
@@ -1639,15 +1655,20 @@ static void refresh_cb(lv_timer_t * t) {
             memcpy(fi_local, (const char *)vent_state.fan_info,
                    sizeof(fi_local));
             fi_local[sizeof(fi_local) - 1] = 0;
-            const char * preset = fi_local[0] ? fi_local : "?";
-            char preset_pretty[16] = {0};
-            /* "low"/"high" → "Low"/"High"; preserve "auto"/"medium"/"timer" */
-            snprintf(preset_pretty, sizeof(preset_pretty), "%c%s",
-                     (preset[0] >= 'a' && preset[0] <= 'z')
-                         ? preset[0] - 'a' + 'A' : preset[0],
-                     preset + 1);
-            /* Title is just the mode ("Low"/"High"/"Auto"/"Timer 20m"). The
-             * source ("via API"/"via TOON") stays on the lower line only. */
+            /* Current Itho firmware no longer publishes FanInfo, so fall
+             * back to last_cmd (itho/lastcmd MQTT) for the live mode. Both
+             * are already swap-corrected to the user-intent label. */
+            if (!fi_local[0]) {
+                memcpy(fi_local, (const char *)vent_state.last_cmd,
+                       sizeof(fi_local));
+                fi_local[sizeof(fi_local) - 1] = 0;
+            }
+            /* Title is the clean mode word ("Low"/"High"/"Auto"/"Manual"/
+             * "Timer 20m"); vent_mode_label() maps the raw "speed:N" the
+             * slider produces to "Manual". The source ("via API"/"via TOON")
+             * stays on the lower line only. fi_local is still used below for
+             * the per-button highlight. */
+            const char * preset_pretty = vent_mode_label();
             char vshown[32];
             if (vent_state.remaining_min > 0)
                 snprintf(vshown, sizeof vshown, "%s %dm",
@@ -1668,7 +1689,7 @@ static void refresh_cb(lv_timer_t * t) {
             int act_high  = strcmp(fi_local, "high")   == 0;
             int act_auto  = strcmp(fi_local, "auto")   == 0
                          || strcmp(fi_local, "medium") == 0;
-            int act_timer = strcmp(fi_local, "timer")  == 0
+            int act_timer = strncasecmp(fi_local, "timer", 5) == 0
                          || vent_state.remaining_min > 0;
             if (act_timer) { act_low = act_high = act_auto = 0; }
             if (vent_btn_low)
@@ -1688,7 +1709,7 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
     if (!slot_active[TILE_SLOT_VENT] && lbl_boiler_pressure) {
-        if (vent_state.connected) {
+        if (vent_state.connected && vent_state.itho_online != 0) {
             /* Classify source into a 3-char tag so the line stays compact:
                API = HTML/vremote (toonui or HA), RF  = physical radio remote,
                BTN = Itho front-panel button, ???  = anything unrecognised. */
@@ -1724,7 +1745,8 @@ static void refresh_cb(lv_timer_t * t) {
                                   vent_state.fan_rpm,
                                   src_tag);
         } else {
-            lv_label_set_text(lbl_boiler_pressure, "-- %");
+            lv_label_set_text(lbl_boiler_pressure,
+                              vent_state.itho_online == 0 ? "offline" : "-- %");
         }
     }
     /* Spin tracks the real fan rpm. With the wire swap, user-Low maps to the

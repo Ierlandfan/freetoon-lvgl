@@ -105,9 +105,18 @@ static void parse_status_json(const char * body) {
      * setpoint instead — it's what the controller is commanding the
      * fan to do, which is the next-best ground truth. */
     int exh_pct = -1, set_pct = -1, rpm = -1;
-    if (extract_int(body, "ExhFanSpeed (%)",          &v)) exh_pct = v;
-    if (extract_int(body, "Ventilation setpoint (%)", &v)) set_pct = v;
-    if (extract_int(body, "Fan speed (rpm)",          &v)) rpm     = v;
+    /* Itho-Wifi firmware revisions disagree on the key names. The older
+     * NRG firmware exposed "ExhFanSpeed (%)" + "Ventilation setpoint (%)";
+     * the current firmware (.236, verified 2026-06-15) renamed them to
+     * "Speed status" (real fan-output %, now a true non-zero measurement —
+     * the old Error=16 sensor fault is gone) + "Ventilation level (%)"
+     * (the commanded level). Accept whichever the unit actually sends,
+     * else the home + dim vent tiles silently read 0 % / never respond. */
+    if      (extract_int(body, "ExhFanSpeed (%)",          &v)) exh_pct = v;
+    else if (extract_int(body, "Speed status",             &v)) exh_pct = v;
+    if      (extract_int(body, "Ventilation setpoint (%)", &v)) set_pct = v;
+    else if (extract_int(body, "Ventilation level (%)",    &v)) set_pct = v;
+    if      (extract_int(body, "Fan speed (rpm)",          &v)) rpm     = v;
     if (set_pct >= 0) vent_state.exh_fan_pct = set_pct;
     if (rpm     >= 0) vent_state.fan_rpm     = rpm;
     /* speed_pct = honest "what's the fan actually doing".
@@ -151,18 +160,17 @@ static int fetch_status(void) {
     return 0;
 }
 
-/* This specific Itho install has its low/high vremote labels inverted:
- * vremotecmd=low produces ~2480 rpm (BOOST airflow), vremotecmd=high
- * produces ~695 rpm (QUIET airflow). All UI buttons & call sites pass
- * the *user-intent* preset name; this helper translates to the wire
- * command that produces the intended airflow. Set to 0 if you ever
- * connect a normally-wired unit. */
-/* Enabled 2026-05-18: user confirmed pressing "High" produces less airflow
- * than "Low" on this unit. The on-device settings 50/51 swap from
- * 2026-05-17 was supposed to make the wire labels match airflow but
- * doesn't take effect through the vremote path. Solve it here so the rest
- * of the codebase deals only in user-intent labels. */
-#define VENT_SWAP_LOW_HIGH 1
+/* Low/High wire-label swap. Was needed 2026-05-18 because the unit's virtual
+ * remote was MISCONFIGURED (wrong type "RFT CO2", never joined) so vremote
+ * preset commands behaved backwards/inconsistently — "High" gave less airflow
+ * than "Low".
+ *
+ * DISABLED 2026-06-15: the virtual remote was fixed — retyped to "RFT CVE"
+ * (the unit's native class) and properly joined to the CVE. The box now
+ * honours preset commands correctly, so the compensating swap is no longer
+ * needed and was making the buttons reversed. Set back to 1 only if a unit
+ * genuinely reports inverted airflow again. */
+#define VENT_SWAP_LOW_HIGH 0
 
 static const char * vent_wire_cmd(const char * user_preset) {
     if (!user_preset) return NULL;
@@ -183,6 +191,26 @@ static const char * vent_user_preset(const char * wire_cmd) {
     if (!strcmp(wire_cmd, "high")) return "low";
 #endif
     return wire_cmd;
+}
+
+/* Clean display label for the current vent MODE. Source: fan_info if the
+ * firmware still publishes FanInfo, else last_cmd. Normalises the raw Itho
+ * lastcmd strings: "speed:N" / "speed:N,timer:0" → "Manual" (the slider set
+ * a fixed speed), "timerN" → "Timer", else the capitalised word. Returns a
+ * static buffer — call from the LVGL thread only. */
+const char * vent_mode_label(void) {
+    static char out[16];
+    char src[24];
+    snprintf(src, sizeof src, "%s",
+             vent_state.fan_info[0] ? (const char *)vent_state.fan_info
+                                    : (const char *)vent_state.last_cmd);
+    if (!src[0]) return "?";
+    if (!strncasecmp(src, "speed", 5)) return "Manual";
+    if (!strncasecmp(src, "timer", 5)) return "Timer";
+    snprintf(out, sizeof out, "%c%s",
+             (src[0] >= 'a' && src[0] <= 'z') ? src[0] - 'a' + 'A' : src[0],
+             src + 1);
+    return out;
 }
 
 /* Map a user-intent vremote command to the speed % we expect the fan to
@@ -245,6 +273,11 @@ void vent_send_vremote_async(const char * cmd) {
     if (p >= 0) {
         vent_state.speed_pct   = p;
         vent_state.exh_fan_pct = p;     /* approximate — actual %≈setpoint */
+        /* Optimistic rpm too, so the fan-spinner speeds up immediately
+         * instead of waiting for the next itho/ithostatus MQTT push (~16 s).
+         * Map % onto the CVE's real band ~1000 (idle) .. ~2700 (high). MQTT
+         * corrects to the true rpm shortly after. */
+        vent_state.fan_rpm = 1000 + p * 17;
     }
 #ifdef WASM_BUILD
     /* WASM client: bridge via the master Toon's POST /api/vent — the master
@@ -278,17 +311,12 @@ int vent_send_vremote(const char * cmd) {
     fprintf(stderr, "[vent] user=%s wire=%s rc=%d body=%.40s\n",
             cmd, wire, rc, body);
     int ok = (rc == 0 && !strstr(body, "AUTHENTICATION FAILED"));
-    /* Immediately re-poll: VENT_POLL_S is 60 s and waiting that long for the
-     * spinner/rpm to reflect a button press feels broken. Itho needs ~1 s to
-     * settle after the vremote write before the new FanInfo is queryable,
-     * then a second poll a few seconds later catches the ramped-up rpm. */
-    if (ok) {
-        usleep(1000 * 1000);
-        fetch_status();
-        fetch_lastcmd();
-        usleep(5000 * 1000);
-        fetch_status();
-    }
+    /* MQTT-only status model: no HTTP re-poll after the write. The button's
+     * optimistic update (vent_send_vremote_async writes the expected % up
+     * front) covers the visible gap, and the Itho's own itho/ithostatus +
+     * itho/lastcmd MQTT publishes deliver the confirmed state a moment later.
+     * The vremotecmd write itself stays HTTP — that's a command, not status,
+     * and the bridge exposes no MQTT command channel. */
     return ok ? 0 : -1;
 }
 
@@ -314,6 +342,43 @@ int vent_bump_speed(int delta) {
         return -1;
     int cur = atoi(body);
     return vent_set_speed(cur + delta);
+}
+
+/* Detached-thread wrapper around vent_set_speed so the slider's release
+ * handler returns instantly (the HTTP GET to the Itho takes ~0.5-1 s and
+ * must never run on the LVGL thread). Writes an optimistic % into vent_state
+ * up front; the next itho/ithostatus MQTT push confirms/corrects it.
+ * On this CVE the speed= PWM API is the RELIABLE control path (the vremote
+ * presets often don't actuate), so the slider is the primary control. */
+static void * setspeed_thread(void * arg) {
+    int pwm = *(int *)arg;
+    free(arg);
+    vent_set_speed(pwm);
+    return NULL;
+}
+
+void vent_set_speed_async(int pwm) {
+    if (pwm < 0)   pwm = 0;
+    if (pwm > 255) pwm = 255;
+    int pct = pwm * 100 / 255;
+    vent_state.exh_fan_pct = pct;
+    vent_state.speed_pct   = pct;   /* optimistic; MQTT corrects in ~seconds */
+    vent_state.fan_rpm     = 1000 + pct * 17;   /* optimistic rpm → spinner reacts now */
+#ifdef WASM_BUILD
+    /* Slave/WASM client: forward to the master Toon, which owns the Itho LAN
+     * link. handle_vent_post understands {"speed":N}. */
+    extern void wasm_push_event(const char *, const char *);
+    char body[48];
+    snprintf(body, sizeof body, "{\"speed\":%d}", pwm);
+    wasm_push_event("/api/vent", body);
+    return;
+#endif
+    int * dup = malloc(sizeof(int));
+    if (!dup) return;
+    *dup = pwm;
+    pthread_t t;
+    if (pthread_create(&t, NULL, setspeed_thread, dup) != 0) { free(dup); return; }
+    pthread_detach(t);
 }
 
 int vent_refresh_settings(void) {
@@ -622,6 +687,7 @@ static void mqtt_run_once(void) {
     mqtt_publish_retained(fd, MQTT_LWT_TOPIC, MQTT_LWT_ONLINE);
     mqtt_subscribe(fd, 1, "itho/ithostatus");
     mqtt_subscribe(fd, 2, "itho/lastcmd");
+    mqtt_subscribe(fd, 3, "itho/lwt");   /* Itho bridge online/offline (retained) */
 
     /* Read loop. */
     time_t next_ping = time(NULL) + (MQTT_KEEPALIVE_S - 5);
@@ -667,6 +733,14 @@ static void mqtt_run_once(void) {
                 parse_status_json(payload);
             } else if (!strcmp(topic, "itho/lastcmd")) {
                 parse_lastcmd_json(payload);
+            } else if (!strcmp(topic, "itho/lwt")) {
+                /* Itho-Wifi Last-Will: "online" while the bridge holds the
+                 * broker session, "offline" published by the broker when it
+                 * drops. Drives the vent tile's online/offline indicator. */
+                int online = !strncasecmp(payload, "online", 6);
+                vent_state.itho_online = online;
+                fprintf(stderr, "[vent] itho/lwt = %s\n",
+                        online ? "online" : "offline");
             }
             /* QoS 1: ack so the broker drops it from its in-flight queue.
              * Without this the broker keeps retrying every reconnect. */
@@ -675,6 +749,11 @@ static void mqtt_run_once(void) {
         /* SUBACK (0x90), PINGRESP (0xd0), PUBACK (0x40) — silently consumed. */
         free(pkt);
     }
+    /* MQTT-only model has no HTTP fallback, so a dropped link means the data
+     * we hold is now stale. Mark disconnected so the vent tile shows "—"
+     * instead of a frozen reading until the subscriber reconnects and the
+     * next itho/ithostatus repopulates it. */
+    vent_state.connected = 0;
     close(fd);
 }
 
@@ -697,23 +776,18 @@ static void * mqtt_thread(void * arg) {
 
 static void * vent_thread(void * arg) {
     (void)arg;
-    /* fetch_status + lastcmd up-front so the home tile has data immediately
-       on boot (was waiting for vent_fetch_all_settings to finish — ~8 s of
-       blank "via ?" while the settings page warm-loaded). */
-    fetch_status();
-    fetch_lastcmd();
-    /* Warm-load all settings once — lets the advanced page render fast
-       when opened. */
+    /* MQTT-only status model (no HTTP status polling, no fallback): live
+       ithostatus/lastcmd arrive exclusively via the MQTT subscriber thread.
+       This thread does ONE non-status job: warm-load the i2c settings table
+       (HTTP getsetting=N) so the advanced page renders instantly when opened.
+       Settings are not published over MQTT, so there's no push equivalent.
+       After the warm-load completes the thread exits — no poll loop. */
     vent_fetch_all_settings();
-    while (1) {
-        fetch_status();
-        fetch_lastcmd();
-        sleep(VENT_POLL_S);
-    }
     return NULL;
 }
 
 int vent_start(void) {
+    vent_state.itho_online = -1;   /* unknown until the retained itho/lwt arrives */
     if (!settings.enable_vent) {
         fprintf(stderr, "[vent] integration disabled — not starting poller/MQTT\n");
         return 0;
@@ -729,10 +803,12 @@ int vent_start(void) {
     pthread_t t;
     pthread_create(&t, NULL, vent_thread, NULL);
     pthread_detach(t);
-    fprintf(stderr, "[vent] poller started (host=%s every %ds)\n",
-            VENT_HOST, VENT_POLL_S);
+    fprintf(stderr, "[vent] settings warm-load thread started (host=%s)\n",
+            VENT_HOST);
     pthread_t mt;
     pthread_create(&mt, NULL, mqtt_thread, NULL);
     pthread_detach(mt);
+    fprintf(stderr, "[vent] status = MQTT-only (itho/ithostatus + itho/lastcmd); "
+            "no HTTP polling, no fallback\n");
     return 0;
 }
