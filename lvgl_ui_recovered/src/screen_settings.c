@@ -1101,7 +1101,12 @@ static void on_restart_yes(lv_event_t * e) {
 }
 static void open_restart_confirm(lv_event_t * e) {
     (void)e;
-    g_restart_modal = lv_obj_create(scr_root);
+    /* Parent to the TOP LAYER, not scr_root: scr_root is vertically
+     * scrollable, so a modal placed there at (0,0) renders at the top of the
+     * scrolled content — off-screen when the user has scrolled down to (e.g.)
+     * the news section, which looked like "Apply did nothing". The top layer
+     * is viewport-fixed and always covers the screen. */
+    g_restart_modal = lv_obj_create(lv_layer_top());
     lv_obj_set_size(g_restart_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(g_restart_modal, 0, 0);
     lv_obj_set_style_bg_color(g_restart_modal, lv_color_hex(0x000000), 0);
@@ -1436,12 +1441,26 @@ static void open_wifi(lv_event_t * e) {
 }
 
 /* Newsreader: enable + RSS feed URL. */
+static void news_feeds_rebuild(void);   /* defined below */
 static void on_news_apply(lv_event_t * e) {
     (void)e;
     if (sw_news) settings.news_enabled = lv_obj_has_state(sw_news, LV_STATE_CHECKED) ? 1 : 0;
+    /* The feed LIST (settings.news_rss_url) is the source of truth, maintained
+     * by the Add/Remove buttons (each of which already saves). ta_news_url is
+     * only the "add a feed" input box. Earlier this OVERWROTE news_rss_url with
+     * that box's text — so tapping Apply after Add (box now empty) wiped every
+     * feed. Instead, fold in any URL still typed in the box, then save. */
     if (ta_news_url) {
         const char * u = lv_textarea_get_text(ta_news_url);
-        snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", u ? u : "");
+        if (u && u[0]) {
+            if (settings.news_rss_url[0])
+                strncat(settings.news_rss_url, "\n",
+                        sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
+            strncat(settings.news_rss_url, u,
+                    sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
+            lv_textarea_set_text(ta_news_url, "");
+            news_feeds_rebuild();
+        }
     }
     settings_save();
     open_restart_confirm(NULL);   /* the fetch thread starts on restart */
@@ -1459,8 +1478,11 @@ static void on_news_enabled_change(lv_event_t * e) {
     settings.news_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
 static void on_news_feed_remove(lv_event_t * e);   /* fwd */
-/* Rebuild the feed list from settings.news_rss_url (one URL per line). Tapping a
-   row (trash icon) removes that feed. */
+static void on_news_feed_toggle(lv_event_t * e);   /* fwd */
+/* Rebuild the feed list from settings.news_rss_url (one URL per line). Each row:
+   an eye icon (open = shown, closed = hidden) — tapping the row toggles the feed
+   on/off (a '#'-prefixed line is hidden by the fetcher); plus a trash button on
+   the right to delete the feed entirely. */
 static void news_feeds_rebuild(void) {
     if (!news_feeds_list) return;
     lv_obj_clean(news_feeds_list);
@@ -1470,12 +1492,50 @@ static void news_feeds_rebuild(void) {
     for (char * u = strtok_r(tmp, "\n", &save); u && i < 12; u = strtok_r(NULL, "\n", &save)) {
         while (*u == ' ' || *u == '\r') u++;
         if (!*u) continue;
-        lv_obj_t * b = lv_list_add_btn(news_feeds_list, LV_SYMBOL_TRASH, u);
+        int disabled = (*u == '#');
+        const char * shown = u + (disabled ? 1 : 0);
+        while (*shown == ' ') shown++;
+        lv_obj_t * b = lv_list_add_btn(news_feeds_list,
+            disabled ? LV_SYMBOL_EYE_CLOSE : LV_SYMBOL_EYE_OPEN, shown);
         lv_obj_set_style_text_font(b, SF(14), 0);
-        lv_obj_add_event_cb(b, on_news_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        if (disabled) lv_obj_set_style_text_color(b, lv_color_hex(0x66788a), 0);
+        lv_obj_set_style_pad_right(b, SX(56), 0);          /* room for trash */
+        lv_obj_add_event_cb(b, on_news_feed_toggle, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        /* trash button overlaid on the right edge (own click → remove) */
+        lv_obj_t * tr = lv_btn_create(b);
+        lv_obj_add_flag(tr, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(tr, SX(46), SY(34));
+        lv_obj_align(tr, LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_obj_set_style_bg_color(tr, lv_color_hex(0x5a2a2a), 0);
+        lv_obj_set_style_radius(tr, 8, 0);
+        lv_obj_add_event_cb(tr, on_news_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        lv_obj_t * tl = lv_label_create(tr);
+        lv_label_set_text(tl, LV_SYMBOL_TRASH);
+        lv_obj_center(tl);
         i++;
     }
     if (i == 0) lv_list_add_text(news_feeds_list, "(nog geen feeds - voeg er een toe)");
+}
+/* Toggle the idx-th feed's '#'-disabled prefix. */
+static void on_news_feed_toggle(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    char tmp[sizeof settings.news_rss_url], out[sizeof settings.news_rss_url] = "";
+    snprintf(tmp, sizeof tmp, "%s", settings.news_rss_url);
+    int i = 0; char * save = NULL;
+    for (char * u = strtok_r(tmp, "\n", &save); u; u = strtok_r(NULL, "\n", &save)) {
+        char line[300];
+        if (i++ == idx) {
+            char * s = u; while (*s == ' ') s++;
+            if (*s == '#') { s++; while (*s == ' ') s++;
+                             snprintf(line, sizeof line, "%s", s); }   /* enable */
+            else             snprintf(line, sizeof line, "#%s", u);    /* disable */
+        } else snprintf(line, sizeof line, "%s", u);
+        if (out[0]) strncat(out, "\n", sizeof out - strlen(out) - 1);
+        strncat(out, line, sizeof out - strlen(out) - 1);
+    }
+    snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", out);
+    settings_save();
+    news_feeds_rebuild();
 }
 static void on_news_feed_remove(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
@@ -1939,9 +1999,15 @@ static void on_manage_devices(lv_event_t * e) {
 
 static void open_ha_entities_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("HA entities", 720);
+    lv_obj_t * p = modal_open("Home Assistant", 760);
     int y = 70;
     const int tw = SX(480);
+
+    /* Enable toggle — makes this a self-contained HA config (like the
+       Domoticz tile), so the dedicated Settings tile is all you need. */
+    lv_obj_t * r_en = panel_row(p, y, "Home Assistant enabled", NULL);
+    row_switch(r_en, settings.enable_ha, on_int_ha);
+    y += 82;
 
     /* HA host */
     lv_obj_t * lh = lv_label_create(p);
@@ -3488,6 +3554,8 @@ lv_obj_t * screen_settings_create(void) {
               "meter & boiler", open_adapters); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
               "lights & blinds", open_domoticz); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Home Assistant",
+              "host, token, entities", open_ha_entities_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, "Client mode",
               "mirror a master Toon", open_client_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, "Auto-rotate",

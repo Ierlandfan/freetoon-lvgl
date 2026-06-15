@@ -171,14 +171,17 @@ static void url_host(const char * u, char * out, size_t outsz) {
    Items added by this feed are stamped with a feed slot named `feed_name`.
    When start==0 this is the first feed of a refresh cycle, so the feed table
    is reset. */
-static int parse_feed(const char * xml, size_t len, int start, const char * feed_name) {
+static int parse_feed(const char * xml, size_t len, int start, const char * feed_name,
+                      int max_this_feed) {
     const char * p = xml;
     const char * end = xml + len;
     int n = start;
     pthread_mutex_lock(&g_mtx);
     if (start == 0) g_feed_n = 0;
     int feed_slot = -1;                 /* assigned lazily on the first item */
-    while (n < NEWS_MAX_ITEMS) {
+    /* Stop at the global cap OR this feed's fair share (max_this_feed) so one
+       busy feed can't eat every slot and starve the others. */
+    while (n < NEWS_MAX_ITEMS && (n - start) < max_this_feed) {
         const char * it = memmem(p, end - p, "<item", 5);
         if (!it) it = memmem(p, end - p, "<entry", 6);   /* Atom fallback */
         if (!it) break;
@@ -217,14 +220,35 @@ static void * fetch_thread(void * arg) {
     static char buf[131072];     /* RSS feeds fit comfortably in 128 KB */
     for (;;) {
         if (settings.news_enabled && settings.news_rss_url[0]) {
-            /* news_rss_url holds one feed URL per line — fetch each, merge. */
+            /* news_rss_url holds one feed URL per line — fetch each, merge.
+               A line whose first non-space char is '#' is DISABLED (hidden)
+               and skipped (per-feed show/hide toggle in Settings). */
             char urls[sizeof settings.news_rss_url];
+
+            /* Pass 1: count enabled feeds so each gets a fair share of the 12
+               headline slots (round-robin-ish) instead of the first feed
+               grabbing them all. */
+            snprintf(urls, sizeof urls, "%s", settings.news_rss_url);
+            int nfeeds = 0;
+            { char * sv = NULL;
+              for (char * u = strtok_r(urls, "\n", &sv); u; u = strtok_r(NULL, "\n", &sv)) {
+                  while (*u == ' ' || *u == '\t' || *u == '\r') u++;
+                  if (!*u || *u == '#') continue;
+                  if (url_ok(u)) nfeeds++;
+              }
+            }
+            int per_feed = nfeeds > 0
+                ? (NEWS_MAX_ITEMS + nfeeds - 1) / nfeeds   /* ceil(12/n) */
+                : NEWS_MAX_ITEMS;
+
+            /* Pass 2: fetch + parse each enabled feed, capped to its share. */
             snprintf(urls, sizeof urls, "%s", settings.news_rss_url);
             int total = 0, did = 0;
             char * save = NULL;
             for (char * u = strtok_r(urls, "\n", &save); u && total < NEWS_MAX_ITEMS;
                  u = strtok_r(NULL, "\n", &save)) {
                 while (*u == ' ' || *u == '\t' || *u == '\r') u++;
+                if (!*u || *u == '#') continue;          /* disabled feed */
                 if (!url_ok(u)) continue;
                 char cmd[600];
                 snprintf(cmd, sizeof cmd,
@@ -238,7 +262,7 @@ static void * fetch_thread(void * arg) {
                     char fname[64];
                     feed_title(buf, got, fname, sizeof fname);
                     if (!fname[0]) url_host(u, fname, sizeof fname);
-                    total = parse_feed(buf, got, total, fname);
+                    total = parse_feed(buf, got, total, fname, per_feed);
                     did = 1;
                 }
             }

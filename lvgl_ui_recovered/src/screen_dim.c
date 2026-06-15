@@ -38,6 +38,7 @@ static lv_obj_t * dim_img_drop;    /* paired water-drop next to the faucet */
 static lv_obj_t * wx_icon = NULL;
 static lv_obj_t * lbl_outside = NULL;
 static lv_obj_t * waste_icon = NULL;
+static lv_obj_t * waste_icon_2 = NULL;   /* 2nd bin shown when same day has 2 types */
 static lv_obj_t * lbl_waste = NULL;
 static lv_obj_t * waste_box_ptr = NULL;
 static lv_obj_t * dim_fc_icon[WEATHER_FORECAST_DAYS];
@@ -327,7 +328,15 @@ static void refresh_cb(lv_timer_t * t) {
        Both are already swap-corrected to the user-intent label. Online/offline
        (itho/lwt) is shown on the HOME tile, not here. */
     if (dim_vent_fan && dim_vent_lbl) {
-        if (vent_state.connected) {
+        if (vent_state.connected && vent_state.itho_online == 0) {
+            /* Itho reported itself offline via its MQTT LWT — show that
+               (overrides the mode) and park the spinner. Normal case below
+               shows what it's doing (mode + %). */
+            lv_label_set_text(dim_vent_lbl, "offline");
+            dim_vent_apply_anim(0);
+            lv_obj_clear_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else if (vent_state.connected) {
             const char * pretty = vent_mode_label();
             if (vent_state.remaining_min > 0)
                 lv_label_set_text_fmt(dim_vent_lbl, "%s %dm %d %%",
@@ -494,10 +503,29 @@ static void refresh_cb(lv_timer_t * t) {
             if (waste_next_2_pickups(&wp, &dummy) >= 1) {
                 const char * l_clean = wp.labels;
                 if (strncmp(l_clean, "Afval ", 6) == 0) l_clean += 6;
+                /* Same day, two types ("Papier+Plastic") → one colour-coded
+                   bin per type. Split on the first '+'. */
+                char t1[40], t2[40] = "";
+                snprintf(t1, sizeof t1, "%s", l_clean);
+                char * plus = strchr(t1, '+');
+                if (plus) {
+                    *plus = 0;
+                    const char * p2 = plus + 1; while (*p2 == ' ') p2++;
+                    snprintf(t2, sizeof t2, "%s", p2);
+                    size_t n = strlen(t1); while (n && t1[n-1] == ' ') t1[--n] = 0;
+                }
                 lv_img_set_src(waste_icon, &icon_trash_lg);
                 lv_obj_set_style_img_recolor(waste_icon,
-                    lv_color_hex(waste_accent_for_label(l_clean)), 0);
+                    lv_color_hex(waste_accent_for_label(t1)), 0);
                 lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
+                if (waste_icon_2) {
+                    if (t2[0]) {
+                        lv_obj_set_style_img_recolor(waste_icon_2,
+                            lv_color_hex(waste_accent_for_label(t2)), 0);
+                        lv_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
+                        lv_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+                    } else lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+                }
 
                 long days_until = waste_days_until(wp.date);
                 const char * when = (days_until == 0) ? "Vandaag" : (days_until == 1) ? "Morgen" : NULL;
@@ -510,12 +538,14 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_img_set_src(waste_icon, &icon_trash_lg);
                 lv_obj_set_style_img_recolor_opa(waste_icon, 100, 0); /* dimmed */
                 lv_label_set_text(lbl_waste, "Geen");
+                if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
             }
             lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+            if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -726,13 +756,13 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_outside_temp, "");
     lv_obj_set_width(lbl_outside_temp, SX(180));
     lv_obj_set_style_text_align(lbl_outside_temp, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-48), SY(250));
+    lv_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-48), SY(78));
 
     wx_icon = lv_img_create(scr_root);
     lv_img_set_src(wx_icon, &icon_wx_cloud_lg);
     lv_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
-    lv_obj_align(wx_icon, LV_ALIGN_TOP_RIGHT, SX(-116), SY(252));
+    lv_obj_align(wx_icon, LV_ALIGN_TOP_RIGHT, SX(-150), SY(52));
 
     lbl_outside = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
@@ -740,7 +770,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_outside, "Buiten");
     lv_obj_set_width(lbl_outside, SX(210));
     lv_obj_set_style_text_align(lbl_outside, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, SX(-56), SY(362));
+    lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, SX(-56), SY(140));
 
     /* Life360 — sits under the outside temp on the right edge, mirroring
      * the Family tile on the home screen. Right-aligned so longer street
@@ -752,7 +782,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_align(dim_lbl_life360_a, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_a, LV_LABEL_LONG_DOT);
     lv_label_set_text(dim_lbl_life360_a, "");
-    lv_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, SX(-24), SY(388));
+    lv_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, SX(-24), SY(322));
     lv_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_life360_b = lv_label_create(scr_root);
@@ -762,7 +792,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_align(dim_lbl_life360_b, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_b, LV_LABEL_LONG_DOT);
     lv_label_set_text(dim_lbl_life360_b, "");
-    lv_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, SX(-24), SY(412));
+    lv_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, SX(-24), SY(346));
     lv_obj_add_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
 
     /* Waste cluster (left column): mirror the weather cluster. Use the native
@@ -772,7 +802,15 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_src(waste_icon, &icon_trash_lg);
     lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
-    lv_obj_align(waste_icon, LV_ALIGN_TOP_LEFT, SX(100), SY(252));
+    lv_obj_align(waste_icon, LV_ALIGN_TOP_LEFT, SX(70), SY(52));
+
+    /* 2nd bin, shown only when the next pickup has two types on one day
+       (e.g. Papier+Plastic) — each bin recoloured by its own type. */
+    waste_icon_2 = lv_img_create(scr_root);
+    lv_img_set_src(waste_icon_2, &icon_trash_lg);
+    lv_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
+    lv_obj_align(waste_icon_2, LV_ALIGN_TOP_LEFT, SX(150), SY(52));
+    lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
 
     lbl_waste = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
@@ -780,7 +818,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_width(lbl_waste, SX(260));
     lv_obj_set_style_text_align(lbl_waste, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, SX(10), SY(362));
+    lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, SX(10), SY(135));
 
     /* (City header above forecast strip removed — location moved under wx icon) */
     dim_lbl_city = NULL;

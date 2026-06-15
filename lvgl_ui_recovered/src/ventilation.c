@@ -273,11 +273,12 @@ void vent_send_vremote_async(const char * cmd) {
     if (p >= 0) {
         vent_state.speed_pct   = p;
         vent_state.exh_fan_pct = p;     /* approximate — actual %≈setpoint */
-        /* Optimistic rpm too, so the fan-spinner speeds up immediately
-         * instead of waiting for the next itho/ithostatus MQTT push (~16 s).
-         * Map % onto the CVE's real band ~1000 (idle) .. ~2700 (high). MQTT
-         * corrects to the true rpm shortly after. */
-        vent_state.fan_rpm = 1000 + p * 17;
+        /* NOTE: deliberately do NOT fake fan_rpm here. The spinner is driven
+         * by real rpm, which physically lags the command by tens of seconds
+         * (and may not rise at all if the command doesn't actuate). Faking a
+         * high rpm made the spinner spike fast then snap back to the real low
+         * rpm on the next MQTT push ("fast then drops to slow"). Let it track
+         * the honest rpm instead. */
     }
 #ifdef WASM_BUILD
     /* WASM client: bridge via the master Toon's POST /api/vent — the master
@@ -363,7 +364,7 @@ void vent_set_speed_async(int pwm) {
     int pct = pwm * 100 / 255;
     vent_state.exh_fan_pct = pct;
     vent_state.speed_pct   = pct;   /* optimistic; MQTT corrects in ~seconds */
-    vent_state.fan_rpm     = 1000 + pct * 17;   /* optimistic rpm → spinner reacts now */
+    /* No optimistic fan_rpm — spinner tracks real rpm (see vent_send_vremote_async). */
 #ifdef WASM_BUILD
     /* Slave/WASM client: forward to the master Toon, which owns the Itho LAN
      * link. handle_vent_post understands {"speed":N}. */
