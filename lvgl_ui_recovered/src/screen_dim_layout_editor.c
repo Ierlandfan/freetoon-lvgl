@@ -45,6 +45,7 @@ static lv_obj_t * sel_lbl;
 static const uint32_t DB_COL[DB_COUNT] = {
     [DB_THERMO]=0x335577, [DB_WEATHER]=0x4488aa, [DB_FORECAST]=0x66bbdd,
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
+    [DB_ENERGY]=0xaa77ff,
 };
 
 static void place_rect(int i);

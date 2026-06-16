@@ -394,7 +394,8 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_VENT]     = { 0, 4, 2, 2, 1 },
     [DB_THERMO]   = { 2, 4, 7, 2, 1 },
     [DB_FAMILY]   = { 9, 4, 3, 2, 1 },
-    [DB_FORECAST] = { 0, 6, 12, 2, 1 },
+    [DB_FORECAST] = { 0, 6, 9, 2, 1 },   /* narrowed to make room for energy */
+    [DB_ENERGY]   = { 9, 6, 3, 2, 1 },   /* bottom-right corner */
 };
 
 void dim_layout_reset_default(void) {
@@ -453,6 +454,7 @@ const char * dim_block_name(int id) {
         case DB_WASTE:    return "Afval";
         case DB_FAMILY:   return "Familie";
         case DB_VENT:     return "Ventilatie";
+        case DB_ENERGY:   return "Energie";
     }
     return "?";
 }
