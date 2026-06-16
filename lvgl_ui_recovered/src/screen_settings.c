@@ -1626,6 +1626,7 @@ static void on_cal_enabled_change(lv_event_t * e) {
 }
 static void on_cal_open_click(lv_event_t * e) { (void)e; screen_calendar_show(); }
 static void open_layout_editor(lv_event_t * e) { (void)e; screen_layout_editor_show(); }
+static void open_dim_layout_editor(lv_event_t * e) { (void)e; screen_dim_layout_editor_show(); }
 static void on_cal_save_click(lv_event_t * e) {
     (void)e;
     if (ta_cal_ha) { const char * v = lv_textarea_get_text(ta_cal_ha);
@@ -3643,6 +3644,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("HA + iCal-afspraken", "HA + iCal events"), open_calendar_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Indeling", "Layout"),
               tr("tegelindeling bewerken", "tile layout editor"), open_layout_editor); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Dim indeling", "Dim layout"),
+              tr("dim-blokken verplaatsen", "arrange dim blocks"), open_dim_layout_editor); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),
               tr("instellingen herladen", "reload settings"), open_restart_confirm); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, tr("Webtoegang", "Web Access"),

@@ -373,3 +373,82 @@ const char * layout_type_name(int type) {
         default:             return "?";
     }
 }
+
+/* ===== DIM-screen block layout =============================================
+ * Fixed block set (indexed by dim_block_id_t), each a cell on the same grid as
+ * the home tiles. No reflow/insert/delete — just position/size/visibility per
+ * known block. Defaults reproduce the built-in dim arrangement. */
+
+dim_block_t g_dim_blocks[DB_COUNT];
+
+/* col,row,w,h,visible — indexed by dim_block_id_t (order must match the enum):
+ * THERMO (centre, under the clock), WEATHER (top-right), FORECAST (bottom strip),
+ * WASTE (top-left), FAMILY (right, under weather), VENT (left of centre). */
+static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
+    [DB_THERMO]   = { 4, 3, 4, 3, 1 },
+    [DB_WEATHER]  = { 8, 0, 4, 3, 1 },
+    [DB_FORECAST] = { 0, 6, 12, 2, 1 },
+    [DB_WASTE]    = { 0, 0, 4, 3, 1 },
+    [DB_FAMILY]   = { 8, 5, 4, 2, 1 },
+    [DB_VENT]     = { 1, 4, 3, 2, 1 },
+};
+
+void dim_layout_reset_default(void) {
+    memcpy(g_dim_blocks, DIM_DEFAULTS, sizeof g_dim_blocks);
+}
+
+dim_block_t dim_block_default(int id) {
+    if (id < 0 || id >= DB_COUNT) { dim_block_t z = { 0, 0, 1, 1, 1 }; return z; }
+    return DIM_DEFAULTS[id];
+}
+
+static const char * dim_layout_file(char * buf, int bufsz) {
+    snprintf(buf, bufsz, "%s/toonui_dim_layout.cfg", layout_dir());
+    return buf;
+}
+
+void dim_layout_load(void) {
+    dim_layout_reset_default();                 /* seed; lines below override by id */
+    char path[256];
+    FILE * f = fopen(dim_layout_file(path, sizeof path), "r");
+    if (!f) return;
+    char line[128];
+    while (fgets(line, sizeof line, f)) {
+        if (strncmp(line, "dim=", 4) != 0) continue;
+        int id, c, r, w, h, v;
+        if (sscanf(line + 4, "%d,%d,%d,%d,%d,%d", &id, &c, &r, &w, &h, &v) == 6
+                && id >= 0 && id < DB_COUNT) {
+            /* Clamp to the grid so a hand-edited/garbled file can't place a block
+             * off-screen. */
+            if (w < 1) w = 1; if (w > LAYOUT_COLS) w = LAYOUT_COLS;
+            if (h < 1) h = 1; if (h > LAYOUT_ROWS) h = LAYOUT_ROWS;
+            if (c < 0) c = 0; if (c + w > LAYOUT_COLS) c = LAYOUT_COLS - w;
+            if (r < 0) r = 0; if (r + h > LAYOUT_ROWS) r = LAYOUT_ROWS - h;
+            g_dim_blocks[id] = (dim_block_t){ c, r, w, h, v ? 1 : 0 };
+        }
+    }
+    fclose(f);
+}
+
+void dim_layout_save(void) {
+    char path[256];
+    FILE * f = fopen(dim_layout_file(path, sizeof path), "w");
+    if (!f) return;
+    for (int id = 0; id < DB_COUNT; id++) {
+        const dim_block_t * b = &g_dim_blocks[id];
+        fprintf(f, "dim=%d,%d,%d,%d,%d,%d\n", id, b->col, b->row, b->w, b->h, b->visible);
+    }
+    fclose(f);
+}
+
+const char * dim_block_name(int id) {
+    switch (id) {
+        case DB_THERMO:   return "Thermostaat";
+        case DB_WEATHER:  return "Weer nu";
+        case DB_FORECAST: return "Weer strip";
+        case DB_WASTE:    return "Afval";
+        case DB_FAMILY:   return "Familie";
+        case DB_VENT:     return "Ventilatie";
+    }
+    return "?";
+}

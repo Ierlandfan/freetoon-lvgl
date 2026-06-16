@@ -127,6 +127,7 @@ int main(int argc, char** argv) {
         init_display_and_input();
 
     layout_load_named(settings.active_layout);   /* home-tile layout: active preset */
+    dim_layout_load();                            /* dim-screen block layout */
 
     /* Marketplace registry — load before boxtalk so the handshake's
      * tile_slots_subscribe_all() has something to subscribe to. */

@@ -53,6 +53,32 @@ typedef struct {
 
 extern layout_t g_layout;
 
+/* ---- DIM-screen block layout -------------------------------------------------
+ * The dim/ambient screen has a FIXED set of peripheral blocks (clock + date stay
+ * centered and are NOT part of this). Unlike the home grid (a dynamic tile list
+ * with reflow), each dim block is just a cell on the same LAYOUT_COLS×LAYOUT_ROWS
+ * grid, indexed by id — no insert/delete/reflow. Persisted to
+ * toonui_dim_layout.cfg ("dim=<id>,<col>,<row>,<w>,<h>,<visible>"); a missing file
+ * seeds defaults that reproduce the built-in dim arrangement. */
+typedef enum {
+    DB_THERMO = 0,   /* indoor temp + setpoint + program + CH/air metrics */
+    DB_WEATHER,      /* current weather: icon + outside temp + "Buiten" + moon */
+    DB_FORECAST,     /* 5-day / hourly forecast strip */
+    DB_WASTE,        /* next waste pickup */
+    DB_FAMILY,       /* Life360 */
+    DB_VENT,         /* Itho ventilation fan + mode/% */
+    DB_COUNT
+} dim_block_id_t;
+
+typedef struct { int col, row, w, h, visible; } dim_block_t;
+extern dim_block_t g_dim_blocks[DB_COUNT];
+
+void dim_layout_load(void);          /* load toonui_dim_layout.cfg or seed defaults */
+void dim_layout_save(void);
+void dim_layout_reset_default(void);
+const char * dim_block_name(int id); /* human label for the dim editor */
+dim_block_t  dim_block_default(int id); /* built-in default cell for block id */
+
 void layout_load(void);            /* load the default preset, or seed defaults */
 void layout_save(void);            /* save g_layout to the default preset file */
 void layout_reset_default(void);   /* overwrite g_layout with the built-in default */

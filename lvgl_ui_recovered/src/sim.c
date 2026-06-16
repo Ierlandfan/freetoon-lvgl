@@ -198,6 +198,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "domoticz",    screen_domoticz_create },
     { "ha_devices",  screen_ha_devices_create },
     { "layout",      screen_layout_editor_create },
+    { "dim_layout",  screen_dim_layout_editor_create },
     { "crypto_pick", screen_crypto_picker_create },
     { "crypto",      screen_crypto_create },
 };
@@ -231,6 +232,7 @@ int main(int argc, char ** argv) {
 
     settings_load();   /* defaults when /mnt/data/toonui.cfg is absent */
     mock_state();
+    dim_layout_load();  /* dim block layout (seeds defaults if no file) */
     /* Sim-only: exercise a custom layout. $TOONUI_SIM_CUSTOM_LAYOUT turns it on
      * and loads $TOONUI_DATA_DIR/toonui_layout.cfg so screens render from it. */
     if (getenv("TOONUI_SIM_CUSTOM_LAYOUT")) {
