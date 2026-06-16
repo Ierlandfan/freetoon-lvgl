@@ -1444,7 +1444,7 @@ static void refresh_cb(lv_timer_t * t) {
     lv_label_set_text(lbl_t_clock, clk);
     if (lbl_t_date) {
         char dt[48];
-        strftime(dt, sizeof(dt), "%a %d %b", &tm);
+        i18n_date_short(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
         lv_label_set_text(lbl_t_date, dt);
     }
     /* Refresh the moon-phase icon at most once per refresh tick — phase

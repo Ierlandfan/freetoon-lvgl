@@ -207,7 +207,7 @@ static void refresh_cb(lv_timer_t * t) {
     strftime(clk, sizeof(clk), "%H:%M", &tm);
     lv_label_set_text(lbl_clock, clk);
     char dt[64];
-    strftime(dt, sizeof(dt), "%A %d %B", &tm);
+    i18n_date_long(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
     lv_label_set_text(lbl_date, dt);
 
     /* Moon (top-right, beside the current-weather icon): white at night,
@@ -501,8 +501,16 @@ static void refresh_cb(lv_timer_t * t) {
     if (waste_icon && lbl_waste) {
         if (settings.show_dim_waste && waste_state.connected) {
             waste_pickup_t wp, dummy;
-            /* Show actual next, no 3-day lead window, so the icon stays. */
-            if (waste_next_2_pickups(&wp, &dummy) >= 1) {
+            /* Honour the dim_waste_lead_days setting: only surface the next
+               pickup when it falls within the configured lead window (e.g.
+               "1 day before"). 0 = filter off → always show. Beyond the
+               window the whole cluster hides so the dim screen stays clean
+               (the tester set lead=1 but the icon was showing 10 days early
+               because this used to call waste_next_2_pickups unconditionally). */
+            int have_wp = waste_next_2_pickups(&wp, &dummy) >= 1;
+            int within  = have_wp && (settings.dim_waste_lead_days <= 0
+                          || waste_days_until(wp.date) <= settings.dim_waste_lead_days);
+            if (within) {
                 const char * l_clean = wp.labels;
                 if (strncmp(l_clean, "Afval ", 6) == 0) l_clean += 6;
                 /* Same day, two types ("Papier+Plastic") → one colour-coded
@@ -536,14 +544,22 @@ static void refresh_cb(lv_timer_t * t) {
                     int mo = atoi(wp.date + 5), dy = atoi(wp.date + 8);
                     lv_label_set_text_fmt(lbl_waste, "%d-%d: %s", dy, mo, l_clean);
                 }
-            } else {
+                lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+            } else if (settings.dim_waste_lead_days <= 0) {
+                /* Filter off and genuinely no upcoming pickup → dimmed placeholder. */
                 lv_img_set_src(waste_icon, &icon_trash_lg);
                 lv_obj_set_style_img_recolor_opa(waste_icon, 100, 0); /* dimmed */
                 lv_label_set_text(lbl_waste, tr("Geen", "None"));
                 if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+            } else {
+                /* Lead filter on but the next pickup is beyond the window → hide. */
+                lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+                if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
             }
-            lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
@@ -639,18 +655,24 @@ lv_obj_t * screen_dim_create(void) {
 
     lbl_setpoint = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_setpoint, &lv_font_montserrat_28, 0);
+    /* Toon 1 (480 px tall) SY-compresses the row positions ×0.8 but the fonts
+       stay full-size, so setpoint/program/metrics collided into one blob.
+       On the short panel: smaller fonts for the secondary rows + a touch more
+       spacing. Toon 2 (600 px) keeps its original fonts/layout. */
+    lv_obj_set_style_text_font(lbl_setpoint,
+        DISP_VER < 600 ? &lv_font_montserrat_22 : &lv_font_montserrat_28, 0);
     lv_label_set_text(lbl_setpoint, tr("naar -- C", "to -- C"));
-    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, SY(115));
+    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, SY(115) + (DISP_VER < 600 ? 4 : 0));
 
     /* Active program — sits directly under the setpoint and above the
        air-quality / pressure metrics strip. Same vertical-ordering as the
        home thermostat tile so the eye-tracking matches. */
     lbl_program = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_program, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_program, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_program,
+        DISP_VER < 600 ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_program, "--");
-    lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, SY(140));
+    lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, SY(140) + (DISP_VER < 600 ? 14 : 0));
 
     /* Air-quality + CH-pressure strip — moved below program so the TVOC /
        ppm / bar / AQ block doesn't shove the manual label off the layout.
@@ -658,9 +680,10 @@ lv_obj_t * screen_dim_create(void) {
        and the forecast strip at y=518 without anything overlapping. */
     lbl_metrics = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_metrics, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(lbl_metrics, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_metrics,
+        DISP_VER < 600 ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_metrics, "");
-    lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, SY(162));
+    lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, SY(162) + (DISP_VER < 600 ? 18 : 0));
 
     /* Burner state — sits to the right of lbl_program on the same baseline.
        CH-heating shows "-> 90 C" (red). DHW shows the faucet+drop pair
@@ -833,7 +856,7 @@ lv_obj_t * screen_dim_create(void) {
      * day(18) + 2 gap + temp(18) = 82, tight but fits cleanly. */
     /* SY() compresses the strip onto the shorter Toon 1 panel; the extra
        nudge clears the bottom edge for the temp row's 18-px font (unscaled). */
-    int strip_y = SY(508) - (DISP_VER < 600 ? SY(34) : 0);
+    int strip_y = SY(508) - (DISP_VER < 600 ? SY(8) : 0);
     int col_w   = DISP_HOR / WEATHER_FORECAST_DAYS;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         int cx = i * col_w + col_w / 2;

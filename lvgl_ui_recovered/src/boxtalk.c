@@ -10,6 +10,7 @@
  * just hunt for attribute values and child-element text via strstr.
  */
 #include "boxtalk.h"
+#include "i18n.h"
 #include "inbox.h"
 #include "schedule.h"
 #include "settings.h"
@@ -95,11 +96,11 @@ const char* program_label(void) {
      * no active preset (activeState == -1). The mode itself (Manual vs Program) is
      * the home tile's toggle, not this label. */
     switch (toon_state.active_state) {
-        case 0: return "Comfort";
-        case 1: return "Home";
-        case 2: return "Sleep";
-        case 3: return "Away";
-        default: return "Manual";
+        case 0: return tr("Comfort", "Comfort");
+        case 1: return tr("Thuis", "Home");
+        case 2: return tr("Slapen", "Sleep");
+        case 3: return tr("Weg", "Away");
+        default: return tr("Handmatig", "Manual");
     }
 }
 
