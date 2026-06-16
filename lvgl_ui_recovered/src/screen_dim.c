@@ -662,42 +662,50 @@ lv_obj_t * screen_dim_create(void) {
      * Within a box, offsets are raw px (the box is already cell-sized). ===== */
     const int t1 = (DISP_VER < 600);
 
-    /* ---- WEATHER: icon top-left, big temp top-right, "Buiten" under it,
-     * moon bottom-left. Icon and temp on opposite sides → never overlap. ---- */
-    int wbw = 0, wbh = 0; lv_obj_t * bx_w = dim_box(DB_WEATHER, &wbw, &wbh); (void)wbh;
+    /* ---- WEATHER: [icon + temp] as ONE centred row, "Buiten" under it,
+     * moon bottom-left. Keeping icon+temp in a flex row means the sun always
+     * sits right next to the temperature and the pair stays centred in the
+     * block — no matter how wide the block is — instead of the icon flying to
+     * the left edge and the temp to the right edge. ---- */
+    lv_obj_t * bx_w = dim_box(DB_WEATHER, NULL, NULL);
     /* Outside-temp font grows when the weather block is made WIDER in the editor
      * (wider tile = room for a bigger, clearer temp — the tester's request). */
     int w_grow = g_dim_blocks[DB_WEATHER].w - dim_block_default(DB_WEATHER).w;
     const lv_font_t * wtemp_font = (w_grow >= 1) ? &lv_font_montserrat_48 : &lv_font_montserrat_28;
-    int w_temp_h = (wtemp_font == &lv_font_montserrat_48) ? 50 : 34;
 
-    wx_icon = lv_img_create(bx_w);
+    lv_obj_t * wrow = lv_obj_create(bx_w);
+    lv_obj_remove_style_all(wrow);
+    lv_obj_set_size(wrow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(wrow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(wrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(wrow, 8, 0);
+    lv_obj_clear_flag(wrow, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(wrow, LV_ALIGN_TOP_MID, 0, 10);
+
+    wx_icon = lv_img_create(wrow);
     lv_img_set_src(wx_icon, &icon_wx_cloud_lg);
     lv_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
-    lv_obj_align(wx_icon, LV_ALIGN_TOP_LEFT, 6, 8);
+
+    lbl_outside_temp = lv_label_create(wrow);
+    lv_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_outside_temp, wtemp_font, 0);
+    lv_label_set_long_mode(lbl_outside_temp, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(lbl_outside_temp, LV_SIZE_CONTENT);
+    lv_label_set_text(lbl_outside_temp, "--");
+
+    lbl_outside = lv_label_create(bx_w);
+    lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
+    lv_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_align(lbl_outside, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_outside, tr("Buiten", "Outside"));
+    lv_obj_align(lbl_outside, LV_ALIGN_TOP_MID, 0, 92);
 
     dim_moon_img = lv_img_create(bx_w);
     lv_img_set_src(dim_moon_img, moon_phase_icon(80));
     lv_obj_set_style_img_recolor(dim_moon_img, lv_color_hex(0xe8edf2), 0);
     lv_obj_set_style_img_recolor_opa(dim_moon_img, 255, 0);
     lv_obj_align(dim_moon_img, LV_ALIGN_BOTTOM_LEFT, 6, -6);
-
-    lbl_outside_temp = lv_label_create(bx_w);
-    lv_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_outside_temp, wtemp_font, 0);
-    lv_label_set_text(lbl_outside_temp, "");
-    lv_obj_set_width(lbl_outside_temp, wbw - 88);
-    lv_obj_set_style_text_align(lbl_outside_temp, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, -6, 10);
-
-    lbl_outside = lv_label_create(bx_w);
-    lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_outside, tr("Buiten", "Outside"));
-    lv_obj_set_width(lbl_outside, wbw - 88);
-    lv_obj_set_style_text_align(lbl_outside, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, -6, 10 + w_temp_h);
 
     /* ---- WASTE: bin icon(s) centred top, label centred below ---- */
     int sbw = 0, sbh = 0; lv_obj_t * bx_s = dim_box(DB_WASTE, &sbw, &sbh); (void)sbh;
