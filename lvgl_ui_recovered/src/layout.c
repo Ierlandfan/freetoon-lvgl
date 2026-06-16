@@ -73,11 +73,11 @@ static const layout_tile_t DEFAULTS[] = {
     { LT_WATER,         0,   9,  4,  3, 2, 1, -1 },
     { LT_THERMOSTAT,    0,   0,  0,  7, 6, 1, -1 },
     /* Ticker overlays the thermostat's bottom row (row 5); the forecast is a
-     * single-row bar across the bottom (row 6). The home-screen forecast
-     * scaler shrinks its 5 day-columns to fit one row, so it no longer needs
-     * the old 2-row height. */
+     * 2-row bar across the bottom (rows 6-7). The forecast needs 2 rows so its
+     * (un-zoomable) weather icons have vertical room next to time/temp/wind —
+     * a 1-row tile collides on the short Toon 1 panel. */
     { LT_NEWS_TICKER,   0,   0,  5,  7, 1, 1, -1 },
-    { LT_FORECAST,      0,   0,  6, 12, 1, 1, -1 },
+    { LT_FORECAST,      0,   0,  6, 12, 2, 1, -1 },
     /* news-summary + calendar are NOT preplaced (the grid is full) — add them
      * on demand via the editor's "+ Tegel" button, which drops them in a free
      * cell. */
@@ -109,6 +109,19 @@ void layout_load_named(const char * name) {
     }
     fclose(f);
     if (g_layout.count == 0) layout_reset_default();   /* empty/garbled → defaults */
+
+    /* Migrate older saved layouts where the forecast tile was 1 row tall: its
+     * weather icons can't be SW-zoomed, so a 1-row "Weer" tile overlaps its own
+     * time/temp/wind (very visible on Toon 1). Heal to the 2-row minimum, pulling
+     * the row up if growing it would run off the bottom of the grid. */
+    for (int i = 0; i < g_layout.count; i++) {
+        layout_tile_t * t = &g_layout.tiles[i];
+        if (t->type == LT_FORECAST && t->h < 2) {
+            t->h = 2;
+            if (t->row + t->h > LAYOUT_ROWS) t->row = LAYOUT_ROWS - t->h;
+            if (t->row < 0) t->row = 0;
+        }
+    }
 }
 
 void layout_save_named(const char * name) {
@@ -322,7 +335,11 @@ void layout_type_min(int type, int * min_w, int * min_h) {
     int w = 2, h = 2;
     switch (type) {
         case LT_THERMOSTAT:   w = 5; h = 4; break;
-        case LT_FORECAST:     w = 4; h = 1; break;
+        case LT_FORECAST:     w = 4; h = 2; break;  /* needs 2 rows: the weather
+                                                       icons can't be zoomed by the
+                                                       SW renderer, so a 1-row tile
+                                                       overlaps icon+time+temp+wind
+                                                       (esp. on Toon 1's 480-px panel). */
         case LT_NEWS_TICKER:  w = 4; h = 1; break;
         case LT_NEWS_SUMMARY: w = 3; h = 3; break;
         case LT_CALENDAR:     w = 3; h = 3; break;

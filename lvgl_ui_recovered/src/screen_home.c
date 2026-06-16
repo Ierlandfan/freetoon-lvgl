@@ -104,6 +104,12 @@ static lv_obj_t * fc_wind_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_desc_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_wind_arrow[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_icon[WEATHER_FORECAST_DAYS];
+/* Set when the forecast tile is too short for the (un-zoomable) weather icons
+ * — e.g. a grid-placed "Weer" tile only 1 row tall on the 480-px Toon 1 panel.
+ * In that case the column renders compact/text-only (time + temp + wind, no
+ * icon) so nothing overlaps. set_forecast_icon() honours this to keep the
+ * icon hidden across refreshes. */
+static int fc_compact = 0;
 static lv_obj_t * envelope_btn;
 static lv_obj_t * envelope_badge;
 static lv_obj_t * envelope_badge_lbl;
