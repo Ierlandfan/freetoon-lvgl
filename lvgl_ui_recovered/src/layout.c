@@ -385,12 +385,16 @@ dim_block_t g_dim_blocks[DB_COUNT];
  * THERMO (centre, under the clock), WEATHER (top-right), FORECAST (bottom strip),
  * WASTE (top-left), FAMILY (right, under weather), VENT (left of centre). */
 static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
-    [DB_THERMO]   = { 4, 3, 4, 3, 1 },
-    [DB_WEATHER]  = { 8, 0, 4, 3, 1 },
+    /* col,row,w,h,vis. Top zone (rows 0-2): waste left, weather right, clock
+     * centered (not gridded). Middle band (rows 4-5): vent | thermo | family.
+     * Bottom (rows 6-7): forecast strip. Non-overlapping so the editor + render
+     * agree. THERMO is wide (w7) so its metrics row fits. */
+    [DB_WASTE]    = { 0, 0, 3, 3, 1 },
+    [DB_WEATHER]  = { 9, 0, 3, 3, 1 },
+    [DB_VENT]     = { 0, 4, 2, 2, 1 },
+    [DB_THERMO]   = { 2, 4, 7, 2, 1 },
+    [DB_FAMILY]   = { 9, 4, 3, 2, 1 },
     [DB_FORECAST] = { 0, 6, 12, 2, 1 },
-    [DB_WASTE]    = { 0, 0, 4, 3, 1 },
-    [DB_FAMILY]   = { 8, 5, 4, 2, 1 },
-    [DB_VENT]     = { 1, 4, 3, 2, 1 },
 };
 
 void dim_layout_reset_default(void) {
