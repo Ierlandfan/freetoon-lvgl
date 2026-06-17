@@ -53,7 +53,7 @@ have_qtgui() { [ -x "$STARTQT" ] || [ -x "$QTGUI" ]; }
 # path; empty = a sensible default. Disabled (no file) = unchanged behaviour.
 QTLOG=""
 if [ -f /mnt/data/qtlog ]; then
-    QTLOG=$(cat /mnt/data/qtlog 2>/dev/null | head -1 | tr -d ' ')
+    QTLOG=$(cat /mnt/data/qtlog 2>/dev/null | head -n 1 | tr -d ' ')   # busybox head needs -n 1, NOT -1
     [ -z "$QTLOG" ] && QTLOG=/var/volatile/tmp/qt-gui.log
     # NEVER let a bad log path block the stock UI: if it isn't writable, drop the
     # redirect and launch qt-gui normally.

@@ -46,7 +46,7 @@ if which fbset >/dev/null 2>&1; then
   _W=$1; _H=$2; _BPP=$3
 fi
 if [ -z "$_W" ] || [ -z "$_H" ]; then            # sysfs: visible mode "U:800x480p-0"
-  _res=$(head -1 /sys/class/graphics/fb0/modes 2>/dev/null)
+  _res=$(head -n 1 /sys/class/graphics/fb0/modes 2>/dev/null)   # busybox head needs -n 1, NOT -1
   _res=${_res#*:}; _res=${_res%%p*}; _res=${_res%%i*}
   case "$_res" in *x*) _W=${_res%x*}; _H=${_res#*x};; esac
 fi
