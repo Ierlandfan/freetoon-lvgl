@@ -155,7 +155,7 @@ static void parse_rrule(const char * v, const char * end, rrule_t * o) {
         }
         else if (!strcmp(key, "INTERVAL")) { o->interval = atoi(val); if (o->interval < 1) o->interval = 1; }
         else if (!strcmp(key, "COUNT"))    { o->count = atoi(val); }
-        else if (!strcmp(key, "UNTIL"))    { if (ics_parse_dt(val, val + strlen(val), &o->until) == 0) { ics_dt_to_local(&o->until); o->has_until = 1; } }
+        else if (!strcmp(key, "UNTIL"))    { if (ics_parse_dt(val, val + strlen(val), &o->until) == 0) o->has_until = 1; }  /* reference frame */
         else if (!strcmp(key, "BYDAY")) {
             char * p = val, * c;
             while (*p && o->byday_n < 16) {
@@ -339,19 +339,23 @@ static void gather_event(const char * p, const char * evend, vevent_t * ev) {
         const char * le = eol; if (le > q && le[-1] == '\r') le--;        /* logical end */
         const char * val; { const char * c = q; while (c < le && *c != ':') c++; val = (c < le) ? c + 1 : le; }
 
-        if      (line_is(q, le, "DTSTART"))       { if (ics_parse_dt(val, le, &ev->ds) == 0)    { ics_dt_to_local(&ev->ds); ev->has_ds = 1; } }
+        /* NOTE: times are kept in their ORIGINAL (reference) frame here — NOT
+         * converted to local. Recurrence math, EXDATE matching and
+         * RECURRENCE-ID matching all happen in that frame so they line up
+         * exactly regardless of DST; conversion to local is done per-occurrence
+         * at display time (see occ_local / dt_local_str). */
+        if      (line_is(q, le, "DTSTART"))       { if (ics_parse_dt(val, le, &ev->ds) == 0)    ev->has_ds = 1; }
         else if (line_is(q, le, "SUMMARY"))       { copy_text(val, ev->summary, sizeof ev->summary); }
         else if (line_is(q, le, "UID"))           { copy_text(val, ev->uid, sizeof ev->uid); }
         else if (line_is(q, le, "RRULE"))         { parse_rrule(val, le, &ev->rr); }
-        else if (line_is(q, le, "RECURRENCE-ID")) { if (ics_parse_dt(val, le, &ev->recid) == 0) { ics_dt_to_local(&ev->recid); ev->has_recid = 1; } }
+        else if (line_is(q, le, "RECURRENCE-ID")) { if (ics_parse_dt(val, le, &ev->recid) == 0) ev->has_recid = 1; }
         else if (line_is(q, le, "EXDATE")) {
             const char * c = val;
             while (c < le && ev->exn < 64) {
                 ics_dt_t e;
                 if (ics_parse_dt(c, le, &e) == 0) {
-                    ics_dt_to_local(&e);
                     char t2[8] = "";
-                    if (e.has_time) snprintf(t2, sizeof t2, "%02d:%02d", e.h, e.mi);
+                    if (e.has_time) snprintf(t2, sizeof t2, "%02d:%02d", e.h, e.mi);   /* reference time */
                     snprintf(ev->ex[ev->exn], sizeof ev->ex[ev->exn], "%04d-%02d-%02d %s", e.y, e.mo, e.d, t2);
                     ev->exn++;
                 }
@@ -363,20 +367,51 @@ static void gather_event(const char * p, const char * evend, vevent_t * ev) {
     }
 }
 
-/* Record one expanded occurrence (day-number dn), unless excluded by EXDATE or
- * superseded by a RECURRENCE-ID override for the same UID. */
-static void rec_occ(long dn, const vevent_t * ev, calendar_event_t * tmp, int * n,
-                    const char * today, char ovr[][128], int ovrn) {
-    int y, mo, d; civil_from_days(dn, &y, &mo, &d);
-    char date[12], tm[8] = "";
-    snprintf(date, sizeof date, "%04d-%02d-%02d", y, mo, d);
-    if (ev->ds.has_time) snprintf(tm, sizeof tm, "%02d:%02d", ev->ds.h, ev->ds.mi);
+/* Format a single instant in LOCAL time for display (point events/overrides). */
+static void dt_local_str(const ics_dt_t * src, char * date, size_t dz, char * tm, size_t tz) {
+    ics_dt_t d = *src; ics_dt_to_local(&d);
+    snprintf(date, dz, "%04d-%02d-%02d", d.y, d.mo, d.d);
+    if (d.has_time) snprintf(tm, tz, "%02d:%02d", d.h, d.mi); else tm[0] = 0;
+}
 
-    char k1[24]; snprintf(k1, sizeof k1, "%s %s", date, tm);
+/* Convert a recurrence occurrence (reference-frame day `dn` + the series'
+ * reference time) to a LOCAL display date+time. A UTC-anchored series shifts
+ * with DST (10:00Z → 11:00 in winter, 12:00 in summer); a floating/all-day
+ * series is shown verbatim. */
+static void occ_local(long dn, const ics_dt_t * ds, char * date, size_t dz, char * tm, size_t tz) {
+    int y, mo, d; civil_from_days(dn, &y, &mo, &d);
+    if (ds->has_time && ds->utc) {
+        struct tm t0; memset(&t0, 0, sizeof t0);
+        t0.tm_year = y - 1900; t0.tm_mon = mo - 1; t0.tm_mday = d;
+        t0.tm_hour = ds->h; t0.tm_min = ds->mi;
+        time_t tt = timegm(&t0); struct tm lo; localtime_r(&tt, &lo);
+        snprintf(date, dz, "%04d-%02d-%02d", lo.tm_year + 1900, lo.tm_mon + 1, lo.tm_mday);
+        snprintf(tm, tz, "%02d:%02d", lo.tm_hour, lo.tm_min);
+    } else {
+        snprintf(date, dz, "%04d-%02d-%02d", y, mo, d);
+        if (ds->has_time) snprintf(tm, tz, "%02d:%02d", ds->h, ds->mi); else tm[0] = 0;
+    }
+}
+
+/* Record one expanded occurrence (reference-frame day-number `dn`), unless
+ * excluded by EXDATE or superseded by a RECURRENCE-ID override for the same
+ * UID. Exclusion keys are built in the REFERENCE frame (so they match the raw
+ * EXDATE/RECURRENCE-ID values exactly); the event itself is stored in LOCAL
+ * time. `horizon` bounds the window after the tz shift. */
+static void rec_occ(long dn, const vevent_t * ev, calendar_event_t * tmp, int * n,
+                    const char * today, const char * horizon, char ovr[][128], int ovrn) {
+    int ry, rmo, rd; civil_from_days(dn, &ry, &rmo, &rd);
+    char rtm[8] = "";
+    if (ev->ds.has_time) snprintf(rtm, sizeof rtm, "%02d:%02d", ev->ds.h, ev->ds.mi);
+
+    char k1[24]; snprintf(k1, sizeof k1, "%04d-%02d-%02d %s", ry, rmo, rd, rtm);   /* reference-frame */
     for (int i = 0; i < ev->exn; i++) if (!strcmp(ev->ex[i], k1)) return;
-    char k2[160]; snprintf(k2, sizeof k2, "%s\t%s %s", ev->uid, date, tm);
+    char k2[160]; snprintf(k2, sizeof k2, "%s\t%s", ev->uid, k1);
     for (int i = 0; i < ovrn; i++) if (!strcmp(ovr[i], k2)) return;
 
+    char date[12], tm[8];
+    occ_local(dn, &ev->ds, date, sizeof date, tm, sizeof tm);
+    if (horizon[0] && strcmp(date, horizon) > 0) return;     /* fell past the window after tz shift */
     add_event(tmp, n, today, date, tm, ev->summary);
 }
 
@@ -391,6 +426,10 @@ static void expand_rrule(const vevent_t * ev, calendar_event_t * tmp, int * n,
     long ds_dn      = days_from_civil(ds->y, ds->mo, ds->d);
     long until_dn   = rr->has_until ? days_from_civil(rr->until.y, rr->until.mo, rr->until.d) : 0;
     int emitted = 0, done = 0, iter = 0;
+    /* exact local upper bound for rec_occ; the dn gates below are widened ±1 day
+     * because a reference-frame date can shift a calendar day once converted. */
+    char horizon[12]; { int hy, hmo, hd; civil_from_days(horizon_dn, &hy, &hmo, &hd);
+                        snprintf(horizon, sizeof horizon, "%04d-%02d-%02d", hy, hmo, hd); }
 
     if (rr->freq == 1) {                            /* DAILY */
         long k = 0;
@@ -403,7 +442,7 @@ static void expand_rrule(const vevent_t * ev, calendar_event_t * tmp, int * n,
             if (rr->byday_n && !wd_in(rr, weekday_from_days(dn))) continue;
             if (rr->count && emitted >= rr->count) break;
             emitted++;
-            if (dn >= today_dn && dn <= horizon_dn) rec_occ(dn, ev, tmp, n, today, ovr, ovrn);
+            if (dn >= today_dn - 1 && dn <= horizon_dn + 1) rec_occ(dn, ev, tmp, n, today, horizon, ovr, ovrn);
         }
     } else if (rr->freq == 2) {                     /* WEEKLY */
         int dsw = weekday_from_days(ds_dn);
@@ -425,7 +464,7 @@ static void expand_rrule(const vevent_t * ev, calendar_event_t * tmp, int * n,
                 if (rr->has_until && dn > until_dn) { done = 1; break; }
                 if (rr->count && emitted >= rr->count) { done = 1; break; }
                 emitted++;
-                if (dn >= today_dn && dn <= horizon_dn) rec_occ(dn, ev, tmp, n, today, ovr, ovrn);
+                if (dn >= today_dn - 1 && dn <= horizon_dn + 1) rec_occ(dn, ev, tmp, n, today, horizon, ovr, ovrn);
             }
         }
     } else if (rr->freq == 3) {                     /* MONTHLY */
@@ -444,7 +483,7 @@ static void expand_rrule(const vevent_t * ev, calendar_event_t * tmp, int * n,
                 if (rr->has_until && dn > until_dn) { done = 1; break; }
                 if (rr->count && emitted >= rr->count) { done = 1; break; }
                 emitted++;
-                if (dn >= today_dn && dn <= horizon_dn) rec_occ(dn, ev, tmp, n, today, ovr, ovrn);
+                if (dn >= today_dn - 1 && dn <= horizon_dn + 1) rec_occ(dn, ev, tmp, n, today, horizon, ovr, ovrn);
             }
         }
     } else if (rr->freq == 4) {                     /* YEARLY */
@@ -468,7 +507,7 @@ static void expand_rrule(const vevent_t * ev, calendar_event_t * tmp, int * n,
                 if (rr->has_until && dn > until_dn) { done = 1; break; }
                 if (rr->count && emitted >= rr->count) { done = 1; break; }
                 emitted++;
-                if (dn >= today_dn && dn <= horizon_dn) rec_occ(dn, ev, tmp, n, today, ovr, ovrn);
+                if (dn >= today_dn - 1 && dn <= horizon_dn + 1) rec_occ(dn, ev, tmp, n, today, horizon, ovr, ovrn);
             }
         }
     }
@@ -498,12 +537,14 @@ static void parse_ics_cal(const char * body, calendar_event_t * tmp, int * n, co
         const char * evend = strstr(p, "END:VEVENT"); if (!evend) evend = p + strlen(p);
         vevent_t ev; gather_event(p, evend, &ev);
         if (ev.has_ds && ev.summary[0]) {
-            char date[12], tm[8] = "";
-            snprintf(date, sizeof date, "%04d-%02d-%02d", ev.ds.y, ev.ds.mo, ev.ds.d);
-            if (ev.ds.has_time) snprintf(tm, sizeof tm, "%02d:%02d", ev.ds.h, ev.ds.mi);
-            if (ev.has_recid)        add_event(tmp, n, today, date, tm, ev.summary);   /* moved single occurrence */
-            else if (ev.rr.freq)     expand_rrule(&ev, tmp, n, today, ovr, ovrn);
-            else                     add_event(tmp, n, today, date, tm, ev.summary);
+            if (ev.rr.freq && !ev.has_recid) {
+                expand_rrule(&ev, tmp, n, today, ovr, ovrn);
+            } else {
+                /* point event or moved single occurrence — convert to local for display */
+                char date[12], tm[8];
+                dt_local_str(&ev.ds, date, sizeof date, tm, sizeof tm);
+                add_event(tmp, n, today, date, tm, ev.summary);
+            }
         }
         p = evend;
     }
