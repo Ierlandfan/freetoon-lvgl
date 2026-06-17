@@ -3080,10 +3080,50 @@ static void on_pwa_reset_click(lv_event_t * e) {
     wasm_redirect_after("/logout", 250);
 #endif
 }
+/* First non-loopback IPv4 of this Toon (prefer wlan0/eth*) — so the Web Access
+ * modal can spell out the real browser URL instead of letting users guess. */
+static void ft_lan_ip(char * out, size_t n) {
+    out[0] = 0;
+    struct ifaddrs * ifa = NULL, * p;
+    if (getifaddrs(&ifa) != 0) return;
+    char first[40] = "";
+    for (p = ifa; p; p = p->ifa_next) {
+        if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET) continue;
+        if (!(p->ifa_flags & IFF_UP) || (p->ifa_flags & IFF_LOOPBACK)) continue;
+        char ip[40];
+        struct sockaddr_in * sa = (struct sockaddr_in *)p->ifa_addr;
+        if (!inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof ip)) continue;
+        if (!first[0]) snprintf(first, sizeof first, "%s", ip);
+        if (p->ifa_name && (strncmp(p->ifa_name, "wlan", 4) == 0 ||
+                            strncmp(p->ifa_name, "eth", 3) == 0)) { snprintf(out, n, "%s", ip); break; }
+    }
+    if (!out[0]) snprintf(out, n, "%s", first);
+    freeifaddrs(ifa);
+}
+
 static void open_web_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open(tr("Webtoegang", "Web Access"), 420);
+    lv_obj_t * p = modal_open(tr("Webtoegang", "Web Access"), 480);
     int y = 70;
+
+    /* Headline: the web UI is on :10081 — NOT :10080 (that's the stock Toon API
+     * and shows a blank page). Spell out this Toon's address so nobody guesses. */
+    char _ip[40]; ft_lan_ip(_ip, sizeof _ip);
+    char _url[72];
+    if (_ip[0]) snprintf(_url, sizeof _url, "http://%s:10081", _ip);
+    else        snprintf(_url, sizeof _url, "http://<toon-ip>:10081");
+    lv_obj_t * lcap = lv_label_create(p);
+    lv_obj_set_style_text_color(lcap, lv_color_hex(0x99aabb), 0);
+    lv_obj_set_style_text_font(lcap, SF(14), 0);
+    lv_label_set_text(lcap, tr("Openen in een browser op (telefoon/tablet/pc):",
+                               "Open in a browser at (phone/tablet/PC):"));
+    lv_obj_align(lcap, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_t * lurl = lv_label_create(p);
+    lv_obj_set_style_text_color(lurl, lv_color_hex(0x66ccff), 0);
+    lv_obj_set_style_text_font(lurl, SF(22), 0);
+    lv_label_set_text(lurl, _url);
+    lv_obj_align(lurl, LV_ALIGN_TOP_LEFT, SX(4), y + 22);
+    y += 66;
 
     lv_obj_t * r_en = panel_row(p, y, tr("Login vereist (browser)", "Login required (browser)"), NULL);
     row_switch(r_en, settings.pwa_login_enabled, on_pwa_enabled_change);
