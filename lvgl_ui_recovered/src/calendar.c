@@ -28,8 +28,8 @@
 
 calendar_state_t calendar_state = {0};
 
-#define CAL_SCRATCH (96 * 1024)
-#define CAL_TMP_MAX 64                  /* parse capacity before trim to CAL_MAX */
+#define CAL_SCRATCH (4 * 1024 * 1024)  /* iCal feeds carry full history+recurrence — can be >1 MB */
+#define CAL_TMP_MAX 256                 /* parse capacity before trim to CAL_MAX */
 #define CAL_HORIZON_DAYS 31             /* how far ahead recurrences are expanded */
 
 /* ------------------------------------------------------------------ time math */
@@ -232,11 +232,21 @@ static int ev_cmp(const void * a, const void * b) {
     return strcmp(cmp_time(x->time), cmp_time(y->time));
 }
 
+/* Current local HH:MM (named to avoid shadowing the `time` parameter below). */
+static void cal_now_hhmm(char * out, size_t n) {
+    time_t t = time(NULL); struct tm lt; localtime_r(&t, &lt);
+    strftime(out, n, "%H:%M", &lt);
+}
+
 /* Append one event to tmp[] if it's today-or-future and not a duplicate. */
 static void add_event(calendar_event_t * tmp, int * n, const char * today,
                       const char * date, const char * time, const char * summary) {
     if (!date[0] || !summary[0]) return;
-    if (strcmp(date, today) < 0) return;            /* past */
+    if (strcmp(date, today) < 0) return;            /* past day */
+    if (time[0] && !strcmp(date, today)) {          /* timed event already finished earlier today */
+        char now[6]; cal_now_hhmm(now, sizeof now);
+        if (strcmp(time, now) < 0) return;
+    }
     for (int i = 0; i < *n; i++)                     /* dedup (HA + iCal overlap) */
         if (!strcmp(tmp[i].date, date) && !strcmp(tmp[i].time, time) &&
             !strcmp(tmp[i].summary, summary)) return;
@@ -560,7 +570,10 @@ static void iso_at(char * out, size_t n, int days_from_now) {
 
 void calendar_refresh_now(void) {
     if (!settings.calendar_enabled) { calendar_state.count = 0; calendar_state.connected = 0; return; }
-    static char buf[CAL_SCRATCH];
+    /* Heap, not BSS — the iCal scratch is multi-MB now (full feeds). Allocated
+     * per refresh (every 30 min) and freed at the end. */
+    char * buf = malloc(CAL_SCRATCH);
+    if (!buf) return;
     static calendar_event_t tmp[CAL_TMP_MAX];
     int n = 0, ok = 0;
     char today[12]; today_str(today, sizeof today);
@@ -569,12 +582,13 @@ void calendar_refresh_now(void) {
         char start[24], end[24];
         iso_at(start, sizeof start, 0);
         iso_at(end, sizeof end, 31);
-        if (ha_fetch_calendar(settings.calendar_ha_entity, start, end, buf, sizeof buf) == 0) {
+        if (ha_fetch_calendar(settings.calendar_ha_entity, start, end, buf, CAL_SCRATCH) == 0) {
             parse_ha(buf, tmp, &n, today); ok = 1;
         }
     }
     if (settings.calendar_ics_url[0]) {
-        if (http_fetch(settings.calendar_ics_url, buf, sizeof buf) == 0 && strstr(buf, "VEVENT")) {
+        /* 20 s — a full year-of-history .ics can be a megabyte or two. */
+        if (http_fetch_to(settings.calendar_ics_url, buf, CAL_SCRATCH, 20) == 0 && strstr(buf, "VEVENT")) {
             parse_ics_cal(buf, tmp, &n, today); ok = 1;
         }
     }
@@ -584,6 +598,7 @@ void calendar_refresh_now(void) {
     for (int i = 0; i < n; i++) calendar_state.ev[i] = tmp[i];
     calendar_state.count = n;
     if (ok) calendar_state.connected = 1;
+    free(buf);
 }
 
 /* One-shot refresh on a detached thread — safe to call from the LVGL/UI thread

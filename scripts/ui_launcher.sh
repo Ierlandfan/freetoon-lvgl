@@ -44,6 +44,19 @@ is_toon1() { ! grep -q nxt /etc/opkg/arch.conf 2>/dev/null; }
 # True if the stock UI can be launched (via startqt or qt-gui directly).
 have_qtgui() { [ -x "$STARTQT" ] || [ -x "$QTGUI" ]; }
 
+# Optional qt-gui logging for development/debugging. The stock TSC inittab row
+# (qtqt:245:respawn:/usr/bin/startqt >/var/log/qt 2>&1) captures qt-gui output,
+# but freetoon's takeover strips that row, so the redirect is lost — and re-added
+# manually it's wiped again on the next freetoon update. Make it persistent and
+# update-safe: create /mnt/data/qtlog (it lives on the data partition, so it
+# survives updates) to enable. Its contents are the log path; empty = a sensible
+# default. Disabled (no file) = unchanged behaviour.
+QTLOG=""
+if [ -f /mnt/data/qtlog ]; then
+    QTLOG=$(cat /mnt/data/qtlog 2>/dev/null | head -1 | tr -d ' ')
+    [ -z "$QTLOG" ] && QTLOG=/var/volatile/tmp/qt-gui.log
+fi
+
 # Launch the stock UI the way the device itself does. Toon 1 (and TSC-modified
 # Toons) start qt-gui through /usr/bin/startqt, which sets the correct Qt
 # platform (-platform linuxfb -plugin Tslib on Toon 1); exec'ing
@@ -57,11 +70,13 @@ exec_qtgui() {
         fbset -fb /dev/fb0 -depth 32 2>/dev/null || true
     fi
     if [ -x "$STARTQT" ]; then
-        log "exec startqt"
+        log "exec startqt${QTLOG:+ (logging to $QTLOG)}"
+        [ -n "$QTLOG" ] && exec "$STARTQT" >"$QTLOG" 2>&1
         exec "$STARTQT"
     fi
     [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
-    log "exec qt-gui"
+    log "exec qt-gui${QTLOG:+ (logging to $QTLOG)}"
+    [ -n "$QTLOG" ] && exec "$QTGUI" >"$QTLOG" 2>&1
     exec "$QTGUI"
 }
 
