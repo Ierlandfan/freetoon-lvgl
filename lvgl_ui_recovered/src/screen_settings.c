@@ -1015,12 +1015,29 @@ static void uimode_confirm_dismiss(void) {
     if (confirm_uimode) { lv_obj_del_async(confirm_uimode); confirm_uimode = NULL; }
 }
 
+/* qt-gui debug logging: a marker file on the data partition (so it survives
+ * freetoon updates) whose contents are the log path ui_launcher.sh redirects
+ * stock-UI output to. Present = on, absent = off. Set from the switch in the
+ * "Switch to qt-gui" dialog and applied when the user confirms. */
+#define QTLOG_PATH   "/mnt/data/qtlog"
+#define QTLOG_TARGET "/var/log/qt"
+static int  g_qtgui_debug = 0;   /* dialog switch state */
+static int qtlog_enabled(void) { FILE * f = fopen(QTLOG_PATH, "r"); if (f) { fclose(f); return 1; } return 0; }
+static void qtlog_apply(int on) {
+    if (on) { FILE * f = fopen(QTLOG_PATH, "w"); if (f) { fprintf(f, "%s\n", QTLOG_TARGET); fclose(f); } }
+    else    { remove(QTLOG_PATH); }
+}
+static void on_qtgui_debug_toggle(lv_event_t * e) {
+    g_qtgui_debug = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+
 /* Yes-tap: flip /mnt/data/ui_choice to qt-gui, save settings, then kill
  * ourselves. ui_launcher.sh respawns toonui --bootpick, the picker shows
  * qt-gui as the new default, 10 s later (or immediately if picker is
  * off) the launcher exec's /qmf/sbin/qt-gui. */
 static void on_uimode_confirm_yes(lv_event_t * e) {
     (void)e;
+    qtlog_apply(g_qtgui_debug);          /* enable/disable stock-UI logging for this boot */
     write_ui_choice(1);
     settings_save();
     uimode_confirm_dismiss();
@@ -1086,6 +1103,22 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
            "the boot picker (or hold the touch top-right for 10 s during "
            "the qt-gui boot)."));
     lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, SY(56));
+
+    /* Developer aid: capture stock qt-gui output to /var/log/qt for this boot.
+     * Persists via /mnt/data/qtlog (read by ui_launcher.sh), so it isn't wiped
+     * by a freetoon update. Off by default. */
+    g_qtgui_debug = qtlog_enabled();
+    lv_obj_t * dbg_l = lv_label_create(dlg);
+    lv_obj_set_style_text_font(dbg_l, SF(18), 0);
+    lv_obj_set_style_text_color(dbg_l, lv_color_hex(0xffcc66), 0);
+    lv_label_set_text(dbg_l, tr("qt-gui debug-logging (/var/log/qt)",
+                                "qt-gui debug logging (/var/log/qt)"));
+    lv_obj_align(dbg_l, LV_ALIGN_BOTTOM_LEFT, 0, SY(-84));
+    lv_obj_t * dbg_sw = lv_switch_create(dlg);
+    lv_obj_set_size(dbg_sw, SX(84), SY(42));
+    lv_obj_align(dbg_sw, LV_ALIGN_BOTTOM_RIGHT, 0, SY(-80));
+    if (g_qtgui_debug) lv_obj_add_state(dbg_sw, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(dbg_sw, on_qtgui_debug_toggle, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t * b_no = lv_btn_create(dlg);
     lv_obj_set_size(b_no, SX(220), SY(64));

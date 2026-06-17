@@ -48,13 +48,18 @@ have_qtgui() { [ -x "$STARTQT" ] || [ -x "$QTGUI" ]; }
 # (qtqt:245:respawn:/usr/bin/startqt >/var/log/qt 2>&1) captures qt-gui output,
 # but freetoon's takeover strips that row, so the redirect is lost — and re-added
 # manually it's wiped again on the next freetoon update. Make it persistent and
-# update-safe: create /mnt/data/qtlog (it lives on the data partition, so it
-# survives updates) to enable. Its contents are the log path; empty = a sensible
-# default. Disabled (no file) = unchanged behaviour.
+# update-safe via /mnt/data/qtlog (on the data partition, survives updates),
+# toggled from Settings → "Switch to qt-gui" dialog. Its contents are the log
+# path; empty = a sensible default. Disabled (no file) = unchanged behaviour.
 QTLOG=""
 if [ -f /mnt/data/qtlog ]; then
     QTLOG=$(cat /mnt/data/qtlog 2>/dev/null | head -1 | tr -d ' ')
     [ -z "$QTLOG" ] && QTLOG=/var/volatile/tmp/qt-gui.log
+    # NEVER let a bad log path block the stock UI: if it isn't writable, drop the
+    # redirect and launch qt-gui normally.
+    if [ -n "$QTLOG" ] && ! ( : > "$QTLOG" ) 2>/dev/null; then
+        QTLOG=""
+    fi
 fi
 
 # Launch the stock UI the way the device itself does. Toon 1 (and TSC-modified
