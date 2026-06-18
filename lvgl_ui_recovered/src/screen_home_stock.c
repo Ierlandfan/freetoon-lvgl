@@ -151,6 +151,23 @@ static void on_scene(lv_event_t * e) {
  * reach the layout editor / theme toggle / everything else). */
 static void on_apps_grid(lv_event_t * e) { (void)e; ui_push(screen_settings_create()); }
 
+/* Tap-through: a tile opens its detail/graph screen, like the stock qt-gui. */
+enum { LINK_STATS = 1, LINK_FORECAST, LINK_HEATER, LINK_VENT };
+static void on_tile_link(lv_event_t * e) {
+    switch ((int)(intptr_t)lv_event_get_user_data(e)) {
+        case LINK_STATS:    ui_push(screen_stats_create());           break;
+        case LINK_FORECAST: ui_push(screen_forecast_create());        break;
+        case LINK_HEATER:   ui_push(screen_heater_advanced_create()); break;
+        case LINK_VENT:     ui_push(screen_vent_advanced_create());   break;
+    }
+}
+/* Make a card tappable → detail screen. Inside the swipeable tileview a tap
+ * (no drag) fires CLICKED while a drag still scrolls pages. */
+static void tile_link(lv_obj_t * card, int code) {
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(card, on_tile_link, LV_EVENT_CLICKED, (void *)(intptr_t)code);
+}
+
 /* ---- live refresh -------------------------------------------------------- */
 static void refresh_page2(void);
 static void refresh_page3(void);
@@ -394,6 +411,7 @@ lv_obj_t * screen_home_stock_create(void) {
         lv_obj_set_style_border_width(d, 0, 0);
         lv_obj_set_style_pad_all(d, 0, 0);
         lv_obj_clear_flag(d, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(d, LV_OBJ_FLAG_CLICKABLE);  /* taps reach the apps-grid */
     }
     /* Freetoon wordmark (stock UI shows "TOON" here; this is the freetoon build) */
     lv_obj_t * brand = mklabel(scr_root, "Freetoon", OSS(28), C_TITLE);
@@ -432,6 +450,7 @@ lv_obj_t * screen_home_stock_create(void) {
 
     /* ===== tile 3: stroom nu ===== */
     lv_obj_t * t_pow = lcard(page1, 0, 1);
+    tile_link(t_pow, LINK_STATS);   /* → energy/gas/water graphs */
     tile_title(t_pow, tr("Stroom nu", "Power now"));
     {   /* segmented vertical gauge, 12 stacked cells */
         int seg_w = 26, seg_h = 5, seg_gap = 2;
@@ -446,6 +465,7 @@ lv_obj_t * screen_home_stock_create(void) {
             lv_obj_set_style_bg_color(eseg[i], lv_color_hex(0xE0E0E0), 0);
             lv_obj_set_style_pad_all(eseg[i], 0, 0);
             lv_obj_clear_flag(eseg[i], LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_clear_flag(eseg[i], LV_OBJ_FLAG_CLICKABLE);  /* let taps reach the tile */
         }
     }
     lbl_watt = mklabel(t_pow, "-- Watt", OSL(30), C_TITLE);
@@ -453,6 +473,7 @@ lv_obj_t * screen_home_stock_create(void) {
 
     /* ===== tile 4: waterdruk ===== */
     lv_obj_t * t_wat = lcard(page1, 1, 1);
+    tile_link(t_wat, LINK_STATS);   /* → graphs (incl. water) */
     tile_title(t_wat, tr("Waterdruk", "Water pressure"));
     lbl_water = mklabel(t_wat, "-- bar", OSL(40), C_TITLE);
     lv_obj_align(lbl_water, LV_ALIGN_CENTER, 0, SY(-2));
@@ -463,6 +484,7 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_set_style_radius(water_banner, SX(4), 0);
     lv_obj_set_style_border_width(water_banner, 0, 0);
     lv_obj_clear_flag(water_banner, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(water_banner, LV_OBJ_FLAG_CLICKABLE);  /* tap passes to the tile */
     lv_obj_t * wb = mklabel(water_banner, tr("Waterdruk te laag. Ketel bijvullen", "Water pressure too low. Refill boiler"), OSR(13), C_CARD);
     lv_label_set_long_mode(wb, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(wb, SX(G_COLW - 40));
@@ -481,6 +503,7 @@ lv_obj_t * screen_home_stock_create(void) {
         const int    col[4] = { 0, 1, 0, 1 }, row[4] = { 0, 0, 1, 1 };
         for (int i = 0; i < 4; i++) {
             lv_obj_t * c = lcard(page2, col[i], row[i]);
+            tile_link(c, LINK_HEATER);   /* → boiler/heating detail */
             tile_title(c, p2t[i]);
             p2_lbl[i] = mklabel(c, "--,-°", OSL(40), C_TITLE);
             lv_obj_align(p2_lbl[i], LV_ALIGN_CENTER, 0, SY(6));
@@ -498,6 +521,7 @@ lv_obj_t * screen_home_stock_create(void) {
         const int col[4] = {0,1,0,1}, row[4] = {0,0,1,1};
         for (int i = 0; i < 4; i++) {
             lv_obj_t * c = lcard(page3, col[i], row[i]);
+            tile_link(c, LINK_FORECAST);   /* any weather tile → weather details */
             tile_title(c, t[i]);
             /* col-0 big numeric (Open Sans Light), text tiles use Regular */
             p3_lbl[i] = mklabel(c, "--", i == 0 ? OSL(40) : OSR(24), C_TITLE);
@@ -516,6 +540,7 @@ lv_obj_t * screen_home_stock_create(void) {
         const int col[4] = {0,1,0,1}, row[4] = {0,0,1,1};
         for (int i = 0; i < 4; i++) {
             lv_obj_t * c = lcard(page4, col[i], row[i]);
+            if (i == 2) tile_link(c, LINK_VENT);   /* Ventilatie → vent detail */
             tile_title(c, t[i]);
             p4_lbl[i] = mklabel(c, "--", OSR(24), C_TITLE);
             lv_obj_align(p4_lbl[i], LV_ALIGN_CENTER, 0, SY(6));
