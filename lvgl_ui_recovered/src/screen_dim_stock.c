@@ -84,21 +84,25 @@ static void d_refresh(lv_timer_t * t) {
     snprintf(b, sizeof b, "%d %s", tm.tm_mday, mnd[tm.tm_mon]);
     lv_label_set_text(d_date, b);
 
-    /* water pressure + low alert */
+    /* water pressure + low alert — wp<=0 means no reading (boxtalk swallows
+     * zeros), so show -- without the false "te laag" alarm. */
     float wp = toon_state.water_pressure;
-    snprintf(b, sizeof b, "%.1f bar", wp); d_comma(b);
+    int have = (wp > 0.05f);
+    if (have) { snprintf(b, sizeof b, "%.1f bar", wp); d_comma(b); } else strcpy(b, "-- bar");
     lv_label_set_text(d_water, b);
-    int low = (wp >= 0 && wp < 1.0f);
+    int low = (have && wp < 1.0f);
     lv_obj_set_style_text_color(d_water, lv_color_hex(low ? D_RED : D_WHITE), 0);
     (low ? lv_obj_clear_flag : lv_obj_add_flag)(d_water_banner, LV_OBJ_FLAG_HIDDEN);
     snprintf(b, sizeof b, "%02d-%02d-%04d %02d:%02d:00",
              tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
     lv_label_set_text(d_water_ts, b);
 
-    /* setpoint + eco + program */
-    snprintf(b, sizeof b, "%.1f", toon_state.setpoint); d_comma(b);
+    /* big readout = indoor temp (default) or setpoint, per stock_big_indoor */
+    float big_v = settings.stock_big_indoor ? toon_state.indoor_temp : toon_state.setpoint;
+    float lo_v  = settings.stock_big_indoor ? toon_state.setpoint     : toon_state.indoor_temp;
+    snprintf(b, sizeof b, "%.1f", big_v); d_comma(b);
     lv_label_set_text(d_setpoint, b);
-    if (toon_state.indoor_temp > 0) { snprintf(b, sizeof b, LV_SYMBOL_RIGHT "  %.1f°", toon_state.indoor_temp); d_comma(b); }
+    if (lo_v > 0) { snprintf(b, sizeof b, LV_SYMBOL_RIGHT "  %.1f°", lo_v); d_comma(b); }
     else strcpy(b, LV_SYMBOL_RIGHT "  --");
     lv_label_set_text(d_eco, b);
     /* "Continue on X,X" — stock Toon wording for the held setpoint. */

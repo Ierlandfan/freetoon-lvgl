@@ -552,6 +552,10 @@ static void on_language_change(lv_event_t * e) {
 /* Home theme — OFF = freetoon dark dashboard, ON = stock light tile-carousel.
    Applies on the next home build (return-to-home / restart); tr() & ui_init
    read settings.home_theme live. */
+static void on_stock_big_indoor_change(lv_event_t * e) {
+    settings.stock_big_indoor = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
 static lv_obj_t * lbl_theme_val = NULL;
 static void on_home_theme_change(lv_event_t * e) {
     int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
@@ -634,6 +638,12 @@ static void open_display_modal(lv_event_t * e) {
     lv_label_set_text(lbl_theme_val, settings.home_theme == 1
                       ? tr("Stock", "Stock") : tr("freetoon", "freetoon"));
     row_switch(r, settings.home_theme == 1, on_home_theme_change);
+    y += 82;
+
+    /* Stock theme: which value is the big readout — indoor temp or setpoint. */
+    r = panel_row(p, y, tr("Stock: grote waarde = binnentemp",
+                           "Stock: big readout = indoor temp"), NULL);
+    row_switch(r, settings.stock_big_indoor == 1, on_stock_big_indoor_change);
 }
 
 static void open_weather_modal(lv_event_t * e) {

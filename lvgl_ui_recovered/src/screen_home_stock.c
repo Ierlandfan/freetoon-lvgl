@@ -295,9 +295,13 @@ static void refresh_slot(slot_t * s) {
         }
         break; }
     case TT_WATERP: {
+        /* freetoon swallows zero updates (boxtalk.c), so wp<=0 means "no reading"
+         * — show -- without the false "te laag" alarm, not 0,0. */
         float wp = toon_state.water_pressure;
-        snprintf(b, sizeof b, "%.1f bar", wp); comma(b); lv_label_set_text(s->val, b);
-        int low = (wp >= 0 && wp < 1.0f);
+        int have = (wp > 0.05f);
+        if (have) { snprintf(b, sizeof b, "%.1f bar", wp); comma(b); } else strcpy(b, "-- bar");
+        lv_label_set_text(s->val, b);
+        int low = (have && wp < 1.0f);
         lv_obj_set_style_text_color(s->val, lv_color_hex(low ? C_ALERT : C_TITLE), 0);
         if (s->banner) (low ? lv_obj_clear_flag : lv_obj_add_flag)(s->banner, LV_OBJ_FLAG_HIDDEN);
         break; }
@@ -470,9 +474,13 @@ static void refresh_cb(lv_timer_t * t) {
     (void)t;
     for (int i = 0; i < N_SLOTS; i++) refresh_slot(&slots[i]);
 
-    char b[32];
-    snprintf(b, sizeof b, "%.1f°", toon_state.setpoint);    comma(b); lv_label_set_text(lbl_setpoint, b);
-    snprintf(b, sizeof b, "%.1f°", toon_state.indoor_temp); comma(b); lv_label_set_text(lbl_setpoint_lo, b);
+    /* Big readout = indoor temp (default) or setpoint, per settings.stock_big_indoor;
+     * the other shows small underneath. */
+    char big[32], lo[32];
+    float big_v = settings.stock_big_indoor ? toon_state.indoor_temp : toon_state.setpoint;
+    float lo_v  = settings.stock_big_indoor ? toon_state.setpoint     : toon_state.indoor_temp;
+    snprintf(big, sizeof big, "%.1f°", big_v); comma(big); lv_label_set_text(lbl_setpoint, big);
+    snprintf(lo,  sizeof lo,  "%.1f°", lo_v);  comma(lo);  lv_label_set_text(lbl_setpoint_lo, lo);
     int manual = (toon_state.active_state < 0);
     lv_label_set_text(lbl_prog, manual ? tr("Programma uit", "Program off") : tr("Programma aan", "Program on"));
     for (int i = 0; i < 4; i++) {

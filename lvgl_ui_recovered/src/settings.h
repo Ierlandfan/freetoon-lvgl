@@ -238,6 +238,7 @@ typedef struct {
     int  calendar_notify_lead_min;   /* minutes before the start to notify (default 15) */
     int  home_theme;                 /* 0 = freetoon dark dashboard, 1 = stock light tile-carousel */
     char stock_tiles[200];           /* stock-theme carousel layout: comma-sep tile keys per slot */
+    int  stock_big_indoor;           /* stock theme: 1 = big readout is indoor temp, 0 = setpoint */
 
     /* Custom home-tile layout — when 1, the home screen places/sizes/hides the
      * built-in tiles from the grid layout (layout.c / toonui_layout.cfg) edited
