@@ -240,6 +240,7 @@ static lv_obj_t * update_banner     = NULL;
 static lv_obj_t * update_banner_lbl = NULL;
 static lv_obj_t * update_modal      = NULL;
 static lv_obj_t * about_status_lbl  = NULL;   /* live status line inside the modal */
+static int        update_modal_has_install = 0;  /* did the open modal build the install buttons? */
 static char       skipped_version[UPDATE_VERSION_MAX] = "";  /* banner suppressed for this ver */
 static int        update_minimized = 0;   /* dismissed → shown as an envelope icon */
 static int        install_pinned   = 0;   /* freeze the modal status line during install/result */
@@ -830,6 +831,7 @@ static void open_about_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(cl, SF(18), 0);
     lv_label_set_text(cl, tr("Controleer", "Check")); lv_obj_center(cl);
 
+    update_modal_has_install = g_update_state.available ? 1 : 0;
     if (g_update_state.available) {
         lv_obj_t * b_inst = lv_btn_create(panel);
         lv_obj_set_size(b_inst, SX(150), SY(56));
@@ -1495,6 +1497,12 @@ static void refresh_cb(lv_timer_t * t) {
         else
             lv_label_set_text(about_status_lbl, tr("Tik \"Controleer updates\".", "Tap \"Check for updates\"."));
     }
+
+    /* If the About/Update modal is open and the (async) check just found an
+     * update, rebuild it so Install/Skip/Dismiss show right away — no need to
+     * tap the banner to reopen it. */
+    if (update_modal && g_update_state.available && !update_modal_has_install && !install_pinned)
+        open_about_modal(NULL);
 
     /* Expire any pending +/- temporary override once the schedule advances. */
     boxtalk_tick();
