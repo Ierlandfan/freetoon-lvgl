@@ -29,7 +29,7 @@
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * d_clock, * d_date, * d_water, * d_water_ts, * d_setpoint, * d_eco, * d_prog;
-static lv_obj_t * d_water_banner;
+static lv_obj_t * d_water_banner, * d_watts;
 #define D_NSEG 12
 static lv_obj_t * d_eseg[D_NSEG];
 static lv_timer_t * d_timer = NULL;
@@ -110,8 +110,10 @@ static void d_refresh(lv_timer_t * t) {
       snprintf(b, sizeof b, tr("Verder op %s", "Continue on %s"), sp);
       lv_label_set_text(d_prog, b); }
 
-    /* energy bar */
-    float w = d_power_w(); if (w < 0) w = 0;
+    /* energy bar + live watts number */
+    float pw = d_power_w();
+    snprintf(b, sizeof b, "%.0f W", pw); lv_label_set_text(d_watts, b);
+    float w = pw; if (w < 0) w = 0;
     int lit = (int)(w / 2500.0f * D_NSEG + 0.5f); if (lit > D_NSEG) lit = D_NSEG;
     for (int i = 0; i < D_NSEG; i++) {
         int fb = D_NSEG - 1 - i;
@@ -157,6 +159,12 @@ lv_obj_t * screen_dim_stock_create(void) {
             lv_obj_clear_flag(d_eseg[i], LV_OBJ_FLAG_CLICKABLE);
         }
     }
+
+    /* live power (W) centred under the energy bar (bar centre x≈187) */
+    d_watts = d_lbl(scr_root, "", OSR(20), D_GREY);
+    lv_obj_set_width(d_watts, SX(120));
+    lv_obj_set_style_text_align(d_watts, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(d_watts, SX(127), SY(470));
 
     /* Waterdruk (centre) */
     lv_obj_t * wlab = d_lbl(scr_root, tr("Waterdruk", "Water pressure"), OSR(24), D_WHITE);
