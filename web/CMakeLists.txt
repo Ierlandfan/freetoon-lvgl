@@ -19,10 +19,16 @@ project(freetoon_wasm C)
 # Derive the build version from git (mirrors the device Makefile) instead of a
 # hardcoded literal, which used to leave the WASM bundle stamped at an old
 # version regardless of the actual release.
-execute_process(
-    COMMAND git -C ${CMAKE_CURRENT_LIST_DIR} describe --tags --always --dirty
-    OUTPUT_VARIABLE FT_BUILD_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET)
+# Allow an explicit override (-DFT_BUILD_VERSION=...), mirroring the device
+# Makefile's `make BUILD_VERSION=...`. Needed because the lvgl submodule carries
+# a build-applied patch (the no-GCT radar fix), which makes `describe --dirty`
+# always report -dirty; the release passes the clean tag instead.
+if(NOT FT_BUILD_VERSION)
+    execute_process(
+        COMMAND git -C ${CMAKE_CURRENT_LIST_DIR} describe --tags --always --dirty
+        OUTPUT_VARIABLE FT_BUILD_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+endif()
 if(NOT FT_BUILD_VERSION)
     set(FT_BUILD_VERSION "dev")
 endif()

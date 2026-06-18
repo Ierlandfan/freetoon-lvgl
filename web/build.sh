@@ -26,13 +26,13 @@ JOBS="$(nproc 2>/dev/null || echo 4)"
 
 # Toon 2 layout (1024x600) — the default bundle, served at /ui/.
 rm -rf build
-emcmake cmake -B build -DCMAKE_BUILD_TYPE=Release .
+emcmake cmake -B build -DCMAKE_BUILD_TYPE=Release ${BUILD_VERSION:+-DFT_BUILD_VERSION=$BUILD_VERSION} .
 emmake make -C build -j"$JOBS"
 
 # Toon 1 layout (800x480) — preview/test the native small-panel layout in a
 # browser. Served at /ui-toon1/ (or open build-toon1/index.html locally).
 rm -rf build-toon1
-emcmake cmake -B build-toon1 -DCMAKE_BUILD_TYPE=Release -DTOON1=ON .
+emcmake cmake -B build-toon1 -DCMAKE_BUILD_TYPE=Release -DTOON1=ON ${BUILD_VERSION:+-DFT_BUILD_VERSION=$BUILD_VERSION} .
 emmake make -C build-toon1 -j"$JOBS"
 
 echo
