@@ -83,7 +83,8 @@ static lv_obj_t * tv = NULL;
 static lv_obj_t * pages[N_PAGES];
 static lv_obj_t * dots[N_PAGES];
 static lv_obj_t * p2_lbl[4];           /* page-2 readouts (Binnen/aanvoer/retour/CV)  */
-static lv_obj_t * p3_lbl[4];           /* page-3 weather (Buiten/min-max/wind/neerslag) */
+static lv_obj_t * p3_lbl[4];           /* page-3 weather: [0]=temp [1]=desc [2]=sub */
+static lv_obj_t * p3_icon = NULL;      /* page-3 weather condition icon */
 static lv_obj_t * p4_lbl[4];           /* page-4 air+vent (CO2/TVOC/vent/kwaliteit)   */
 static lv_obj_t * p5_agenda = NULL;    /* page-5 agenda list                          */
 
@@ -281,20 +282,25 @@ static void refresh_page2(void) {
 /* comma-decimal helper */
 static void comma(char * s) { for (; *s; s++) if (*s == '.') *s = ','; }
 
-static void refresh_page3(void) {   /* weather */
+static void refresh_page3(void) {   /* weather — single tile */
     if (!p3_lbl[0]) return;
-    char b[40];
+    char b[80];
     snprintf(b, sizeof b, "%.1f°", weather_state.current_temp); comma(b);
     lv_label_set_text(p3_lbl[0], b);
+    lv_label_set_text(p3_lbl[1], weather_state.current_desc[0] ? weather_state.current_desc
+                                                               : tr("Buiten", "Outside"));
     if (weather_state.day_count > 0) {
-        snprintf(b, sizeof b, "%.0f° / %.0f°",
-                 weather_state.days[0].min_temp, weather_state.days[0].max_temp);
-        lv_label_set_text(p3_lbl[1], b);
-        snprintf(b, sizeof b, "%d Bft %s",
-                 weather_state.days[0].wind_bft, weather_state.days[0].wind_dir);
+        const weather_day_t * d = &weather_state.days[0];
+        snprintf(b, sizeof b, tr("min %.0f°   max %.0f°    %d Bft %s    %d%% neerslag",
+                                 "min %.0f°   max %.0f°    %d Bft %s    %d%% rain"),
+                 d->min_temp, d->max_temp, d->wind_bft, d->wind_dir, d->rain_chance);
         lv_label_set_text(p3_lbl[2], b);
-        snprintf(b, sizeof b, "%d%%", weather_state.days[0].rain_chance);
-        lv_label_set_text(p3_lbl[3], b);
+    }
+    if (p3_icon && weather_state.current_icon[0]) {
+        lv_img_set_src(p3_icon, weather_icon_for_lg(weather_state.current_icon));
+        lv_obj_set_style_img_recolor(p3_icon,
+            lv_color_hex(weather_icon_color_for(weather_state.current_icon)), 0);
+        lv_obj_set_style_img_recolor_opa(p3_icon, LV_OPA_COVER, 0);
     }
 }
 static void refresh_page4(void) {   /* air quality + ventilation */
@@ -515,18 +521,22 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_set_style_pad_all(page3, 0, 0);
     lv_obj_set_scrollbar_mode(page3, LV_SCROLLBAR_MODE_OFF);
     pages[2] = page3;
-    {
-        const char * t[4] = { tr("Buiten", "Outside"), tr("Min / Max", "Min / Max"),
-                              tr("Wind", "Wind"), tr("Neerslag", "Rain") };
-        const int col[4] = {0,1,0,1}, row[4] = {0,0,1,1};
-        for (int i = 0; i < 4; i++) {
-            lv_obj_t * c = lcard(page3, col[i], row[i]);
-            tile_link(c, LINK_FORECAST);   /* any weather tile → weather details */
-            tile_title(c, t[i]);
-            /* col-0 big numeric (Open Sans Light), text tiles use Regular */
-            p3_lbl[i] = mklabel(c, "--", i == 0 ? OSL(40) : OSR(24), C_TITLE);
-            lv_obj_align(p3_lbl[i], LV_ALIGN_CENTER, 0, SY(6));
-        }
+    {   /* one weather tile (like the stock Toon): icon + current temp + a
+         * min/max·wind·rain sub-line; tap → full forecast. */
+        lv_obj_t * c = card(page3, 0, 0, 2 * G_COLW + G_GAPX, 2 * G_ROWH + G_GAPY);
+        tile_link(c, LINK_FORECAST);
+        tile_title(c, tr("Weer", "Weather"));
+        p3_icon = lv_img_create(c);
+        lv_img_set_src(p3_icon, &icon_wx_cloud_lg);
+        lv_obj_align(p3_icon, LV_ALIGN_LEFT_MID, SX(48), SY(-6));
+        lv_obj_clear_flag(p3_icon, LV_OBJ_FLAG_CLICKABLE);
+        p3_lbl[0] = mklabel(c, "--°", OSL(50), C_TITLE);      /* current temp */
+        lv_obj_align(p3_lbl[0], LV_ALIGN_LEFT_MID, SX(210), SY(-24));
+        p3_lbl[1] = mklabel(c, tr("Buiten", "Outside"), OSR(20), C_SECOND);
+        lv_obj_align(p3_lbl[1], LV_ALIGN_LEFT_MID, SX(212), SY(26));
+        p3_lbl[2] = mklabel(c, "", OSR(18), C_TITLE);          /* min/max · wind · rain */
+        lv_obj_align(p3_lbl[2], LV_ALIGN_BOTTOM_MID, 0, SY(-28));
+        p3_lbl[3] = NULL;
     }
 
     /* ===== page 4: air quality + ventilation ===== */
