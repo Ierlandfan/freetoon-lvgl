@@ -630,6 +630,16 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr_root, on_wake_tap, LV_EVENT_CLICKED, NULL);
 
+    /* Freetoon wordmark, top-left — brands the standby screen and paints over
+     * any boot-splash "TOON" residue that can linger in this corner (the bare
+     * dim background otherwise leaves no element here). */
+    lv_obj_t * dim_brand = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(dim_brand, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(dim_brand, SF(22), 0);
+    lv_obj_set_style_text_letter_space(dim_brand, SX(1), 0);
+    lv_label_set_text(dim_brand, "Freetoon");
+    lv_obj_align(dim_brand, LV_ALIGN_TOP_LEFT, SX(20), SY(16));
+
     /* Clock — custom 96pt Montserrat (digits + ':' + space only,
        generated via lv_font_conv into lv_font_montserrat_96_custom.c). */
     lbl_clock = lv_label_create(scr_root);
