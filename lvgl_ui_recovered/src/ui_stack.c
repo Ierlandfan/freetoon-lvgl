@@ -32,6 +32,19 @@ void ui_request_restart(void) {
     _exit(0);
 }
 
+/* Switch the home screen between the freetoon dark dashboard and the stock
+ * light theme live, no restart. Both screens cache themselves (singleton
+ * create), so this just builds/fetches the wanted one, swaps it in as the
+ * stack base, and — if home is the visible screen — loads it immediately.
+ * The inactive home keeps its (cheap, in-memory) refresh timer; harmless. */
+void ui_apply_home_theme(void) {
+    lv_obj_t * target = settings.home_theme == 1 ? screen_home_stock_create()
+                                                 : screen_home_create();
+    if (sp == 0 || stack[0] == target) return;
+    stack[0] = target;
+    if (sp == 1) lv_scr_load(target);   /* only swap on-screen if home is showing */
+}
+
 static uint32_t last_activity_ms = 0;
 static int      is_dimmed = 0;
 
@@ -147,7 +160,8 @@ void ui_idle_tick(void) {
 }
 
 void ui_init(void) {
-    lv_obj_t * home = screen_home_create();
+    lv_obj_t * home = settings.home_theme == 1 ? screen_home_stock_create()
+                                               : screen_home_create();
     ui_push(home);
     ui_mark_activity();
     apply_active_brightness();

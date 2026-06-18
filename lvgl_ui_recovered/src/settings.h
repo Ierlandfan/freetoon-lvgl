@@ -236,6 +236,7 @@ typedef struct {
     char calendar_ics_url[256];
     int  calendar_notify_enabled;    /* 0/1 — pop a notification before a timed event starts */
     int  calendar_notify_lead_min;   /* minutes before the start to notify (default 15) */
+    int  home_theme;                 /* 0 = freetoon dark dashboard, 1 = stock light tile-carousel */
 
     /* Custom home-tile layout — when 1, the home screen places/sizes/hides the
      * built-in tiles from the grid layout (layout.c / toonui_layout.cfg) edited

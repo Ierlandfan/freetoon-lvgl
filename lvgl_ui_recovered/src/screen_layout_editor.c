@@ -837,6 +837,24 @@ static void build_canvas_rects(void) {
     for (int i = 0; i < edit.count; i++) { rects[i] = NULL; create_rect(i); }
 }
 
+/* Toolbar "Thema" — flip the home between freetoon dark + stock light, live.
+ * The layout editor only arranges the dark home's tiles, but the theme switch
+ * lives here too so the whole home look is reachable from one place. */
+static lv_obj_t * theme_btn = NULL;
+static void theme_btn_label(void) {
+    if (theme_btn)
+        lv_label_set_text(lv_obj_get_child(theme_btn, 0),
+            settings.home_theme == 1 ? tr("Thema: Stock", "Theme: Stock")
+                                     : tr("Thema: Std",   "Theme: Std"));
+}
+static void on_theme_toggle(lv_event_t * e) {
+    (void)e;
+    settings.home_theme = settings.home_theme == 1 ? 0 : 1;
+    settings_save();
+    ui_apply_home_theme();   /* live swap — no restart */
+    theme_btn_label();
+}
+
 /* Toolbar "Pagina" — flip between editing page 1 and page 2 (0/1 internally). */
 static void on_page_toggle(lv_event_t * e) {
     (void)e;
@@ -891,7 +909,7 @@ void screen_layout_editor_show(void) {
     modal = NULL; chooser = NULL; type_grid = NULL; sel = -1;
     preset_mgr = NULL; preset_list = NULL; name_modal = NULL; name_ta = NULL;
     confirm_modal = NULL; confirm_idx = -1; long_pressed = drag_moved = 0;
-    edit_page = 0; page_btn = NULL;
+    edit_page = 0; page_btn = NULL; theme_btn = NULL;
     drag_last_col = drag_last_row = -1;
     /* Working copy; ensure we have something to edit. */
     if (g_layout.count == 0) layout_reset_default();
@@ -958,6 +976,8 @@ void screen_layout_editor_show(void) {
     tb_btn(bar, x, SX(84), tr("Verwijder", "Delete"),  on_delete_tile,  NULL, 0x6e2e2e); x += SX(90);
     tb_btn(bar, x, SX(70), tr("+ Tegel", "+ Tile"),    on_add,          NULL, 0x2e5e6e); x += SX(76);
     tb_btn(bar, x, SX(92), tr("Indelingen", "Layouts"), open_preset_mgr, NULL, 0x2e4e6e); x += SX(98);
+    theme_btn = tb_btn(bar, x, SX(112), "", on_theme_toggle, NULL, 0x2e6e4e); x += SX(118);
+    theme_btn_label();
 
     sel_lbl = lv_label_create(bar);
     lv_obj_set_style_text_color(sel_lbl, lv_color_hex(0xccddee), 0);

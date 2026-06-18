@@ -549,6 +549,20 @@ static void on_language_change(lv_event_t * e) {
     settings_save();
 }
 
+/* Home theme — OFF = freetoon dark dashboard, ON = stock light tile-carousel.
+   Applies on the next home build (return-to-home / restart); tr() & ui_init
+   read settings.home_theme live. */
+static lv_obj_t * lbl_theme_val = NULL;
+static void on_home_theme_change(lv_event_t * e) {
+    int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+    settings.home_theme = on ? 1 : 0;
+    if (lbl_theme_val)
+        lv_label_set_text(lbl_theme_val, on ? tr("Stock", "Stock")
+                                            : tr("freetoon", "freetoon"));
+    settings_save();
+    ui_apply_home_theme();   /* live swap — visible next time home is shown */
+}
+
 /* ============================ category modals ============================ */
 
 static void open_display_modal(lv_event_t * e) {
@@ -611,6 +625,15 @@ static void open_display_modal(lv_event_t * e) {
     lv_label_set_text(lbl_lang_val,
                       settings.language == LANG_EN ? "English" : "Nederlands");
     row_switch(r, settings.language == LANG_EN, on_language_change);
+    y += 82;
+
+    /* Home theme — classic Toon (stock) light tile-carousel vs freetoon dark
+       dashboard. Takes effect on the next return-to-home / restart. */
+    r = panel_row(p, y, tr("Thema startscherm (klassieke Toon-look)",
+                           "Home theme (classic Toon look)"), &lbl_theme_val);
+    lv_label_set_text(lbl_theme_val, settings.home_theme == 1
+                      ? tr("Stock", "Stock") : tr("freetoon", "freetoon"));
+    row_switch(r, settings.home_theme == 1, on_home_theme_change);
 }
 
 static void open_weather_modal(lv_event_t * e) {

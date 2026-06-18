@@ -9,6 +9,8 @@
 
 void ui_push(lv_obj_t * scr);
 void ui_pop(void);
+/* Apply settings.home_theme live (swap dark<->stock home, no restart). */
+void ui_apply_home_theme(void);
 void ui_request_restart(void);   /* clean _exit(0) restart; drops the launcher crash-guard marker */
 
 /* Start a gentle ~1.1s opacity pulse on a clock-colon overlay label so the ":"
@@ -17,6 +19,7 @@ void clock_colon_pulse(lv_obj_t * colon);
 
 /* Per-screen builders. Each returns a freshly created screen object. */
 lv_obj_t * screen_home_create(void);
+lv_obj_t * screen_home_stock_create(void);   /* light tile-carousel "stock theme" home */
 /* Auto-home: drop the home screen's swipe page back to page 1 (the main page)
  * when idle. No-op if already there. */
 void screen_home_reset_to_main(void);
