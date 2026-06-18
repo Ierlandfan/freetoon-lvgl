@@ -183,6 +183,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "home",        screen_home_create },
     { "home_stock",  screen_home_stock_create },
     { "dim",         screen_dim_create },
+    { "dim_stock",   screen_dim_stock_create },
     { "thermostat",  screen_thermostat_create },
     { "settings",    screen_settings_create },
     { "schedule",    screen_schedule_create },

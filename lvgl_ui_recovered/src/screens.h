@@ -20,6 +20,7 @@ void clock_colon_pulse(lv_obj_t * colon);
 /* Per-screen builders. Each returns a freshly created screen object. */
 lv_obj_t * screen_home_create(void);
 lv_obj_t * screen_home_stock_create(void);   /* light tile-carousel "stock theme" home */
+lv_obj_t * screen_dim_stock_create(void);    /* stock-style standby (dim) for the stock theme */
 /* Auto-home: drop the home screen's swipe page back to page 1 (the main page)
  * when idle. No-op if already there. */
 void screen_home_reset_to_main(void);

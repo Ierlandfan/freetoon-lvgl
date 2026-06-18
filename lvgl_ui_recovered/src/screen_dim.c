@@ -612,6 +612,7 @@ lv_obj_t * screen_dim_create(void) {
     /* Opt-in custom dim: only when the user has enabled it in the dim editor.
      * Default (flag 0) is this original absolute dim layout. Mirrors the home
      * screen's custom_layout_enabled gate. */
+    if (settings.home_theme == 1) return screen_dim_stock_create();  /* stock standby */
     if (settings.dim_custom_enabled) return screen_dim_grid_create();
     if (scr_root) return scr_root;
 

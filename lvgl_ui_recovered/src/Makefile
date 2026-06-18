@@ -104,7 +104,7 @@ LDFLAGS := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm -lrt $(GLIBC_LDFLAGS)
 
 # Sources
 LVGL_SRC      := $(shell find lvgl/src -name '*.c')
-APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen_home_stock.c screen_thermostat.c \
+APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen_home_stock.c screen_dim_stock.c screen_thermostat.c \
                  screen_dim.c screen_settings.c screen_schedule.c \
                  screen_stats.c screen_forecast.c screen_inbox.c \
                  screen_heater_advanced.c \
@@ -120,7 +120,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
                  toon1_touch.c pin_modal.c video.c ui_cmd.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c \
-                 lv_font_os_light_30.c lv_font_os_light_40.c lv_font_os_light_50.c \
+                 lv_font_os_light_30.c lv_font_os_light_40.c lv_font_os_light_50.c lv_font_os_light_90.c \
                  lv_font_os_reg_13.c lv_font_os_reg_14.c lv_font_os_reg_15.c \
                  lv_font_os_reg_16.c lv_font_os_reg_18.c lv_font_os_reg_20.c \
                  lv_font_os_reg_24.c lv_font_os_reg_30.c lv_font_os_semi_28.c

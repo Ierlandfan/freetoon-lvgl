@@ -23,6 +23,7 @@
 LV_FONT_DECLARE(lv_font_os_light_30)
 LV_FONT_DECLARE(lv_font_os_light_40)
 LV_FONT_DECLARE(lv_font_os_light_50)
+LV_FONT_DECLARE(lv_font_os_light_90)
 LV_FONT_DECLARE(lv_font_os_reg_13)
 LV_FONT_DECLARE(lv_font_os_reg_14)
 LV_FONT_DECLARE(lv_font_os_reg_15)
@@ -35,6 +36,7 @@ LV_FONT_DECLARE(lv_font_os_semi_28)
 
 static inline const lv_font_t * os_light(int px) {
     int p = (px * DISP_HOR) / DESIGN_HOR;
+    if (p >= 70) return &lv_font_os_light_90;
     if (p >= 45) return &lv_font_os_light_50;
     if (p >= 35) return &lv_font_os_light_40;
     return &lv_font_os_light_30;
