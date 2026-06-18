@@ -33,7 +33,7 @@
  * could run past the timeout on the Toon's slow link and fail the whole check.
  * 10 newest is more than enough to find the highest semver even when GitHub's
  * created_at order is scrambled by a re-created older release. */
-#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=5"
+#define RELEASES_API_BETA   "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=10"
 #define RELEASES_API_STABLE "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases/latest"
 
 /* Lightweight connectivity probe used to tell "the GitHub API itself is
@@ -152,11 +152,16 @@ void update_check_now(void) {
     /* GitHub's /releases/latest payload runs ~8-12 KB once asset metadata
      * is in there; bump the buffer to 32 KB so curl doesn't EPIPE when we
      * close the read pipe before it's finished writing. */
-    static char body[262144];   /* 256 KB: GitHub release listings with many assets run ~30 KB each */
+    /* 512 KB: a 10-release listing with full asset metadata runs ~30 KB each,
+     * so ~300 KB — this keeps comfortable headroom so the changelog isn't
+     * truncated mid-release. http_fetch caps at the buffer and treats a full
+     * buffer as success, so even an over-long payload keeps the newest releases
+     * (they're first in the JSON). Longer timeout for the bigger transfer. */
+    static char body[524288];
     body[0] = 0;
     const char * api = settings.update_channel == 0
                        ? RELEASES_API_STABLE : RELEASES_API_BETA;
-    int rc = http_fetch(api, body, sizeof body);
+    int rc = http_fetch_to(api, body, sizeof body, 20);
     g_update_state.last_check_epoch = (long)time(NULL);
     /* http_fetch returns 0 on success (not byte count). Treat anything
      * non-zero as failure. body[] is also empty after a failure since
@@ -186,18 +191,38 @@ void update_check_now(void) {
         json_extract_str(body, "tag_name", tag,   sizeof tag);
         json_extract_str(body, "html_url", url,   sizeof url);
         json_extract_str(body, "body",     notes, sizeof notes);
+        snprintf(g_update_state.changelog, sizeof g_update_state.changelog,
+                 "%s\n%s\n", tag, nonempty(notes) ? notes : "(no notes)");
     } else {
-        /* Beta channel: body is an array of releases. Walk every "tag_name"
-         * and keep the highest semver — don't trust GitHub's date order. */
+        /* Beta channel: body is an array of releases. Walk every "tag_name",
+         * keep the highest semver for the banner (don't trust GitHub's date
+         * order), AND append each release's notes to the changelog (in the
+         * order returned — newest first) for the About modal's history view. */
         const char * best_at = NULL;
         const char * pos = body;
         char cur[UPDATE_VERSION_MAX];
+        char rbody[1600];
         const char * t;
+        char * cl = g_update_state.changelog;
+        size_t cl_cap = sizeof g_update_state.changelog, cl_len = 0;
+        int cl_full = 0;
+        cl[0] = 0;
         while ((t = strstr(pos, "\"tag_name\"")) != NULL) {
-            if (json_extract_str(t, "tag_name", cur, sizeof cur) && cur[0] &&
-                (!tag[0] || ver_cmp(cur, tag) > 0)) {
-                snprintf(tag, sizeof tag, "%s", cur);
-                best_at = t;
+            if (json_extract_str(t, "tag_name", cur, sizeof cur) && cur[0]) {
+                if (!tag[0] || ver_cmp(cur, tag) > 0) {
+                    snprintf(tag, sizeof tag, "%s", cur);
+                    best_at = t;
+                }
+                if (!cl_full) {
+                    rbody[0] = 0;
+                    json_extract_str(t, "body", rbody, sizeof rbody);
+                    int rem = (int)(cl_cap - cl_len);
+                    int w = snprintf(cl + cl_len, (size_t)rem, "%s%s\n%s\n",
+                                     cl_len ? "\n" : "", cur,
+                                     nonempty(rbody) ? rbody : "(no notes)");
+                    if (w > 0 && w < rem) cl_len += (size_t)w;
+                    else { cl[cl_len] = 0; cl_full = 1; }   /* stop at first that won't fit */
+                }
             }
             pos = t + 10;
         }

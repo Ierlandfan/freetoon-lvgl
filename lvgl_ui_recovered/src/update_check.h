@@ -13,12 +13,17 @@
 #define UPDATE_VERSION_MAX 32
 #define UPDATE_URL_MAX     200
 #define UPDATE_NOTES_MAX   2048
+/* Multi-release changelog for the About modal's "version history": ~10 recent
+ * releases, each a tag header + (capped) notes. 24 KB sits comfortably above
+ * 10 * ~1.5 KB of notes. */
+#define UPDATE_CHANGELOG_MAX 24576
 
 typedef struct {
     volatile int  available;        /* 1 when a newer release was found */
     char latest_version[UPDATE_VERSION_MAX];
     char release_url[UPDATE_URL_MAX];
     char release_notes[UPDATE_NOTES_MAX];
+    char changelog[UPDATE_CHANGELOG_MAX];   /* recent releases, newest first */
     volatile long last_check_epoch;
     volatile int  last_check_ok;    /* 1 if the most-recent fetch succeeded */
 } update_state_t;

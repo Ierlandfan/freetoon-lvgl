@@ -780,7 +780,12 @@ static void open_about_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(notes, lv_color_hex(0xc8d4e0), 0);
     lv_label_set_long_mode(notes, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(notes, SX(690));
-    lv_label_set_text(notes, g_update_state.release_notes[0]
+    /* Prefer the multi-release changelog (newest first) so testers see version
+     * history, not just the latest release's notes. Falls back to the single
+     * release notes, then the static about text. */
+    lv_label_set_text(notes, g_update_state.changelog[0]
+        ? g_update_state.changelog
+        : g_update_state.release_notes[0]
         ? g_update_state.release_notes
         : "freetoon - an independent LVGL UI for the Eneco Toon, by Ierlandfan.\n"
           "Released under the MIT License.\n\n"
