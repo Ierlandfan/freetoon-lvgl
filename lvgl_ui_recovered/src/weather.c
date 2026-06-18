@@ -1,10 +1,12 @@
 /*
- * Buienradar JSON poller. Fetches https://data.buienradar.nl/2.0/feed/json
- * every 15 minutes, parses out the station nearest to the user (id 6249 by
- * default) + the 5-day forecast.
+ * Weather poller. Current conditions + 5-day + hourly forecast come from
+ * Open-Meteo by the configured location's EXACT lat/lon (resolved once via the
+ * Open-Meteo geocoder) — so the temperature is the city's, not a KNMI station
+ * 15+ km away. The buienradar feed is fetched only for the radar-map URL and the
+ * Dutch weather-report narrative. WMO weather-codes map to our a..z icon set.
  *
- * No JSON library: we use small strstr-based extractors. Buienradar's
- * shape is stable so this is safe.
+ * No JSON library: small strstr-based extractors (incl. array indexers for
+ * Open-Meteo's columnar arrays). Both feeds have stable shapes.
  */
 #include "weather.h"
 #include "http.h"
@@ -19,7 +21,9 @@
 
 weather_state_t weather_state = {0};
 
-#define STATION_ID 6249  /* Berkhout — nearest configured to the user. */
+/* The configured location's exact lat/lon, resolved by the Open-Meteo geocoder
+ * (weather_geocode). Drives the Open-Meteo current+forecast fetch. 0 = unresolved. */
+static double g_cfg_lat = 0.0, g_cfg_lon = 0.0;
 
 /* Case-insensitive strstr. Buienradar's data feed switched from lowercase keys
  * ("stationid","temperature","iconurl","actualradarurl"…) to PascalCase
@@ -109,34 +113,164 @@ static void format_day_label(const char * iso_date, char * out, size_t outsz) {
     snprintf(out, outsz, "%s %d-%d", dutch_dow[dow], d, mo);
 }
 
-static int parse_buienradar(const char * body) {
-    /* --- current station --- */
-    char needle[64];
-    snprintf(needle, sizeof(needle), "\"stationid\":%d", STATION_ID);
-    const char * st = ci_strstr(body, needle);
-    if (!st) return -1;
-    /* Limit search to "}}" terminator of this station object. */
-    const char * st_end = strstr(st, "}");
-    if (!st_end) st_end = body + strlen(body);
+/* ---- Open-Meteo: exact-point current + forecast by lat/lon -----------------
+ * The buienradar station feed only reports ~52 fixed KNMI stations, so its
+ * "current" temperature can be a station 15+ km away. Open-Meteo interpolates to
+ * the exact configured lat/lon (KNMI HARMONIE 2 km model over NL) → the city's
+ * actual temperature. One call returns current + 5-day + hourly. */
 
-    weather_state.current_temp = (float)js_num(st, st_end, "temperature", 0);
-    weather_state.feel_temp    = (float)js_num(st, st_end, "feeltemperature", 0);
-    js_str(st, st_end, "weatherdescription",
-           weather_state.current_desc, sizeof(weather_state.current_desc));
-    /* iconurl looks like .../30x30/a.png — extract the letter. */
-    char tmp[160];
-    if (js_str(st, st_end, "iconurl", tmp, sizeof(tmp))) {
-        const char * slash = strrchr(tmp, '/');
-        const char * fname = slash ? slash + 1 : tmp;
-        size_t len = strlen(fname);
-        if (len > 4 && fname[len-4] == '.') {
-            size_t n = len - 4;
-            if (n >= sizeof(weather_state.current_icon))
-                n = sizeof(weather_state.current_icon) - 1;
-            memcpy(weather_state.current_icon, fname, n);
-            weather_state.current_icon[n] = 0;
+/* WMO weather-code -> our buienradar icon letter + NL/EN description. The icon
+ * renderer (weather_icon_for) keys on a..z; a DOUBLED letter ("aa") = night. */
+struct wmo_row { int code; char letter; const char * nl; const char * en; };
+static const struct wmo_row WMO[] = {
+    {0,'a',"Onbewolkt","Clear"}, {1,'a',"Overwegend onbewolkt","Mainly clear"},
+    {2,'b',"Half bewolkt","Partly cloudy"}, {3,'r',"Zwaar bewolkt","Overcast"},
+    {45,'k',"Mist","Fog"}, {48,'k',"Aanvriezende mist","Rime fog"},
+    {51,'c',"Lichte motregen","Light drizzle"}, {53,'c',"Motregen","Drizzle"},
+    {55,'c',"Dichte motregen","Dense drizzle"}, {56,'c',"Aanvriezende motregen","Freezing drizzle"},
+    {57,'c',"Aanvriezende motregen","Dense freezing drizzle"},
+    {61,'q',"Lichte regen","Slight rain"}, {63,'q',"Regen","Rain"},
+    {65,'e',"Zware regen","Heavy rain"}, {66,'q',"Aanvriezende regen","Freezing rain"},
+    {67,'e',"Zware aanvriezende regen","Heavy freezing rain"},
+    {71,'n',"Lichte sneeuw","Slight snow"}, {73,'n',"Sneeuw","Snow"},
+    {75,'p',"Zware sneeuw","Heavy snow"}, {77,'n',"Sneeuwkorrels","Snow grains"},
+    {80,'c',"Lichte buien","Slight showers"}, {81,'q',"Buien","Showers"},
+    {82,'h',"Zware buien","Violent showers"},
+    {85,'p',"Sneeuwbuien","Snow showers"}, {86,'p',"Zware sneeuwbuien","Heavy snow showers"},
+    {95,'g',"Onweer","Thunderstorm"}, {96,'m',"Onweer met hagel","Thunderstorm with hail"},
+    {99,'m',"Zwaar onweer met hagel","Heavy thunderstorm with hail"},
+};
+static const struct wmo_row * wmo_lookup(int code) {
+    for (size_t i = 0; i < sizeof(WMO)/sizeof(WMO[0]); i++)
+        if (WMO[i].code == code) return &WMO[i];
+    return &WMO[3];  /* unknown -> overcast */
+}
+static void wmo_icon(int code, int is_day, char * out /* >=4 bytes */) {
+    char l = wmo_lookup(code)->letter;
+    out[0] = l;
+    if (is_day) out[1] = 0;
+    else { out[1] = l; out[2] = 0; }   /* doubled letter = night variant */
+}
+static const char * wmo_desc(int code) {
+    const struct wmo_row * w = wmo_lookup(code);
+    return settings.language ? w->en : w->nl;
+}
+static int kmh_to_bft(double kmh) {
+    static const double t[12] = {1,6,12,20,29,39,50,62,75,89,103,118};
+    int b = 0; for (int i = 0; i < 12; i++) if (kmh >= t[i]) b = i + 1; return b;
+}
+static void deg_to_nl(double deg, char * out, size_t outsz) {
+    static const char * c[16] = {"N","NNO","NO","ONO","O","OZO","ZO","ZZO",
+                                 "Z","ZZW","ZW","WZW","W","WNW","NW","NNW"};
+    int i = ((int)((deg + 11.25) / 22.5)) & 15;
+    snprintf(out, outsz, "%s", c[i]);
+}
+/* index-th numeric element of  "key":[ a, b, c, ... ]  at/after begin. */
+static double js_arr_num(const char * begin, const char * key, int index, double dflt) {
+    char n[64]; snprintf(n, sizeof n, "\"%s\":[", key);
+    const char * p = strstr(begin, n);
+    if (!p) return dflt;
+    p += strlen(n);
+    const char * ae = strchr(p, ']'); if (!ae) return dflt;
+    for (int i = 0; i < index; i++) { p = strchr(p, ','); if (!p || p > ae) return dflt; p++; }
+    while (*p == ' ') p++;
+    if (*p == ']' || p > ae) return dflt;
+    return strtod(p, NULL);
+}
+/* index-th quoted-string element of  "key":[ "..", .. ] . */
+static int js_arr_str(const char * begin, const char * key, int index, char * out, size_t outsz) {
+    if (outsz) out[0] = 0;
+    char n[64]; snprintf(n, sizeof n, "\"%s\":[", key);
+    const char * p = strstr(begin, n);
+    if (!p) return 0;
+    p += strlen(n);
+    const char * ae = strchr(p, ']'); if (!ae) return 0;
+    for (int i = 0; i < index; i++) { p = strchr(p, ','); if (!p || p > ae) return 0; p++; }
+    p = strchr(p, '"'); if (!p || p > ae) return 0;
+    p++;
+    size_t o = 0; while (*p && *p != '"' && o < outsz - 1) out[o++] = *p++;
+    out[o] = 0;
+    return 1;
+}
+
+static int parse_openmeteo(const char * body) {
+    /* current conditions (exact point) */
+    const char * cur = strstr(body, "\"current\":");
+    if (!cur) return -1;
+    const char * cur_end = strchr(cur, '}');
+    if (!cur_end) cur_end = body + strlen(body);
+    weather_state.current_temp = (float)js_num(cur, cur_end, "temperature_2m", 0);
+    weather_state.feel_temp    = (float)js_num(cur, cur_end, "apparent_temperature", 0);
+    int ccode  = (int)js_num(cur, cur_end, "weather_code", 3);
+    int is_day = (int)js_num(cur, cur_end, "is_day", 1);
+    wmo_icon(ccode, is_day, weather_state.current_icon);
+    snprintf(weather_state.current_desc, sizeof weather_state.current_desc, "%s", wmo_desc(ccode));
+
+    /* 5-day daily */
+    const char * dy = strstr(body, "\"daily\":");
+    int dc = 0;
+    if (dy) for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
+        char iso[16];
+        if (!js_arr_str(dy, "time", i, iso, sizeof iso)) break;
+        weather_day_t * D = &weather_state.days[dc];
+        memset(D, 0, sizeof *D);
+        format_day_label(iso, D->day, sizeof D->day);
+        D->min_temp    = (float)js_arr_num(dy, "temperature_2m_min", i, 0);
+        D->max_temp    = (float)js_arr_num(dy, "temperature_2m_max", i, 0);
+        D->rain_chance = (int)js_arr_num(dy, "precipitation_probability_max", i, 0);
+        D->wind_bft    = kmh_to_bft(js_arr_num(dy, "wind_speed_10m_max", i, 0));
+        deg_to_nl(js_arr_num(dy, "wind_direction_10m_dominant", i, 0), D->wind_dir, sizeof D->wind_dir);
+        int code = (int)js_arr_num(dy, "weather_code", i, 3);
+        wmo_icon(code, 1, D->icon);
+        snprintf(D->desc, sizeof D->desc, "%s", wmo_desc(code));
+        dc++;
+    }
+    weather_state.day_count = dc;
+
+    /* hourly: 6 slots, 3-hour steps from the current local hour. Open-Meteo's
+       hourly[] starts at 00:00 today (timezone set), 1-hour steps → index=hour. */
+    const char * hr = strstr(body, "\"hourly\":");
+    int hc = 0;
+    if (hr) {
+        time_t now = time(NULL); struct tm lt; localtime_r(&now, &lt);
+        for (int s = 0; s < WEATHER_FORECAST_HOURS; s++) {
+            int idx = lt.tm_hour + s * 3;
+            char iso[24];
+            if (!js_arr_str(hr, "time", idx, iso, sizeof iso)) break;
+            weather_hour_t * H = &weather_state.hours[hc];
+            memset(H, 0, sizeof *H);
+            if (strlen(iso) >= 16) snprintf(H->label, sizeof H->label, "%.5s", iso + 11);
+            else snprintf(H->label, sizeof H->label, "%.7s", iso);
+            H->temperature = (float)js_arr_num(hr, "temperature_2m", idx, 0);
+            H->wind_bft    = kmh_to_bft(js_arr_num(hr, "wind_speed_10m", idx, 0));
+            deg_to_nl(js_arr_num(hr, "wind_direction_10m", idx, 0), H->wind_dir, sizeof H->wind_dir);
+            wmo_icon((int)js_arr_num(hr, "weather_code", idx, 3), 1, H->icon);
+            hc++;
         }
     }
+    weather_state.hour_count = hc;
+    return 0;
+}
+
+static int fetch_openmeteo(void) {
+    if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0) return -1;
+    char url[480];
+    snprintf(url, sizeof url,
+        "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
+        "&timezone=Europe%%2FAmsterdam&forecast_days=5"
+        "&current=temperature_2m,apparent_temperature,weather_code,is_day"
+        "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
+        "wind_speed_10m_max,wind_direction_10m_dominant"
+        "&hourly=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m",
+        g_cfg_lat, g_cfg_lon);
+    static char body[48 * 1024];
+    if (http_fetch(url, body, sizeof body) != 0) return -1;
+    return parse_openmeteo(body);
+}
+
+/* buienradar feed — used ONLY for the radar-map URL + the NL weather-report
+ * narrative; all temperatures/forecast now come from Open-Meteo (exact point). */
+static int parse_buienradar_extras(const char * body) {
 
     /* --- radar image URL (lives in "actual" object) --- */
     js_str(body, body + strlen(body), "actualradarurl",
@@ -160,46 +294,6 @@ static int parse_buienradar(const char * body) {
         }
     }
 
-    /* --- 5-day forecast --- */
-    weather_state.day_count = 0;
-    const char * fc = ci_strstr(body, "\"fivedayforecast\":[");
-    if (!fc) return 0;
-    const char * walk = fc;
-    for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
-        walk = ci_strstr(walk, "\"Day\":");
-        if (!walk) break;
-        const char * day_end = strstr(walk, "}");
-        if (!day_end) break;
-        weather_day_t * dst = &weather_state.days[i];
-        char iso[32];
-        if (!js_str(walk, day_end, "day", iso, sizeof(iso))) { walk++; continue; }
-        format_day_label(iso, dst->day, sizeof(dst->day));
-        dst->min_temp    = (float)js_num(walk, day_end, "mintemperature", 0);
-        dst->max_temp    = (float)js_num(walk, day_end, "maxtemperature", 0);
-        dst->rain_chance = (int)js_num(walk, day_end, "rainChance", 0);
-        dst->wind_bft    = (int)js_num(walk, day_end, "wind", 0);
-        js_str(walk, day_end, "windDirection", dst->wind_dir, sizeof(dst->wind_dir));
-        /* buienradar emits lowercase like "zw"; capitalise so it reads
-           well in the UI. */
-        for (int k = 0; dst->wind_dir[k]; k++)
-            if (dst->wind_dir[k] >= 'a' && dst->wind_dir[k] <= 'z')
-                dst->wind_dir[k] -= 32;
-        js_str(walk, day_end, "weatherdescription", dst->desc, sizeof(dst->desc));
-        char icon_url[160];
-        if (js_str(walk, day_end, "iconurl", icon_url, sizeof(icon_url))) {
-            const char * slash = strrchr(icon_url, '/');
-            const char * fname = slash ? slash + 1 : icon_url;
-            size_t len = strlen(fname);
-            if (len > 4 && fname[len-4] == '.') {
-                size_t n = len - 4;
-                if (n >= sizeof(dst->icon)) n = sizeof(dst->icon) - 1;
-                memcpy(dst->icon, fname, n);
-                dst->icon[n] = 0;
-            }
-        }
-        weather_state.day_count = i + 1;
-        walk = day_end + 1;
-    }
     return 0;
 }
 
@@ -220,104 +314,9 @@ static int parse_buienradar(const char * body) {
  * The first day usually contains 1-hour resolution; later days are
  * sparser. We just iterate days→hours linearly, pick every 3rd entry
  * after the first-future, and stop at WEATHER_FORECAST_HOURS. */
-static int parse_buienradar_hourly(const char * body) {
-    weather_state.hour_count = 0;
-    /* Skip past the day-level prelude (location, afternoon{...}, evening{...})
-     * and only parse datetimes from the first "hours":[ array onwards. The
-     * afternoon/evening blocks have their own "datetime" fields but no plain
-     * "temperature" key — they'd otherwise be picked up as bogus 0 °C slots.
-     */
-    const char * p = strstr(body, "\"hours\":[");
-    if (!p) p = body;
-    int picked = 0;
-    int skip = 0;
-    while (picked < WEATHER_FORECAST_HOURS) {
-        const char * dt = strstr(p, "\"datetime\":\"");
-        if (!dt) break;
-        dt += 12;
-        const char * dt_end = strchr(dt, '"');
-        if (!dt_end) break;
-        char iso[32];
-        size_t n = (size_t)(dt_end - dt);
-        if (n >= sizeof(iso)) n = sizeof(iso) - 1;
-        memcpy(iso, dt, n); iso[n] = 0;
-
-        /* Slot extent — bounded by the next "datetime" or the end of
-         * the json. js_num / js_str clamp themselves to (slot_start, slot_end). */
-        const char * slot_end = strstr(dt_end, "\"datetime\":\"");
-        if (!slot_end) slot_end = body + strlen(body);
-
-        weather_hour_t h = {0};
-        /* Time portion of "2026-05-15T20:30:00" → "20:30" */
-        if (strlen(iso) >= 16)
-            snprintf(h.label, sizeof h.label, "%c%c:%c%c",
-                     iso[11], iso[12], iso[14], iso[15]);
-        else
-            snprintf(h.label, sizeof h.label, "%s", iso);
-
-        /* Skip anything that isn't a per-hour entry — buienradar inserts
-         * day-level "afternoon"/"evening" slots that have their own
-         * datetime but no plain "temperature" key, which would render as
-         * bogus 0 °C. timetype=="Hour" is the only hourly bucket we want. */
-        char timetype[16] = {0};
-        js_str(dt_end, slot_end, "timetype", timetype, sizeof timetype);
-        if (strcmp(timetype, "Hour") != 0) { p = slot_end; continue; }
-
-        h.temperature = (float)js_num(dt_end, slot_end, "temperature", 0);
-        h.wind_bft    = (int)js_num(dt_end, slot_end, "beaufort", 0);
-        js_str(dt_end, slot_end, "winddirection", h.wind_dir, sizeof h.wind_dir);
-        for (int k = 0; h.wind_dir[k]; k++)
-            if (h.wind_dir[k] >= 'a' && h.wind_dir[k] <= 'z')
-                h.wind_dir[k] -= 32;
-        js_str(dt_end, slot_end, "iconcode", h.icon, sizeof h.icon);
-
-        /* Buienradar's hourly entries are roughly 1 hour apart on day 1,
-         * 3-hour later. Down-sample by taking every third entry so the
-         * UI always shows a ~3-hour spaced strip regardless. */
-        if ((skip++ % 3) == 0) {
-            weather_state.hours[picked++] = h;
-        }
-        p = slot_end;
-    }
-    weather_state.hour_count = picked;
-    return picked > 0 ? 0 : -1;
-}
-
-static int fetch_buienradar_hourly(void) {
-    int id = settings.weather_location_id;
-    if (id <= 0) return -1;
-    char url[160];
-    snprintf(url, sizeof url,
-             "https://forecast.buienradar.nl/2.0/forecast/%d", id);
-    static char body[80 * 1024];
-    if (http_fetch(url, body, sizeof body) != 0) {
-        weather_state.hour_count = 0;
-        return -1;
-    }
-    /* Sanity-gate the response. Buienradar's /forecast/<id> accepts any
-     * GeoNames id worldwide — if the user copy-pasted a KNMI station code
-     * (e.g. 6249 for Berkhout) they get a forecast for somewhere random
-     * (lat 33.75 lon 45.97 → Iraq, 30 °C in May). Drop the data and force
-     * the daily fallback if the resolved location is outside the NL/BE
-     * bounding box. */
-    const char * loc = strstr(body, "\"location\"");
-    if (loc) {
-        double lat = js_num(loc, loc + 200, "lat", 0);
-        double lon = js_num(loc, loc + 200, "lon", 0);
-        if (lat < 49.0 || lat > 54.5 || lon < 2.0 || lon > 8.0) {
-            fprintf(stderr, "[wx] location id %d resolves to lat=%.2f lon=%.2f "
-                            "(outside NL/BE) — dropping forecast\n",
-                    id, lat, lon);
-            weather_state.hour_count = 0;
-            return -1;
-        }
-    }
-    return parse_buienradar_hourly(body);
-}
-
-/* Fetches the radar PNG to disk via curl. We don't write our own libcurl
+/* Fetches the radar GIF to disk via curl. We don't write our own libcurl
    binding — popen out, redirect to file, atomic rename. The forecast
-   screen reads from /tmp/toonui_radar.png via LVGL's stdio FS driver. */
+   screen reads /tmp/toonui_radar.gif via LVGL's stdio FS driver + lv_gif. */
 static int fetch_radar_image(void) {
     if (!weather_state.radar_url[0]) return -1;
     /* Quote-safe by construction: the URL came from buienradar's JSON
@@ -361,7 +360,12 @@ int weather_geocode(const char * city) {
     const char * p = strstr(body, "\"id\":");
     if (!p) return 0;
     int id = atoi(p + 5);
-    fprintf(stderr, "[wx] geocode '%s' -> id %d\n", city, id);
+    /* Capture the exact lat/lon — this is what the Open-Meteo current+forecast
+     * fetch keys on (the GeoNames id is only kept for settings back-compat). */
+    double lat = js_num(body, body + strlen(body), "latitude", 0);
+    double lon = js_num(body, body + strlen(body), "longitude", 0);
+    if (lat != 0.0 || lon != 0.0) { g_cfg_lat = lat; g_cfg_lon = lon; }
+    fprintf(stderr, "[wx] geocode '%s' -> id %d (%.4f,%.4f)\n", city, id, lat, lon);
     return id;
 }
 
@@ -370,26 +374,27 @@ static void * wx_thread(void * arg) {
     static char body[64 * 1024];
     int radar_tick = 0;
     while (1) {
-        if (http_fetch("https://data.buienradar.nl/2.0/feed/json",
-                       body, sizeof(body)) == 0) {
-            if (parse_buienradar(body) == 0) {
-                weather_state.connected = 1;
-                fprintf(stderr, "[wx] %s %.1fC, %d-day forecast\n",
-                        weather_state.current_desc,
-                        weather_state.current_temp, weather_state.day_count);
-            }
+        /* Resolve the configured city's exact lat/lon once (re-tried each loop
+           until it sticks). Everything temperature/forecast keys off this. */
+        if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && settings.weather_location[0])
+            weather_geocode(settings.weather_location);
+
+        /* Current conditions + 5-day + hourly — exact point, from Open-Meteo. */
+        if (fetch_openmeteo() == 0) {
+            weather_state.connected = 1;
+            fprintf(stderr, "[wx] %s %.1fC @ (%.3f,%.3f), %d-day %d-hour\n",
+                    weather_state.current_desc, weather_state.current_temp,
+                    g_cfg_lat, g_cfg_lon, weather_state.day_count, weather_state.hour_count);
         } else {
             weather_state.connected = 0;
-            fprintf(stderr, "[wx] fetch failed\n");
+            fprintf(stderr, "[wx] open-meteo fetch failed\n");
         }
-        /* Pull the 3-hourly forecast for the configured location id.
-           Independent of the daily feed — a failure here shouldn't take
-           the "connected" flag down. */
-        if (fetch_buienradar_hourly() == 0)
-            fprintf(stderr, "[wx] hourly forecast: %d slots\n",
-                    weather_state.hour_count);
-        else
-            fprintf(stderr, "[wx] hourly fetch failed\n");
+
+        /* buienradar feed — radar-map URL + NL weather-report narrative only. */
+        if (http_fetch("https://data.buienradar.nl/2.0/feed/json",
+                       body, sizeof(body)) == 0)
+            parse_buienradar_extras(body);
+
         /* Fetch the radar image every 5 minutes (3 ticks of 15-min loop is
            too slow; we do an inner sleep loop instead). */
         for (int i = 0; i < 3; i++) {
