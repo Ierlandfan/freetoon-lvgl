@@ -168,6 +168,18 @@ abi-check: $(BUILDDIR)/$(OUT)
 	  echo "  FAIL — needs newer-than-2.21 symbols:"; echo "$$bad" | sed 's/^/    /'; \
 	  echo "  (would fail to load on the Toon's glibc 2.21 — avoid those APIs)"; exit 1; \
 	else echo "  OK — nothing newer than GLIBC_2.21 required"; fi
+	@# Symbol denylist: APIs that exist in the build toolchain's glibc but are
+	@# absent on the Toon 1's ancient firmware glibc (so they pass the version
+	@# check above yet still abort the binary at load with a blank-symbol
+	@# "version GLIBC_2.4 not defined" relocation error). getifaddrs/freeifaddrs
+	@# are WEAK and not exported on-device — they broke Toon 1 in v0.9.47.
+	@deny=$$($(CROSS)readelf --dyn-syms $(BUILDDIR)/$(OUT) 2>/dev/null \
+	        | awk '$$7=="UND"{print $$8}' | sed 's/@.*//' \
+	        | grep -xE 'getifaddrs|freeifaddrs' | sort -u); \
+	if [ -n "$$deny" ]; then \
+	  echo "  FAIL — imports symbols not available on Toon 1 firmware glibc:"; echo "$$deny" | sed 's/^/    /'; \
+	  echo "  (these load fine on the build glibc but abort on-device — use a fallback)"; exit 1; \
+	else echo "  OK — no Toon 1-unavailable libc symbols imported"; fi
 
 # Standalone VNC touch-injection bridge (no LVGL deps). Shipped alongside
 # toonui so VNC gives full control on the multi-touch screen.
