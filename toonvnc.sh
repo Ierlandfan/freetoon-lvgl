@@ -34,6 +34,13 @@ if [ ! -x "$X11VNC" ]; then
   fi
 fi
 
+# Capture the command (start|stop|restart|status|respawn) NOW, before the
+# geometry probe below runs `set --` — which on a device that HAS fbset would
+# overwrite the positional params ($1) with the framebuffer dimensions, losing
+# the action and dropping us into the usage branch (so inittab's `respawn` never
+# launched x11vnc → VNC silently dead after a restart).
+CMD="${1:-start}"
+
 # Auto-detect the framebuffer geometry — must NOT be hardcoded: Toon 2 is
 # 1024x600x32, but Toon 1 (i.MX27) is 800x480x16 (RGB565). Feeding x11vnc the
 # wrong WxHxBpp makes it misread the stride, shearing/garbling the image (the
@@ -73,7 +80,7 @@ _off=$((_yoff * _stride))
 #   map:/dev/fb0@1024x600x32+2457600
 [ "$_off" -gt 0 ] && RAWFB="map:/dev/fb0@$GEOM+$_off"
 
-case "${1:-start}" in
+case "$CMD" in
   stop)
     pkill -x x11vnc 2>/dev/null && echo "x11vnc stopped" || echo "x11vnc not running"
     ;;
