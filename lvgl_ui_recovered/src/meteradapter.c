@@ -11,14 +11,53 @@
 #include <unistd.h>
 #include <time.h>
 
-#define MET_STALE_S 60   /* no flow notify for this long → meter offline */
+#define MET_STALE_S       60    /* no flow notify for this long → meter offline */
+#define NILM_THRESHOLD_W  18.0f /* min |delta| W to trigger a NILM event */
+#define NILM_DEBOUNCE_S   3     /* squelch repeated events within N seconds */
+
+typedef struct { const char *name; float lo; float hi; } nilm_sig_t;
+static const nilm_sig_t nilm_sigs[] = {
+    { "Bathroom light",  13.0f,  28.0f  },
+    { "Fridge",          28.0f,  43.0f  },
+    { "CV boiler",       43.0f,  57.0f  },
+    { "TV / Decoder",    50.0f,  75.0f  },
+    { "Itho fan",       115.0f, 170.0f  },
+};
 
 meter_state_t meter_state = {0};
 
 void meteradapter_on_flow(float watts) {
-    meter_state.power_w   = watts;
-    meter_state.last_flow_s = time(NULL);
-    meter_state.connected = 1;
+    static float  prev_w       = -1.0f;
+    static time_t last_nilm_ts = 0;
+
+    if (prev_w >= 0.0f) {
+        float delta  = watts - prev_w;
+        float adelta = delta < 0.0f ? -delta : delta;
+        time_t now   = time(NULL);
+        if (adelta >= NILM_THRESHOLD_W && (now - last_nilm_ts) > NILM_DEBOUNCE_S) {
+            const char *dev = NULL;
+            for (size_t i = 0; i < sizeof nilm_sigs / sizeof nilm_sigs[0]; i++) {
+                if (adelta >= nilm_sigs[i].lo && adelta < nilm_sigs[i].hi) {
+                    dev = nilm_sigs[i].name;
+                    break;
+                }
+            }
+            char fallback[24];
+            if (!dev) {
+                snprintf(fallback, sizeof fallback, "~%.0f W device", adelta);
+                dev = fallback;
+            }
+            meter_state.nilm_direction = (delta > 0.0f) ? +1 : -1;
+            snprintf(meter_state.nilm_device, sizeof meter_state.nilm_device,
+                     "%s %s", dev, delta > 0.0f ? "ON" : "OFF");
+            meter_state.nilm_event_ts = now;
+            last_nilm_ts = now;
+        }
+    }
+    prev_w = watts;
+    meter_state.power_w      = watts;
+    meter_state.last_flow_s  = (long)time(NULL);
+    meter_state.connected    = 1;
 }
 
 static void *watchdog_thread(void *arg) {

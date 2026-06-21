@@ -52,6 +52,7 @@ static lv_obj_t * dim_vent_lbl  = NULL;   /* "57 %" — actual ExhFanSpeed */
 static lv_obj_t * dim_img_water = NULL;   /* drop icon, visible while pouring */
 static lv_obj_t * dim_lbl_water = NULL;   /* "1.4 L/m" / "+1.4 L" */
 static int        dim_vent_period_ms = 0; /* current spin animation period */
+static lv_obj_t * lbl_dim_nilm  = NULL;  /* NILM transient device event */
 static lv_timer_t * refresh_timer = NULL;
 
 /* ---- usage bars flanking the clock: energy now (W) + gas hourly (m³) ----
@@ -554,6 +555,16 @@ static void refresh_cb(lv_timer_t * t) {
             dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show && g_conn, 0, gr, 0xffaa33, gtxt);
         }
     }
+    /* NILM transient device label */
+    if (lbl_dim_nilm) {
+        if (meter_state.nilm_event_ts &&
+            time(NULL) - (time_t)meter_state.nilm_event_ts < 10) {
+            lv_label_set_text(lbl_dim_nilm, meter_state.nilm_device);
+            lv_obj_clear_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 
     lv_obj_invalidate(scr_root);
 }
@@ -611,6 +622,16 @@ lv_obj_t * screen_dim_create(void) {
     dim_bar_h = SY(2 * DIM_CLOCK_H);
     dim_make_bar(-1, &bar_l_env, &bar_l_fill, &bar_l_cap);
     dim_make_bar(+1, &bar_r_env, &bar_r_fill, &bar_r_cap);
+
+    /* NILM transient device label — floats above the energy bar cap at the
+     * bottom of the screen; hidden until a step-change event fires. */
+    lbl_dim_nilm = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(lbl_dim_nilm, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_dim_nilm, SF(16), 0);
+    lv_obj_set_style_text_align(lbl_dim_nilm, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_dim_nilm, "");
+    lv_obj_align(lbl_dim_nilm, LV_ALIGN_BOTTOM_MID, 0, -SY(22));
+    lv_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
 
     /* All labels positioned against screen center with explicit Y offsets so
        different content widths can't drift them out of alignment. */

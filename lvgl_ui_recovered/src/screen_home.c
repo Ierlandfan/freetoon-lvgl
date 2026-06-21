@@ -283,6 +283,7 @@ static lv_obj_t * lbl_humid_val;       /* removed widget — kept as NULL for ol
 static lv_obj_t * lbl_energy_w;
 static lv_obj_t * lbl_energy_gas;
 static lv_obj_t * lbl_energy_today;
+static lv_obj_t * lbl_nilm_event = NULL;
 static lv_obj_t * lbl_boiler_state;
 static lv_obj_t * lbl_boiler_pressure;
 static lv_obj_t * vent_fan_img = NULL;
@@ -1552,6 +1553,16 @@ static void refresh_cb(lv_timer_t * t) {
             float g = energy_gas_m3();
             if (g >= 0) lv_label_set_text_fmt(lbl_energy_gas, "%.0f m3 gas", g);
             else if (energy_connected()) lv_label_set_text(lbl_energy_gas, "via meter");
+        }
+    }
+    /* NILM transient device label — visible for 10 s after a step-change event */
+    if (lbl_nilm_event) {
+        if (meter_state.nilm_event_ts &&
+            time(NULL) - (time_t)meter_state.nilm_event_ts < 10) {
+            lv_label_set_text(lbl_nilm_event, meter_state.nilm_device);
+            lv_obj_clear_flag(lbl_nilm_event, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(lbl_nilm_event, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -3099,6 +3110,14 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(lbl_energy_today, SF(14), 0);
     lv_label_set_text(lbl_energy_today, "");
     lv_obj_align(lbl_energy_today, LV_ALIGN_TOP_RIGHT, -4, 4);
+
+    /* NILM transient event — device name shown briefly above the watt number. */
+    lbl_nilm_event = lv_label_create(energy_t.tile);
+    lv_obj_set_style_text_color(lbl_nilm_event, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_nilm_event, SF(11), 0);
+    lv_label_set_text(lbl_nilm_event, "");
+    lv_obj_align(lbl_nilm_event, LV_ALIGN_CENTER, 0, -22);
+    lv_obj_add_flag(lbl_nilm_event, LV_OBJ_FLAG_HIDDEN);
 
     /* Vent tile — spinning fan in centre, manual +/- on the sides, live
        % above and rpm below the fan. Tap on the fan itself opens the remote
