@@ -60,6 +60,9 @@ else ifeq ($(TARGET),toon2)
   EXTRA      := $(BUILDDIR)/fbvnc_input $(BUILDDIR)/wastefetch
   WF_POST    := :
   POSTLINK   := :
+  # Downgrade fcntl@GLIBC_2.28 → GLIBC_2.4 (see glibc_compat_toon2.c)
+  GLIBC_SRC     := glibc_compat_toon2.c
+  GLIBC_LDFLAGS := -Wl,--wrap=fcntl
 else ifeq ($(TARGET),sim)
   # Headless host build — render UI to a PPM, no device/X/SDL. 1024x600.
   CROSS      :=
