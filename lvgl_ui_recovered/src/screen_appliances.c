@@ -218,7 +218,7 @@ static void open_naming_modal(const char *prefill, float lo, float hi,
     lv_obj_set_style_text_font(title, SF(20), 0);
     char heading[80];
     snprintf(heading, sizeof heading,
-             tr("Apparaatnaam  (%.0f–%.0f W)", "Appliance name  (%.0f–%.0f W)"),
+             tr("Apparaatnaam  (%.0f - %.0f W)", "Appliance name  (%.0f - %.0f W)"),
              (double)lo, (double)hi);
     lv_label_set_text(title, heading);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -403,7 +403,7 @@ static void rebuild_custom_list(void) {
         lv_obj_t *row = mk_row(cust_cont, 56);
 
         char txt[80];
-        snprintf(txt, sizeof txt, "%s   %.0f–%.0f W",
+        snprintf(txt, sizeof txt, "%s   %.0f - %.0f W",
                  settings.nilm_sig_name[i],
                  (double)settings.nilm_sig_lo[i],
                  (double)settings.nilm_sig_hi[i]);
@@ -536,7 +536,7 @@ lv_obj_t * screen_appliances_create(void) {
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
         char txt[80];
-        snprintf(txt, sizeof txt, "%s   %.0f–%.0f W",
+        snprintf(txt, sizeof txt, "%s   %.0f - %.0f W",
                  builtin_sigs[i].name,
                  (double)builtin_sigs[i].lo,
                  (double)builtin_sigs[i].hi);
