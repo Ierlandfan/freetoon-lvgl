@@ -7,9 +7,11 @@
  * notifies dry up (meter unplugged / not included in the Z-Wave network).
  */
 #include "meteradapter.h"
+#include "settings.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
+#include <stdio.h>
 
 #define MET_STALE_S       60    /* no flow notify for this long → meter offline */
 #define NILM_THRESHOLD_W  18.0f /* min |delta| W to trigger a NILM event */
@@ -24,7 +26,9 @@ static const nilm_sig_t nilm_sigs[] = {
     { "Itho fan",       115.0f, 170.0f  },
 };
 
-meter_state_t meter_state = {0};
+meter_state_t    meter_state   = {0};
+nilm_unknown_t   nilm_unknowns [NILM_UNKNOWN_MAX] = {{0}};
+volatile int     nilm_unknown_count = 0;
 
 void meteradapter_on_flow(float watts) {
     static float  prev_w       = -1.0f;
@@ -36,17 +40,37 @@ void meteradapter_on_flow(float watts) {
         time_t now   = time(NULL);
         if (adelta >= NILM_THRESHOLD_W && (now - last_nilm_ts) > NILM_DEBOUNCE_S) {
             const char *dev = NULL;
+
+            /* 1. Check built-in signatures */
             for (size_t i = 0; i < sizeof nilm_sigs / sizeof nilm_sigs[0]; i++) {
                 if (adelta >= nilm_sigs[i].lo && adelta < nilm_sigs[i].hi) {
                     dev = nilm_sigs[i].name;
                     break;
                 }
             }
+
+            /* 2. Check custom signatures from settings */
+            if (!dev) {
+                for (int i = 0; i < settings.nilm_sig_count && i < NILM_CUSTOM_MAX; i++) {
+                    if (adelta >= settings.nilm_sig_lo[i] && adelta < settings.nilm_sig_hi[i]) {
+                        dev = settings.nilm_sig_name[i];
+                        break;
+                    }
+                }
+            }
+
+            /* 3. Unknown — store in ring buffer for the Appliances screen */
             char fallback[24];
             if (!dev) {
-                snprintf(fallback, sizeof fallback, "~%.0f W device", adelta);
+                int slot = nilm_unknown_count % NILM_UNKNOWN_MAX;
+                nilm_unknowns[slot].delta_w   = adelta;
+                nilm_unknowns[slot].direction = (delta > 0.0f) ? +1 : -1;
+                nilm_unknowns[slot].ts        = now;
+                nilm_unknown_count++;
+                snprintf(fallback, sizeof fallback, "~%.0f W", adelta);
                 dev = fallback;
             }
+
             meter_state.nilm_direction = (delta > 0.0f) ? +1 : -1;
             snprintf(meter_state.nilm_device, sizeof meter_state.nilm_device,
                      "%s %s", dev, delta > 0.0f ? "ON" : "OFF");

@@ -1261,6 +1261,11 @@ static void open_adapters(lv_event_t * e) {
     ui_push(screen_adapters_create());
 }
 
+static void open_appliances(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_appliances_create());
+}
+
 /* On-device Domoticz config — host/user/enable can now be set on the Toon
  * itself (previously PWA-only). "View lights/blinds" opens the device list. */
 static lv_obj_t * ta_domoticz_host = NULL;
@@ -3796,6 +3801,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("zoeken & verbinden", "scan & connect"), open_wifi); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, tr("Adapters", "Adapters"),
               tr("meter & ketel", "meter & boiler"), open_adapters); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, tr("Apparaten", "Appliances"),
+              tr("NILM stap-detectie namen", "NILM step-change names"), open_appliances); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
               tr("licht & zonwering", "lights & blinds"), open_domoticz); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Home Assistant",

@@ -351,6 +351,25 @@ void settings_load(void) {
         else if (strcmp(k, "pin_enabled")       == 0) settings.pin_enabled = iv;
         else if (strcmp(k, "pin_code")          == 0)
             snprintf(settings.pin_code, sizeof settings.pin_code, "%s", v);
+        else if (strcmp(k, "nilm_sig_count") == 0) {
+            settings.nilm_sig_count = iv;
+            if (settings.nilm_sig_count < 0) settings.nilm_sig_count = 0;
+            if (settings.nilm_sig_count > NILM_CUSTOM_MAX) settings.nilm_sig_count = NILM_CUSTOM_MAX;
+        }
+        else if (strncmp(k, "nilm_sig_", 9) == 0) {
+            /* Format: nilm_sig_N=Name,lo,hi */
+            int idx = atoi(k + 9);
+            if (idx >= 0 && idx < NILM_CUSTOM_MAX) {
+                char namebuf[40]; float lo = 0, hi = 0;
+                if (sscanf(v, "%39[^,],%f,%f", namebuf, &lo, &hi) == 3) {
+                    snprintf(settings.nilm_sig_name[idx], 40, "%s", namebuf);
+                    settings.nilm_sig_lo[idx] = lo;
+                    settings.nilm_sig_hi[idx] = hi;
+                    if (idx >= settings.nilm_sig_count)
+                        settings.nilm_sig_count = idx + 1;
+                }
+            }
+        }
     }
     fclose(f);
 
@@ -659,5 +678,11 @@ void settings_save(void) {
     fprintf(f, "pwa_login_pass=%s\n",    settings.pwa_login_pass);
     fprintf(f, "pin_enabled=%d\n",       settings.pin_enabled);
     fprintf(f, "pin_code=%s\n",          settings.pin_code);
+    fprintf(f, "nilm_sig_count=%d\n",    settings.nilm_sig_count);
+    for (int i = 0; i < settings.nilm_sig_count && i < NILM_CUSTOM_MAX; i++)
+        fprintf(f, "nilm_sig_%d=%s,%.1f,%.1f\n", i,
+                settings.nilm_sig_name[i],
+                (double)settings.nilm_sig_lo[i],
+                (double)settings.nilm_sig_hi[i]);
     fclose(f);
 }

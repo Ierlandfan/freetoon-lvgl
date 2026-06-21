@@ -288,6 +288,15 @@ typedef struct {
      * Stored plaintext (UI PIN, not a security boundary). */
     int  pin_enabled;
     char pin_code[8];         /* 4-6 numeric chars; empty = effectively off */
+
+    /* Custom NILM appliance signatures — user-named step-change patterns.
+     * Each entry covers a watt-delta range [lo, hi) and a display name.
+     * Stored as nilm_sig_N=Name,lo,hi in toonui.cfg (N = 0-based index). */
+#define NILM_CUSTOM_MAX 12
+    char  nilm_sig_name[NILM_CUSTOM_MAX][40];
+    float nilm_sig_lo  [NILM_CUSTOM_MAX];
+    float nilm_sig_hi  [NILM_CUSTOM_MAX];
+    int   nilm_sig_count;
 } settings_t;
 
 #define FORECAST_AUTO   0
