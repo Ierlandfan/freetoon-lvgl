@@ -65,6 +65,7 @@ lv_obj_t * screen_zwave_create(void);
 lv_obj_t * screen_wifi_create(void);
 lv_obj_t * screen_adapters_create(void);
 lv_obj_t * screen_appliances_create(void);
+lv_obj_t * screen_energy_timeline_create(void);
 lv_obj_t * screen_domoticz_create(void);
 
 /* Open the Tile-slots picker modal — used both by the Settings → Tiles
