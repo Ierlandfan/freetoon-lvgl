@@ -228,9 +228,11 @@ static void redraw_canvas(void) {
         lv_draw_label_dsc_t eld; lv_draw_label_dsc_init(&eld);
         eld.color = lv_color_hex(COL_TEXT_DIM);
         eld.font  = SF(18);
-        lv_canvas_draw_text(canvas, SX(20), SY(40), cw - SX(40), &eld,
-            tr("Geen stap-detectie events in dit tijdvenster.",
-               "No step-change events in this time window."));
+        const char *msg = meter_state.connected
+            ? tr("Geen stap-detectie events in dit tijdvenster.",
+                 "No step-change events in this time window.")
+            : tr("P1 meter offline.", "P1 meter offline.");
+        lv_canvas_draw_text(canvas, SX(20), SY(40), cw - SX(40), &eld, msg);
     }
 
     /* ── rebuild label column ── */

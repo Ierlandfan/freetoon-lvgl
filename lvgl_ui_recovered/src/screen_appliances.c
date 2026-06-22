@@ -346,8 +346,9 @@ static void rebuild_unknown_list(void) {
         lv_obj_t *l = lv_label_create(unk_cont);
         lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(l, SF(16), 0);
-        lv_label_set_text(l,
-            tr("Geen onbekende stappen gedetecteerd.", "No unknown step-changes detected."));
+        lv_label_set_text(l, meter_state.connected
+            ? tr("Geen onbekende stappen gedetecteerd.", "No unknown step-changes detected.")
+            : tr("P1 meter offline.", "P1 meter offline."));
         return;
     }
 
