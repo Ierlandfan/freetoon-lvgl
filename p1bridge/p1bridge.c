@@ -34,6 +34,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -159,7 +160,19 @@ static int bxt_connect(void) {
     if (connect(bxt_fd, (struct sockaddr*)&a, sizeof(a)) != 0) {
         close(bxt_fd); bxt_fd = -1; return -2;
     }
+    /* hcb_comm sends routing acks back; drain them to prevent the TCP
+     * receive window from filling and blocking hcb_comm's delivery loop.
+     * Use ioctl instead of fcntl to stay within GLIBC_2.4 (Toon glibc 2.21). */
+    { int one = 1; ioctl(bxt_fd, FIONBIO, &one); }
     return 0;
+}
+
+/* Discard all pending hcb_comm replies on bxt_fd (non-blocking). */
+static void bxt_drain(void) {
+    if (bxt_fd < 0) return;
+    char sink[256];
+    while (recv(bxt_fd, sink, sizeof(sink), 0) > 0)
+        ;
 }
 
 /* NUL-delimited frame. */
@@ -409,8 +422,7 @@ static int tls_spawn(const char *host) {
     close(sv[1]);
     g_tls_pid = pid;
     /* non-blocking on the parent side so select() drives us */
-    int fl = fcntl(sv[0], F_GETFL, 0);
-    fcntl(sv[0], F_SETFL, fl | O_NONBLOCK);
+    { int one = 1; ioctl(sv[0], FIONBIO, &one); }
     return sv[0];
 }
 
@@ -767,6 +779,9 @@ static int elec_run_once(void) {
             logmsg("ws: device error: %.*s", 200, msg);
         }
         (void)saw_auth_req; (void)authorized; (void)subscribed;
+
+        /* drain hcb_comm acks so TCP window never stalls the bus */
+        bxt_drain();
 
         /* opportunistic water tick — keeps single-thread design */
         static long last_water_ms = 0;
