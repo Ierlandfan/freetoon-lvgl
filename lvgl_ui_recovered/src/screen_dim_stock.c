@@ -19,6 +19,7 @@
 #include "homewizard.h"
 #include "weather.h"
 #include "icons.h"
+#include "ventilation.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -33,6 +34,9 @@ static lv_obj_t * scr_root = NULL;
 static lv_obj_t * d_clock, * d_date, * d_water, * d_water_ts, * d_setpoint, * d_eco, * d_prog;
 static lv_obj_t * d_water_banner, * d_watts;
 static lv_obj_t * d_wx_icon, * d_wx_temp;   /* outside weather, top-right */
+static lv_obj_t * d_vent_fan = NULL;         /* spinning fan icon */
+static lv_obj_t * d_vent_lbl = NULL;         /* mode + % label */
+static int        d_vent_period_ms = 0;
 #define D_NSEG 12
 static lv_obj_t * d_eseg[D_NSEG];
 static lv_timer_t * d_timer = NULL;
@@ -71,6 +75,30 @@ static lv_obj_t * d_make_sprout(lv_obj_t * par) {
     lv_canvas_draw_polygon(cv, left, 4, &lf);
     lv_canvas_draw_polygon(cv, right, 4, &lf);
     return cv;
+}
+
+static void d_vent_anim_cb(void * obj, int32_t v) { lv_img_set_angle((lv_obj_t *)obj, v); }
+static void d_vent_apply_anim(int rpm) {
+    if (!d_vent_fan) return;
+    if (rpm < 50) {
+        if (d_vent_period_ms == 0) return;
+        d_vent_period_ms = 0;
+        lv_anim_del(d_vent_fan, NULL);
+        return;
+    }
+    int period = 2600 - (rpm - 1000) * 13 / 10;
+    if (period < 280)  period = 280;
+    if (period > 2600) period = 2600;
+    if (abs(period - d_vent_period_ms) < 100) return;
+    d_vent_period_ms = period;
+    lv_anim_del(d_vent_fan, NULL);
+    lv_anim_t a; lv_anim_init(&a);
+    lv_anim_set_var(&a, d_vent_fan);
+    lv_anim_set_exec_cb(&a, d_vent_anim_cb);
+    lv_anim_set_values(&a, 0, 3600);
+    lv_anim_set_time(&a, period);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&a);
 }
 
 static void on_wake(lv_event_t * e) { (void)e; ui_wake_now(); }
@@ -124,6 +152,25 @@ static void d_refresh(lv_timer_t * t) {
         } else {
             lv_obj_add_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
             lv_label_set_text(d_wx_temp, "");
+        }
+    }
+
+    /* fan spinner */
+    if (d_vent_fan && d_vent_lbl) {
+        if (vent_state.connected) {
+            const char * pretty = vent_mode_label();
+            if (vent_state.remaining_min > 0)
+                lv_label_set_text_fmt(d_vent_lbl, "%s %dm %d%%",
+                                      pretty, vent_state.remaining_min, vent_state.speed_pct);
+            else
+                lv_label_set_text_fmt(d_vent_lbl, "%s %d%%",
+                                      pretty, vent_state.speed_pct);
+            d_vent_apply_anim(vent_state.fan_rpm);
+            lv_obj_clear_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -233,6 +280,24 @@ lv_obj_t * screen_dim_stock_create(void) {
     lv_obj_set_style_img_recolor(d_wx_icon, lv_color_hex(0xffffff), 0);   /* all white */
     lv_obj_set_style_img_recolor_opa(d_wx_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
+
+    /* Fan spinner — top-right column, between weather info and big setpoint.
+     * zoom=128 → 40×40 px; pivot centred so it rotates in place. Hidden until
+     * ventilation.c connects. */
+    d_vent_fan = lv_img_create(scr_root);
+    lv_img_set_src(d_vent_fan, &icon_fan);
+    lv_img_set_zoom(d_vent_fan, 128);
+    lv_obj_set_style_img_recolor(d_vent_fan, lv_color_hex(D_WHITE), 0);
+    lv_obj_set_style_img_recolor_opa(d_vent_fan, LV_OPA_COVER, 0);
+    lv_img_set_pivot(d_vent_fan, 40, 40);
+    lv_obj_set_pos(d_vent_fan, SX(878), SY(100));
+    lv_obj_add_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
+
+    d_vent_lbl = d_lbl(scr_root, "", OSR(20), D_GREY);
+    lv_obj_set_width(d_vent_lbl, SX(200));
+    lv_obj_set_style_text_align(d_vent_lbl, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(d_vent_lbl, SX(720), SY(152));
+    lv_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
 
     d_refresh(NULL);
     d_timer = lv_timer_create(d_refresh, 1000, NULL);
