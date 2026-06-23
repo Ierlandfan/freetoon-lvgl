@@ -121,8 +121,6 @@ static void poll_p1(void) {
     hw_state.voltage_l1_v     = (float)parse_num(j, "active_voltage_l1_v",    0);
     hw_state.current_l1_a     = (float)parse_num(j, "active_current_a",       0);
     hw_state.connected_p1     = 1;
-    if (settings.energy_source == 1)
-        meteradapter_on_flow(hw_state.power_w);
 }
 
 /* Track per-pour session totals. session_start_m3 is captured the moment
@@ -297,11 +295,21 @@ static void * hw_thread(void * arg) {
      * So poll the P1 only every 5th tick (~10 s); water stays at 2 s. Push-to-
      * RRD is rate-limited by its own 5-min bucket, so the extra ticks are free. */
     unsigned tick = 0;
+    time_t last_nilm_s = 0;
     while (1) {
         if (tick % 5 == 0) poll_p1();
         poll_water();
         push_to_rrd();
         tick++;
+        /* Feed NILM every 5 s from the cached P1 reading (P1 HTTP poll stays at
+         * 10 s to avoid exhausting its lwIP TIME_WAIT PCBs). */
+        if (settings.energy_source == 1 && hw_state.connected_p1) {
+            time_t now = time(NULL);
+            if (now - last_nilm_s >= 5) {
+                meteradapter_on_flow(hw_state.power_w);
+                last_nilm_s = now;
+            }
+        }
         sleep(2);
     }
     return NULL;
