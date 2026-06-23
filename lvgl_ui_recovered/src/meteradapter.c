@@ -19,16 +19,14 @@
 
 typedef struct { const char *name; float lo; float hi; } nilm_sig_t;
 static const nilm_sig_t nilm_sigs[] = {
-    { "Bathroom light",  13.0f,  28.0f  },
-    { "Fridge",          28.0f,  43.0f  },
-    { "CV boiler",       43.0f,  57.0f  },
-    { "TV / Decoder",    50.0f,  75.0f  },
-    { "Itho fan",       115.0f, 170.0f  },
+    /* no built-in signatures — every step goes to unknowns for user labelling */
 };
 
 meter_state_t    meter_state   = {0};
 nilm_unknown_t   nilm_unknowns [NILM_UNKNOWN_MAX] = {{0}};
 volatile int     nilm_unknown_count = 0;
+nilm_event_t     nilm_log      [NILM_LOG_MAX] = {{0}};
+volatile int     nilm_log_count = 0;
 
 void meteradapter_on_flow(float watts) {
     static float  prev_w       = -1.0f;
@@ -76,6 +74,16 @@ void meteradapter_on_flow(float watts) {
                      "%s %s", dev, delta > 0.0f ? "ON" : "OFF");
             meter_state.nilm_event_ts = now;
             last_nilm_ts = now;
+
+            /* Append to full event log for timeline screen */
+            {
+                int slot = nilm_log_count % NILM_LOG_MAX;
+                snprintf(nilm_log[slot].device, sizeof nilm_log[slot].device, "%s", dev);
+                nilm_log[slot].direction = (delta > 0.0f) ? +1 : -1;
+                nilm_log[slot].delta_w   = adelta;
+                nilm_log[slot].ts        = now;
+                nilm_log_count++;
+            }
         }
     }
     prev_w = watts;
