@@ -354,7 +354,7 @@ static void on_slot_click(lv_event_t * e) {
         case LINK_STATS:    ui_push(screen_stats_create());           break;
         case LINK_FORECAST: ui_push(screen_forecast_create());        break;
         case LINK_HEATER:   ui_push(screen_heater_advanced_create()); break;
-        case LINK_VENT:     ui_push(screen_vent_advanced_create());   break;
+        case LINK_VENT:     ui_push(screen_vent_remote_create());     break;
     }
 }
 
