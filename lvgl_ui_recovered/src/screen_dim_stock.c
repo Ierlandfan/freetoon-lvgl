@@ -281,23 +281,24 @@ lv_obj_t * screen_dim_stock_create(void) {
     lv_obj_set_style_img_recolor_opa(d_wx_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
 
-    /* Fan spinner — top-right column, between weather info and big setpoint.
-     * zoom=128 → 40×40 px; pivot centred so it rotates in place. Hidden until
-     * ventilation.c connects. */
+    /* Fan spinner — right column between weather info (bottom y≈92) and
+     * the big temperature (top y=252). zoom=192 → 60×60 px icon.
+     * Mode label sits above the icon; both right-align with the weather icon.
+     * Hidden until ventilation.c connects. */
+    d_vent_lbl = d_lbl(scr_root, "", OSR(20), D_GREY);
+    lv_obj_set_width(d_vent_lbl, SX(250));
+    lv_obj_set_style_text_align(d_vent_lbl, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(d_vent_lbl, SX(754), SY(104));
+    lv_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+
     d_vent_fan = lv_img_create(scr_root);
     lv_img_set_src(d_vent_fan, &icon_fan);
-    lv_img_set_zoom(d_vent_fan, 128);
+    lv_img_set_zoom(d_vent_fan, 192);   /* 192/256 × 80 = 60 px */
     lv_obj_set_style_img_recolor(d_vent_fan, lv_color_hex(D_WHITE), 0);
     lv_obj_set_style_img_recolor_opa(d_vent_fan, LV_OPA_COVER, 0);
     lv_img_set_pivot(d_vent_fan, 40, 40);
-    lv_obj_set_pos(d_vent_fan, SX(878), SY(100));
+    lv_obj_set_pos(d_vent_fan, SX(944), SY(136));   /* right-aligned; bottom ≈ y=196 */
     lv_obj_add_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
-
-    d_vent_lbl = d_lbl(scr_root, "", OSR(20), D_GREY);
-    lv_obj_set_width(d_vent_lbl, SX(200));
-    lv_obj_set_style_text_align(d_vent_lbl, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(d_vent_lbl, SX(720), SY(152));
-    lv_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
 
     d_refresh(NULL);
     d_timer = lv_timer_create(d_refresh, 1000, NULL);
