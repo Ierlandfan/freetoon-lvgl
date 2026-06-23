@@ -23,6 +23,7 @@
 #include "weather.h"
 #include "ventilation.h"
 #include "calendar.h"
+#include "domoticz.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -191,6 +192,34 @@ static void on_prog_toggle(lv_event_t * e) {
 static const int scene_state[4] = { 3, 1, 2, 0 };   /* Weg Thuis / Slapen Comfort */
 static void on_scene(lv_event_t * e) { boxtalk_set_program(scene_state[(int)(intptr_t)lv_event_get_user_data(e)]); }
 static void on_apps_grid(lv_event_t * e) { (void)e; ui_push(screen_settings_create()); }
+
+/* ---- collapsible lights handle (mirrors LVGL home screen) ---------------- */
+static lv_obj_t * s_lights_handle     = NULL;
+static lv_obj_t * s_lights_handle_lbl = NULL;
+
+static void open_lights_backend(void) {
+    if (settings.enable_domoticz) ui_push(screen_domoticz_create());
+    else                          ui_push(screen_lights_create());
+}
+static void s_lights_handle_set(bool open) {
+    if (!s_lights_handle) return;
+    lv_obj_set_size(s_lights_handle, open ? SX(160) : SX(56), open ? SY(56) : SY(80));
+    lv_obj_align(s_lights_handle, LV_ALIGN_LEFT_MID, open ? SX(4) : -SX(4), 0);
+    lv_obj_set_style_radius(s_lights_handle, open ? SX(16) : LV_RADIUS_CIRCLE, 0);
+    if (s_lights_handle_lbl) {
+        lv_label_set_text(s_lights_handle_lbl,
+                          open ? tr("Apparaten", "Devices") : LV_SYMBOL_CHARGE);
+        lv_obj_set_style_text_font(s_lights_handle_lbl, open ? SF(22) : SF(28), 0);
+    }
+}
+static void on_lights_handle(lv_event_t * e) {
+    switch (lv_event_get_code(e)) {
+        case LV_EVENT_PRESSED:                             s_lights_handle_set(true);  break;
+        case LV_EVENT_RELEASED: case LV_EVENT_PRESS_LOST: s_lights_handle_set(false); break;
+        case LV_EVENT_CLICKED: s_lights_handle_set(false); open_lights_backend();     break;
+        default: break;
+    }
+}
 
 /* ---- slot tile rendering + refresh --------------------------------------- */
 static void render_slot(slot_t * s) {
@@ -650,6 +679,24 @@ lv_obj_t * screen_home_stock_create(void) {
         lv_obj_clear_flag(dots[i], LV_OBJ_FLAG_SCROLLABLE);
     }
     update_dots();
+
+    /* Lights / devices handle — same collapsible left-edge tab as the LVGL
+     * home screen. Idles as a slim pill peeking from the left edge; press
+     * expands to "Apparaten" / "Devices"; release + click opens the backend. */
+    s_lights_handle = lv_btn_create(scr_root);
+    lv_obj_set_size(s_lights_handle, SX(56), SY(80));
+    lv_obj_align(s_lights_handle, LV_ALIGN_LEFT_MID, -SX(4), 0);
+    lv_obj_set_style_bg_color(s_lights_handle, lv_color_hex(C_ACCENT), 0);
+    lv_obj_set_style_radius(s_lights_handle, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(s_lights_handle, 0, 0);
+    lv_obj_set_style_shadow_width(s_lights_handle, SX(8), 0);
+    lv_obj_set_style_shadow_opa(s_lights_handle, LV_OPA_30, 0);
+    lv_obj_add_event_cb(s_lights_handle, on_lights_handle, LV_EVENT_ALL, NULL);
+    s_lights_handle_lbl = lv_label_create(s_lights_handle);
+    lv_label_set_text(s_lights_handle_lbl, LV_SYMBOL_CHARGE);
+    lv_obj_set_style_text_font(s_lights_handle_lbl, SF(28), 0);
+    lv_obj_set_style_text_color(s_lights_handle_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(s_lights_handle_lbl);
 
     refresh_cb(NULL);
     refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
