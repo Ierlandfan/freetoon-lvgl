@@ -58,8 +58,10 @@ static void ef_hex(const char *tag, const uint8_t *d, size_t n) {
 #define ESPHOME_MSG_LIGHT_STATE           24   /* LightStateResponse */
 #define ESPHOME_MSG_FAN_COMMAND           31   /* FanCommandRequest */
 #define ESPHOME_MSG_LIGHT_COMMAND         32   /* LightCommandRequest */
-#define ESPHOME_MSG_LIST_ENTITIES_SERVICES 41  /* ListEntitiesServicesResponse */
-#define ESPHOME_MSG_EXECUTE_SERVICE       42   /* ExecuteServiceRequest */
+#define ESPHOME_MSG_LIST_ENTITIES_TEXT_SENSOR 16  /* ListEntitiesTextSensorResponse */
+#define ESPHOME_MSG_TEXT_SENSOR_STATE         26  /* TextSensorStateResponse */
+#define ESPHOME_MSG_LIST_ENTITIES_SERVICES   41  /* ListEntitiesServicesResponse */
+#define ESPHOME_MSG_EXECUTE_SERVICE          42  /* ExecuteServiceRequest */
 
 /* ── Noise state ────────────────────────────────────────────────────────── */
 typedef struct {
@@ -84,8 +86,9 @@ typedef struct {
 } noise_ctx_t;
 
 /* entity keys discovered via ListEntities */
-static uint32_t g_fan_key   = 0;
-static uint32_t g_light_key = 0;
+static uint32_t g_fan_key    = 0;
+static uint32_t g_light_key  = 0;
+static uint32_t g_src_sensor_key = 0;
 static uint32_t g_service_key = 0;  /* key of the device 'mark_source_toon' user action */
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -536,6 +539,38 @@ static void handle_light_state(const uint8_t *pb, size_t pb_len) {
     }
 }
 
+static void handle_list_text_sensor(const uint8_t *pb, size_t pb_len) {
+    pb_reader_t r = { pb, pb_len };
+    int field, wire; uint64_t val = 0;
+    const uint8_t *lp = NULL; size_t ll = 0;
+    const uint8_t *oid = NULL; size_t oid_len = 0;
+    uint32_t key = 0;
+    while (pb_next(&r, &field, &wire, &val, &lp, &ll) > 0) {
+        if (field == 1 && wire == 2) { oid = lp; oid_len = ll; }
+        else if (field == 2 && wire == 5) key = (uint32_t)val;
+    }
+    if (oid && oid_len == 19 && memcmp(oid, "fanlamp_last_source", 19) == 0)
+        g_src_sensor_key = key;
+}
+
+static void handle_text_sensor_state(const uint8_t *pb, size_t pb_len) {
+    pb_reader_t r = { pb, pb_len };
+    int field, wire; uint64_t val = 0;
+    const uint8_t *lp = NULL; size_t ll = 0;
+    uint32_t key = 0;
+    const uint8_t *state = NULL; size_t state_len = 0;
+    while (pb_next(&r, &field, &wire, &val, &lp, &ll) > 0) {
+        if (field == 1 && wire == 5) key = (uint32_t)val;
+        else if (field == 2 && wire == 2) { state = lp; state_len = ll; }
+    }
+    if (key && key == g_src_sensor_key && state) {
+        size_t n = state_len < sizeof(efanlamp.last_source) - 1
+                   ? state_len : sizeof(efanlamp.last_source) - 1;
+        memcpy((void *)efanlamp.last_source, state, n);
+        ((char *)efanlamp.last_source)[n] = '\0';
+    }
+}
+
 static void handle_list_fan(const uint8_t *pb, size_t pb_len) {
     pb_reader_t r = { pb, pb_len };
     int field, wire; uint64_t val = 0;
@@ -606,11 +641,13 @@ static int recv_and_dispatch(int fd, noise_ctx_t *ctx) {
     if (msg_len > pt_len - 4) msg_len = (uint16_t)(pt_len - 4);
 
     switch (msg_type) {
-        case ESPHOME_MSG_FAN_STATE:         handle_fan_state(pb, msg_len);   break;
-        case ESPHOME_MSG_LIGHT_STATE:       handle_light_state(pb, msg_len); break;
-        case ESPHOME_MSG_LIST_ENTITIES_FAN: handle_list_fan(pb, msg_len);    break;
-        case ESPHOME_MSG_LIST_ENTITIES_LIGHT:handle_list_light(pb, msg_len); break;
-        case ESPHOME_MSG_LIST_ENTITIES_SERVICES: handle_list_services(pb, msg_len); break;
+        case ESPHOME_MSG_FAN_STATE:               handle_fan_state(pb, msg_len);         break;
+        case ESPHOME_MSG_LIGHT_STATE:             handle_light_state(pb, msg_len);       break;
+        case ESPHOME_MSG_TEXT_SENSOR_STATE:       handle_text_sensor_state(pb, msg_len); break;
+        case ESPHOME_MSG_LIST_ENTITIES_FAN:       handle_list_fan(pb, msg_len);          break;
+        case ESPHOME_MSG_LIST_ENTITIES_LIGHT:     handle_list_light(pb, msg_len);        break;
+        case ESPHOME_MSG_LIST_ENTITIES_TEXT_SENSOR: handle_list_text_sensor(pb, msg_len); break;
+        case ESPHOME_MSG_LIST_ENTITIES_SERVICES:  handle_list_services(pb, msg_len);     break;
         case ESPHOME_MSG_PING_REQUEST:
             /* Keepalive: ESPHome 2026.4.x drops clients that don't pong. */
             pthread_mutex_lock(&g_send_mutex);

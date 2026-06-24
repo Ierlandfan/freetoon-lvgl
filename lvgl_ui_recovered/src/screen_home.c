@@ -30,6 +30,7 @@
 #include "layout.h"
 #include "update_check.h"
 #include "pin_modal.h"
+#include "efanlamp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -1385,8 +1386,30 @@ static void refresh_cb(lv_timer_t * t) {
     slot_active[TILE_SLOT_WATER]  = slot_render_or_agenda(TILE_SLOT_WATER, 3,
                                                     lbl_inbox_main, lbl_inbox_sub);
 
-    /* Page-1 (swipe) slots — render the bound integration, or a placeholder. */
+    /* Page-1 (swipe) slots — render the bound integration, or a placeholder.
+     * Slot 0 is reserved for the efanlamp tile when a host is configured. */
     for (int i = 0; i < g_p1_count; i++) {
+        if (i == 0 && settings.efanlamp_host[0]) {
+            /* efanlamp tile: show fan speed + light state */
+            if (p1_title[i]) lv_label_set_text(p1_title[i], tr("Ventilator", "Fan Lamp"));
+            if (p1_main[i]) {
+                if (!efanlamp.connected)
+                    lv_label_set_text(p1_main[i], "...");
+                else if (efanlamp.fan_on)
+                    lv_label_set_text_fmt(p1_main[i], "L%d", efanlamp.fan_speed);
+                else
+                    lv_label_set_text(p1_main[i], tr("Uit", "Off"));
+            }
+            if (p1_sub[i]) {
+                if (efanlamp.connected && efanlamp.light_on)
+                    lv_label_set_text_fmt(p1_sub[i], tr("lamp %d%%", "lamp %d%%"), efanlamp.light_brightness);
+                else if (efanlamp.connected)
+                    lv_label_set_text(p1_sub[i], tr("lamp uit", "lamp off"));
+                else
+                    lv_label_set_text(p1_sub[i], "");
+            }
+            continue;
+        }
         const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_P1_0 + i);
         if (m) {
             if (p1_title[i]) lv_label_set_text(p1_title[i],
@@ -2386,7 +2409,12 @@ static void home_show_page(int n) {
     home_set_dot(n);
 }
 static void on_page1_slot(lv_event_t * e) {
-    (void)e;
+    lv_obj_t * tapped = lv_event_get_current_target(e);
+    /* Slot 0: efanlamp tile when configured */
+    if (p1_main[0] && tapped == lv_obj_get_parent(p1_main[0]) && settings.efanlamp_host[0]) {
+        ui_push(screen_efanlamp_create());
+        return;
+    }
     /* If the crypto integration is installed, a tap opens its price-history
      * graphs; otherwise fall back to the tile-assignment picker. */
     if (tile_slots_integration_by_id("crypto"))

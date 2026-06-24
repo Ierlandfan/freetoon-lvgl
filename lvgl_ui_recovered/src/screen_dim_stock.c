@@ -41,6 +41,8 @@ static lv_obj_t * d_vent_lbl = NULL;         /* Itho mode + % label */
 static int        d_vent_period_ms = 0;
 static lv_obj_t * d_efan_fan = NULL;         /* BLE fan spinning icon */
 static lv_obj_t * d_efan_lbl = NULL;         /* BLE fan speed label */
+static lv_obj_t * d_efan_light_lbl = NULL;   /* BLE lamp brightness label */
+static lv_obj_t * d_efan_src_lbl = NULL;     /* BLE last source label */
 static int        d_efan_period_ms = 0;
 #define D_NSEG 12
 static lv_obj_t * d_eseg[D_NSEG];
@@ -223,6 +225,27 @@ static void d_refresh(lv_timer_t * t) {
             lv_obj_add_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    /* BLE lamp brightness */
+    if (d_efan_light_lbl) {
+        if (efanlamp.connected) {
+            if (efanlamp.light_on)
+                lv_label_set_text_fmt(d_efan_light_lbl, tr("lamp %d%%", "lamp %d%%"), efanlamp.light_brightness);
+            else
+                lv_label_set_text(d_efan_light_lbl, tr("lamp uit", "lamp off"));
+            lv_obj_clear_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    /* BLE last source */
+    if (d_efan_src_lbl) {
+        if (efanlamp.connected && efanlamp.last_source[0]) {
+            lv_label_set_text(d_efan_src_lbl, (const char *)efanlamp.last_source);
+            lv_obj_clear_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 
     /* energy bar + live watts number */
     float pw = d_power_w();
@@ -367,6 +390,20 @@ lv_obj_t * screen_dim_stock_create(void) {
     lv_obj_set_style_text_align(d_efan_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(d_efan_lbl, SX(882), SY(438));
     lv_obj_add_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
+
+    /* BLE lamp label — amber, below fan label */
+    d_efan_light_lbl = d_lbl(scr_root, "", OSR(20), 0xE6C200);
+    lv_obj_set_width(d_efan_light_lbl, SX(160));
+    lv_obj_set_style_text_align(d_efan_light_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(d_efan_light_lbl, SX(882), SY(468));
+    lv_obj_add_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
+
+    /* BLE source label — dim grey, below light label */
+    d_efan_src_lbl = d_lbl(scr_root, "", OSR(16), 0x667788);
+    lv_obj_set_width(d_efan_src_lbl, SX(160));
+    lv_obj_set_style_text_align(d_efan_src_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(d_efan_src_lbl, SX(882), SY(494));
+    lv_obj_add_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
 
     d_refresh(NULL);
     d_timer = lv_timer_create(d_refresh, 1000, NULL);

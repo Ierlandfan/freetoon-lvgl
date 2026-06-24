@@ -12,11 +12,12 @@
  * Light brightness is 0-100 % (converted to 0.0-1.0 float internally). */
 
 typedef struct {
-    volatile int connected;        /* 1 = native API session live */
-    volatile int fan_on;           /* 1 = fan is on */
-    volatile int fan_speed;        /* 1-6, valid when fan_on */
-    volatile int light_on;         /* 1 = light is on */
-    volatile int light_brightness; /* 0-100 % */
+    volatile int  connected;          /* 1 = native API session live */
+    volatile int  fan_on;             /* 1 = fan is on */
+    volatile int  fan_speed;          /* 1-6, valid when fan_on */
+    volatile int  light_on;           /* 1 = light is on */
+    volatile int  light_brightness;   /* 0-100 % */
+    volatile char last_source[16];    /* "toon"/"ha"/"remote"/"web" */
 } efanlamp_state_t;
 
 extern efanlamp_state_t efanlamp;
