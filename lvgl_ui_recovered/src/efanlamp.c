@@ -44,6 +44,10 @@ static void ef_hex(const char *tag, const uint8_t *d, size_t n) {
 #define ESPHOME_MSG_HELLO_RESPONSE        2
 #define ESPHOME_MSG_CONNECT_REQUEST       3
 #define ESPHOME_MSG_CONNECT_RESPONSE      4
+#define ESPHOME_MSG_DISCONNECT_REQUEST    5
+#define ESPHOME_MSG_DISCONNECT_RESPONSE   6
+#define ESPHOME_MSG_PING_REQUEST          7
+#define ESPHOME_MSG_PING_RESPONSE         8
 #define ESPHOME_MSG_LIST_ENTITIES_REQUEST 11
 #define ESPHOME_MSG_LIST_ENTITIES_DONE    19
 #define ESPHOME_MSG_SUBSCRIBE_STATES      20
@@ -54,6 +58,8 @@ static void ef_hex(const char *tag, const uint8_t *d, size_t n) {
 #define ESPHOME_MSG_LIGHT_STATE           24   /* LightStateResponse */
 #define ESPHOME_MSG_FAN_COMMAND           31   /* FanCommandRequest */
 #define ESPHOME_MSG_LIGHT_COMMAND         32   /* LightCommandRequest */
+#define ESPHOME_MSG_LIST_ENTITIES_SERVICES 41  /* ListEntitiesServicesResponse */
+#define ESPHOME_MSG_EXECUTE_SERVICE       42   /* ExecuteServiceRequest */
 
 /* ── Noise state ────────────────────────────────────────────────────────── */
 typedef struct {
@@ -80,6 +86,7 @@ typedef struct {
 /* entity keys discovered via ListEntities */
 static uint32_t g_fan_key   = 0;
 static uint32_t g_light_key = 0;
+static uint32_t g_service_key = 0;  /* key of the device 'mark_source_toon' user action */
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 static void ef_sha256(const uint8_t *data, size_t len, uint8_t out[32]) {
@@ -241,8 +248,10 @@ static int sock_recv_all(int fd, uint8_t *buf, size_t len) {
  * or -1 on error. buf must be at least 65535 bytes. */
 static int read_noise_frame(int fd, uint8_t *buf, int max) {
     uint8_t hdr[3];
-    if (sock_recv_all(fd, hdr, 3) < 0) return -1;
-    if (hdr[0] != 0x01) return -1;
+    int rr = sock_recv_all(fd, hdr, 3);
+    DBG("[rnf] sock_recv_all(3)=%d hdr=%02x%02x%02x\n", rr, hdr[0], hdr[1], hdr[2]);
+    if (rr < 0) return -1;
+    if (hdr[0] != 0x01) { DBG("[rnf] bad indicator %02x\n", hdr[0]); return -1; }
     int len = ((int)hdr[1] << 8) | hdr[2];
     if (len > max) return -1;
     if (len > 0 && sock_recv_all(fd, buf, (size_t)len) < 0) return -1;
@@ -543,14 +552,51 @@ static void handle_list_light(const uint8_t *pb, size_t pb_len) {
         if (field == 2 && wire == 5) g_light_key = (uint32_t)val;
 }
 
+/* ListEntitiesServicesResponse: field 1 = name (str), field 2 = key (fixed32).
+   Record the key of the 'mark_source_toon' action so we can invoke it. */
+static void handle_list_services(const uint8_t *pb, size_t pb_len) {
+    pb_reader_t r = { pb, pb_len };
+    int field, wire; uint64_t val = 0;
+    const uint8_t *lp = NULL; size_t ll = 0;
+    const uint8_t *name = NULL; size_t name_len = 0;
+    uint32_t key = 0;
+    while (pb_next(&r, &field, &wire, &val, &lp, &ll) > 0) {
+        if (field == 1 && wire == 2) { name = lp; name_len = ll; }
+        else if (field == 2 && wire == 5) key = (uint32_t)val;
+    }
+    if (name && name_len == 16 && memcmp(name, "mark_source_toon", 16) == 0)
+        g_service_key = key;
+}
+
 /* Receive one Noise data frame, decrypt, dispatch. Returns 0 on success. */
+/* shared session state (declared here so recv_and_dispatch can send ping replies) */
+static int g_sock = -1;  /* shared fd, set after connect */
+static noise_ctx_t g_ctx;
+static pthread_mutex_t g_send_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* Send ExecuteServiceRequest (field 1 = fixed32 key, no args) for mark_source_toon.
+   Caller must hold g_send_mutex. Sent immediately before a fan/light command so the
+   device tags the resulting on_state as source "toon". */
+static void send_mark_source_toon_locked(void) {
+    if (!g_service_key || g_sock < 0) return;
+    uint8_t pb[8]; uint8_t *p = pb;
+    p = pb_write_fixed32(p, 1, g_service_key);
+    send_message(g_sock, &g_ctx, ESPHOME_MSG_EXECUTE_SERVICE, pb, (size_t)(p - pb));
+}
+
 static int recv_and_dispatch(int fd, noise_ctx_t *ctx) {
     static uint8_t frame_buf[4096];
     int len = read_noise_frame(fd, frame_buf, (int)sizeof frame_buf);
+    DBG("[rd] read_noise_frame len=%d recv_n=%llu\n", len, (unsigned long long)ctx->recv_n);
     if (len < 0) return -1;
 
     static uint8_t plain_buf[4096];
-    if (session_decrypt(ctx, frame_buf, (size_t)len, plain_buf) != 0) return -1;
+    if (session_decrypt(ctx, frame_buf, (size_t)len, plain_buf) != 0) {
+        DBG("[rd] DECRYPT FAIL len=%d recv_n=%llu first=%02x%02x%02x%02x\n",
+            len, (unsigned long long)ctx->recv_n,
+            frame_buf[0], len>1?frame_buf[1]:0, len>2?frame_buf[2]:0, len>3?frame_buf[3]:0);
+        return -1;
+    }
 
     size_t pt_len = (size_t)(len - 16);
     if (pt_len < 4) return 0;
@@ -564,6 +610,13 @@ static int recv_and_dispatch(int fd, noise_ctx_t *ctx) {
         case ESPHOME_MSG_LIGHT_STATE:       handle_light_state(pb, msg_len); break;
         case ESPHOME_MSG_LIST_ENTITIES_FAN: handle_list_fan(pb, msg_len);    break;
         case ESPHOME_MSG_LIST_ENTITIES_LIGHT:handle_list_light(pb, msg_len); break;
+        case ESPHOME_MSG_LIST_ENTITIES_SERVICES: handle_list_services(pb, msg_len); break;
+        case ESPHOME_MSG_PING_REQUEST:
+            /* Keepalive: ESPHome 2026.4.x drops clients that don't pong. */
+            pthread_mutex_lock(&g_send_mutex);
+            send_message(fd, ctx, ESPHOME_MSG_PING_RESPONSE, NULL, 0);
+            pthread_mutex_unlock(&g_send_mutex);
+            break;
         default: break;
     }
     return 0;
@@ -572,10 +625,6 @@ static int recv_and_dispatch(int fd, noise_ctx_t *ctx) {
 /* ── command API (called from LVGL thread, run on detached thread) ──────── */
 typedef struct { int on; int speed; } fan_cmd_t;
 typedef struct { int on; int brightness_pct; } light_cmd_t;
-
-static int g_sock = -1;  /* shared fd, set after connect */
-static noise_ctx_t g_ctx;
-static pthread_mutex_t g_send_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void * fan_cmd_thread(void *arg) {
     fan_cmd_t cmd = *(fan_cmd_t *)arg;
@@ -591,6 +640,7 @@ static void * fan_cmd_thread(void *arg) {
         p = pb_write_int32(p, 11, cmd.speed);
     }
     pthread_mutex_lock(&g_send_mutex);
+    send_mark_source_toon_locked();   /* tag this change as "toon" before it lands */
     send_message(g_sock, &g_ctx, ESPHOME_MSG_FAN_COMMAND, pb, (size_t)(p-pb));
     pthread_mutex_unlock(&g_send_mutex);
     return NULL;
@@ -611,6 +661,7 @@ static void * light_cmd_thread(void *arg) {
         p = pb_write_float(p, 5, bri);    /* brightness = 5 */
     }
     pthread_mutex_lock(&g_send_mutex);
+    send_mark_source_toon_locked();   /* tag this change as "toon" before it lands */
     send_message(g_sock, &g_ctx, ESPHOME_MSG_LIGHT_COMMAND, pb, (size_t)(p-pb));
     pthread_mutex_unlock(&g_send_mutex);
     return NULL;
@@ -672,7 +723,7 @@ static void * efanlamp_thread(void *arg) {
         uint8_t hello_pb[32]; uint8_t *p = hello_pb;
         p = pb_write_str(p, 1, "freetoon");
         p = pb_write_varint(pb_write_tag(p, 2, 0), 1);  /* api_version_major=1 */
-        p = pb_write_varint(pb_write_tag(p, 3, 0), 10); /* api_version_minor=10 */
+        p = pb_write_varint(pb_write_tag(p, 3, 0), 14); /* api_version_minor=14 (clears 'outdated API' warning) */
         pthread_mutex_lock(&g_send_mutex);
         g_sock = fd;
         pthread_mutex_unlock(&g_send_mutex);
@@ -681,19 +732,26 @@ static void * efanlamp_thread(void *arg) {
                          hello_pb, (size_t)(p - hello_pb)) < 0) {
             efanlamp.connected = 0; close(fd); g_sock = -1; sleep(30); continue;
         }
-        /* receive HelloResponse — read and discard */
-        if (recv_and_dispatch(fd, &g_ctx) < 0) {
-            efanlamp.connected = 0; close(fd); g_sock = -1; sleep(30); continue;
+        /* ESPHome 2026.1.0+: auth happens at Hello time; server may push log frames
+         * (from on_client_connected) before sending HelloResponse. Read until type 2. */
+        {
+            int hello_done = 0;
+            for (int limit = 10; limit > 0 && !hello_done; limit--) {
+                static uint8_t fb2[4096], pb_h[4096];
+                int flen = read_noise_frame(fd, fb2, sizeof fb2);
+                if (flen < 0) break;
+                if (session_decrypt(&g_ctx, fb2, (size_t)flen, pb_h) != 0) break;
+                size_t ptl = (size_t)(flen - 16);
+                if (ptl < 2) continue;
+                uint16_t mt = ((uint16_t)pb_h[0] << 8) | pb_h[1];
+                if (mt == ESPHOME_MSG_HELLO_RESPONSE) hello_done = 1;
+                /* else: log/status frame from on_client_connected — discard and loop */
+            }
+            if (!hello_done) {
+                efanlamp.connected = 0; close(fd); g_sock = -1; sleep(30); continue;
+            }
         }
-
-        /* ConnectRequest (empty password) */
-        if (send_message(fd, &g_ctx, ESPHOME_MSG_CONNECT_REQUEST, NULL, 0) < 0) {
-            efanlamp.connected = 0; close(fd); g_sock = -1; sleep(30); continue;
-        }
-        /* ConnectResponse */
-        if (recv_and_dispatch(fd, &g_ctx) < 0) {
-            efanlamp.connected = 0; close(fd); g_sock = -1; sleep(30); continue;
-        }
+        /* No ConnectRequest — removed in ESPHome 2026.1.0; server auto-authenticates at Hello */
 
         /* ListEntitiesRequest to discover fan + light keys */
         if (send_message(fd, &g_ctx, ESPHOME_MSG_LIST_ENTITIES_REQUEST, NULL, 0) < 0) {
@@ -712,6 +770,7 @@ static void * efanlamp_thread(void *arg) {
             if (mlen > pt_len2 - 4) mlen = (uint16_t)(pt_len2 - 4);
             if      (mtype == ESPHOME_MSG_LIST_ENTITIES_FAN)   handle_list_fan(pb2+4, mlen);
             else if (mtype == ESPHOME_MSG_LIST_ENTITIES_LIGHT)  handle_list_light(pb2+4, mlen);
+            else if (mtype == ESPHOME_MSG_LIST_ENTITIES_SERVICES) handle_list_services(pb2+4, mlen);
             else if (mtype == ESPHOME_MSG_LIST_ENTITIES_DONE)   break;
         }
 
@@ -831,14 +890,25 @@ int main(int argc, char **argv) {
     uint8_t hp[32]; uint8_t *p = hp;
     p = pb_write_str(p, 1, "freetoon");
     p = pb_write_varint(pb_write_tag(p, 2, 0), 1);
-    p = pb_write_varint(pb_write_tag(p, 3, 0), 10);
+    p = pb_write_varint(pb_write_tag(p, 3, 0), 14);
     if (send_message(fd, &g_ctx, ESPHOME_MSG_HELLO_REQUEST, hp, (size_t)(p - hp)) < 0) { fprintf(stderr,"[test] hello send fail\n"); return 3; }
-    if (recv_and_dispatch(fd, &g_ctx) < 0) { fprintf(stderr,"[test] hello resp fail\n"); return 3; }
-    fprintf(stderr, "[test] HelloResponse OK\n");
-
-    if (send_message(fd, &g_ctx, ESPHOME_MSG_CONNECT_REQUEST, NULL, 0) < 0) return 4;
-    if (recv_and_dispatch(fd, &g_ctx) < 0) { fprintf(stderr,"[test] connect resp fail\n"); return 4; }
-    fprintf(stderr, "[test] ConnectResponse OK\n");
+    /* ESPHome 2026.1.0+: auth at Hello; on_client_connected may push log frame before HelloResponse */
+    {
+        int hello_done = 0;
+        for (int limit = 10; limit > 0 && !hello_done; limit--) {
+            static uint8_t fbt[4096], pbt[4096];
+            int flen = read_noise_frame(fd, fbt, sizeof fbt);
+            if (flen < 0) { fprintf(stderr,"[test] hello read fail\n"); return 3; }
+            if (session_decrypt(&g_ctx, fbt, (size_t)flen, pbt) != 0) { fprintf(stderr,"[test] hello decrypt fail\n"); return 3; }
+            size_t ptl = (size_t)(flen - 16);
+            if (ptl < 2) continue;
+            uint16_t mt = ((uint16_t)pbt[0] << 8) | pbt[1];
+            fprintf(stderr, "[test] hello-phase msg type=%u len=%u\n", mt, (unsigned)(ptl-4 < 0xffff ? ptl-4 : 0));
+            if (mt == ESPHOME_MSG_HELLO_RESPONSE) hello_done = 1;
+        }
+        if (!hello_done) { fprintf(stderr,"[test] HelloResponse not received\n"); return 3; }
+    }
+    fprintf(stderr, "[test] HelloResponse OK (no ConnectRequest needed in 2026.1.0+)\n");
 
     send_message(fd, &g_ctx, ESPHOME_MSG_LIST_ENTITIES_REQUEST, NULL, 0);
     for (int limit = 60; limit > 0; limit--) {
@@ -853,12 +923,21 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[test] entity msg type=%u len=%u\n", mtype, mlen);
         if      (mtype == ESPHOME_MSG_LIST_ENTITIES_FAN)   handle_list_fan(pb2+4, mlen);
         else if (mtype == ESPHOME_MSG_LIST_ENTITIES_LIGHT) handle_list_light(pb2+4, mlen);
+        else if (mtype == ESPHOME_MSG_LIST_ENTITIES_SERVICES) handle_list_services(pb2+4, mlen);
         else if (mtype == ESPHOME_MSG_LIST_ENTITIES_DONE)  { fprintf(stderr,"[test] ListEntitiesDone\n"); break; }
     }
-    fprintf(stderr, "[test] fan_key=0x%08x light_key=0x%08x\n", g_fan_key, g_light_key);
+    fprintf(stderr, "[test] fan_key=0x%08x light_key=0x%08x service_key=0x%08x\n", g_fan_key, g_light_key, g_service_key);
 
     send_message(fd, &g_ctx, ESPHOME_MSG_SUBSCRIBE_STATES, NULL, 0);
     fprintf(stderr, "[test] subscribed.\n");
+
+    int watch_logs = (argc > 3 && strcmp(argv[3], "logs") == 0);
+    if (watch_logs) {
+        /* SubscribeLogsRequest = 28, field 1 = level (VERY_VERBOSE = 7) */
+        uint8_t lp[4]; uint8_t *q = pb_write_varint(pb_write_tag(lp, 1, 0), 7);
+        send_message(fd, &g_ctx, 28, lp, (size_t)(q - lp));
+        fprintf(stderr, "[test] subscribed to logs; watching ~60s — trigger fan from remote/HA/Toon now\n");
+    }
     /* optional command test: argv[3] = "fan:<0|1>:<speed>" e.g. fan:1:5 */
     if (argc > 3 && strncmp(argv[3], "fan:", 4) == 0) {
         int on = 0, spd = 3;
@@ -866,10 +945,31 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[test] sending FanCommand on=%d speed=%d\n", on, spd);
         efanlamp_fan_set(on, spd);
     }
-    for (int i = 0; i < 20; i++) {
-        if (recv_and_dispatch(fd, &g_ctx) < 0) break;
-        fprintf(stderr, "[test] state: fan_on=%d speed=%d light_on=%d bri=%d\n",
-                efanlamp.fan_on, efanlamp.fan_speed, efanlamp.light_on, efanlamp.light_brightness);
+
+    int iters = watch_logs ? 100000 : 20;
+    time_t t0 = time(NULL);
+    for (int i = 0; i < iters; i++) {
+        if (watch_logs && time(NULL) - t0 > 60) break;
+        /* inline decrypt+dispatch so we can also surface log (type 29) messages */
+        static uint8_t fb[4096], pb2[4096];
+        int flen = read_noise_frame(fd, fb, sizeof fb);
+        if (flen < 0) { if (watch_logs) continue; else break; }
+        if (session_decrypt(&g_ctx, fb, (size_t)flen, pb2) != 0) break;
+        size_t pt = (size_t)(flen - 16);
+        if (pt < 4) continue;
+        uint16_t mt = ((uint16_t)pb2[0] << 8) | pb2[1];
+        uint16_t ml = ((uint16_t)pb2[2] << 8) | pb2[3];
+        if (ml > pt - 4) ml = (uint16_t)(pt - 4);
+        if (mt == 29) {  /* SubscribeLogsResponse: field 3 = message string */
+            pb_reader_t r = { pb2 + 4, ml };
+            int f, w; uint64_t v; const uint8_t *lpp; size_t ll;
+            while (pb_next(&r, &f, &w, &v, &lpp, &ll) > 0)
+                if (f == 3 && w == 2) fprintf(stderr, "[LOG] %.*s\n", (int)ll, lpp);
+        } else if (mt == ESPHOME_MSG_FAN_STATE)   { handle_fan_state(pb2+4, ml);
+            fprintf(stderr, "[test] FAN state: on=%d speed=%d\n", efanlamp.fan_on, efanlamp.fan_speed);
+        } else if (mt == ESPHOME_MSG_LIGHT_STATE) { handle_light_state(pb2+4, ml);
+            fprintf(stderr, "[test] LIGHT state: on=%d bri=%d\n", efanlamp.light_on, efanlamp.light_brightness);
+        }
     }
     close(fd);
     return 0;
