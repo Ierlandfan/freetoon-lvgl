@@ -30,6 +30,10 @@
 #define HA_HOST   (settings.ha_host)
 #define HA_POLL_S 10
 #define HA_TOKEN_PATH "/mnt/data/ha.cfg"
+/* Last good GPS fix per tracker, persisted so a tag drop-out (unknown/
+ * unavailable) or a UI restart still shows the last known location instead
+ * of blanking to "unknown". */
+#define HA_TRACKERS_PATH "/mnt/data/ha_trackers.dat"
 
 /* Curtain entity ids are user-specific too — sourced from settings.
  * Empty curtain entity = curtain tile inactive. */
@@ -594,6 +598,29 @@ static void reverse_city(double lat, double lon, int person, int want_street,
     snprintf(geo_city[person], sizeof geo_city[person], "%s", out);
 }
 
+/* Persist / restore the last good fix for all three trackers, so a tag
+ * drop-out or a UI restart keeps showing the last known location. */
+static void ha_trackers_load(void) {
+    FILE * f = fopen(HA_TRACKERS_PATH, "r");
+    if (!f) return;
+    float la, lo, lb, ob, lc, oc;
+    if (fscanf(f, "%f %f %f %f %f %f", &la, &lo, &lb, &ob, &lc, &oc) == 6) {
+        ha_state.lat_a = la; ha_state.lon_a = lo;
+        ha_state.lat_b = lb; ha_state.lon_b = ob;
+        ha_state.lat_c = lc; ha_state.lon_c = oc;
+    }
+    fclose(f);
+}
+static void ha_trackers_save(void) {
+    FILE * f = fopen(HA_TRACKERS_PATH, "w");
+    if (!f) return;
+    fprintf(f, "%.6f %.6f\n%.6f %.6f\n%.6f %.6f\n",
+            ha_state.lat_a, ha_state.lon_a,
+            ha_state.lat_b, ha_state.lon_b,
+            ha_state.lat_c, ha_state.lon_c);
+    fclose(f);
+}
+
 /* Parse a life360 state object (REST /api/states body or a WS new_state) into
  * the location string + coords. */
 static void apply_life360(const char * body, char * out, size_t outsz,
@@ -602,7 +629,15 @@ static void apply_life360(const char * body, char * out, size_t outsz,
         double dlat, dlon;
         if (extract_double(body, "latitude", &dlat) &&
             extract_double(body, "longitude", &dlon)) {
-            *lat = (float)dlat; *lon = (float)dlon;
+            float nlat = (float)dlat, nlon = (float)dlon;
+            /* Only rewrite the persist file on a real change (>~1 m) so periodic
+             * polls re-reading the same fix don't churn the eMMC. */
+            float ddlat = nlat - *lat, ddlon = nlon - *lon;
+            if (ddlat < 0) ddlat = -ddlat;
+            if (ddlon < 0) ddlon = -ddlon;
+            int changed = (ddlat > 1e-5f || ddlon > 1e-5f);
+            *lat = nlat; *lon = nlon;
+            if (changed) ha_trackers_save();
         }
     }
     char state[24] = {0};
@@ -1269,6 +1304,7 @@ int ha_start(void) {
     load_token();
     ha_lights_load();
     ha_devices_load();
+    ha_trackers_load();   /* seed last-known fixes before the first poll/WS update */
     if (!g_token[0]) {
         fprintf(stderr, "[ha] no token at " HA_TOKEN_PATH " — HA tile will stay disconnected\n");
     }
