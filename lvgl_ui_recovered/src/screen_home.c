@@ -118,6 +118,7 @@ static lv_obj_t * envelope_badge_lbl;
 static lv_obj_t * lbl_forecast_city = NULL;
 static lv_obj_t * lbl_life360_a = NULL;
 static lv_obj_t * lbl_life360_b = NULL;
+static lv_obj_t * lbl_life360_c = NULL;
 /* Bicolor partly-cloudy overlay — yellow sun layered on top of the
  * white cloud for 'b'/'j' Buienradar codes. Hidden for all other codes;
  * set_forecast_icon() manages visibility + src + recolor. */
@@ -1302,6 +1303,7 @@ static void render_local_into(const char * id, lv_obj_t * title,
         if (title) lv_label_set_text(title, tr("Familie", "Family"));
         if (main)  lv_label_set_text(main, ha_state.loc_a[0] ? (const char *)ha_state.loc_a : "-");
         if (sub)   lv_label_set_text(sub,  (const char *)ha_state.loc_b);
+        if (lbl_life360_c) lv_label_set_text(lbl_life360_c, ha_state.loc_c[0] ? (const char *)ha_state.loc_c : "");
     } else if (!strcmp(id, "local:air")) {
         if (title) lv_label_set_text(title, tr("Lucht", "Air"));
         if (main)  lv_label_set_text_fmt(main, "%d ppm", toon_state.eco2);
@@ -2181,6 +2183,14 @@ static void refresh_cb(lv_timer_t * t) {
                     settings.life360_b_name[0] ? settings.life360_b_name : "B",
                     ha_state.loc_b[0]   ? ha_state.loc_b   : "?");
         }
+        if (lbl_life360_c) {
+            if (!settings.enable_ha || !settings.life360_c_entity[0])
+                lv_label_set_text(lbl_life360_c, "");
+            else
+                lv_label_set_text_fmt(lbl_life360_c, "%s: %s",
+                    settings.life360_c_name[0] ? settings.life360_c_name : "C",
+                    ha_state.loc_c[0]   ? ha_state.loc_c   : "?");
+        }
     }
 
     /* Forecast band — splat-recovery left two more copies of this
@@ -2929,6 +2939,16 @@ static void open_family_map(lv_event_t * e) {
         lv_obj_center(bbl);
     }
 
+    if (settings.life360_c_entity[0]) {
+        lv_obj_t * map_btn_c = lv_btn_create(card);
+        lv_obj_set_size(map_btn_c, SX(168), SY(50));
+        lv_obj_align(map_btn_c, LV_ALIGN_TOP_LEFT, px, SY(360));
+        lv_obj_add_event_cb(map_btn_c, on_map_b, LV_EVENT_CLICKED, NULL); /* reuse on_map_b for now */
+        lv_obj_t * ccl = lv_label_create(map_btn_c);
+        lv_label_set_text(ccl, settings.life360_c_name[0] ? settings.life360_c_name : "C");
+        lv_obj_center(ccl);
+    }
+
     lv_obj_t * x = lv_btn_create(card);
     lv_obj_set_size(x, SX(150), SY(50));
     lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, SX(-14), SY(-12));
@@ -3499,20 +3519,29 @@ lv_obj_t * screen_home_create(void) {
      * carries the identity so the scroll has full width for the address. */
     lbl_life360_a = lv_label_create(family_t.tile);
     lv_obj_set_style_text_color(lbl_life360_a, lv_color_hex(0x88aaff), 0);
-    lv_obj_set_style_text_font(lbl_life360_a, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_life360_a, SF(16), 0);
     lv_obj_set_width(lbl_life360_a, 194);
     lv_label_set_long_mode(lbl_life360_a, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_label_set_text(lbl_life360_a, "?");
-    lv_obj_align(lbl_life360_a, LV_ALIGN_TOP_LEFT, 0, 44);
+    lv_obj_align(lbl_life360_a, LV_ALIGN_TOP_LEFT, 0, 40);
 
     /* Person 2 — pink (mirrors dim screen). */
     lbl_life360_b = lv_label_create(family_t.tile);
     lv_obj_set_style_text_color(lbl_life360_b, lv_color_hex(0xff88cc), 0);
-    lv_obj_set_style_text_font(lbl_life360_b, SF(18), 0);
+    lv_obj_set_style_text_font(lbl_life360_b, SF(16), 0);
     lv_obj_set_width(lbl_life360_b, 194);
     lv_label_set_long_mode(lbl_life360_b, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_label_set_text(lbl_life360_b, "?");
-    lv_obj_align(lbl_life360_b, LV_ALIGN_TOP_LEFT, 0, 76);
+    lv_obj_align(lbl_life360_b, LV_ALIGN_TOP_LEFT, 0, 68);
+
+    /* Person 3 — green. */
+    lbl_life360_c = lv_label_create(family_t.tile);
+    lv_obj_set_style_text_color(lbl_life360_c, lv_color_hex(0x66cc88), 0);
+    lv_obj_set_style_text_font(lbl_life360_c, SF(16), 0);
+    lv_obj_set_width(lbl_life360_c, 194);
+    lv_label_set_long_mode(lbl_life360_c, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_label_set_text(lbl_life360_c, "");
+    lv_obj_align(lbl_life360_c, LV_ALIGN_TOP_LEFT, 0, 96);
 
     tile_t water_t;
     make_tile(scr_root, 790, 300, 214, 130, LT_WATER, tr("Water", "Water"), 0x44aaff, open_placeholder, &water_t);

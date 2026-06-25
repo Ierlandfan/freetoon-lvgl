@@ -155,7 +155,7 @@ int tile_slots_local_enabled(int i) {
         case 0: return 1;                                 /* energy — core (meteradapter/P1) */
         case 1: return settings.enable_p1_water;
         case 2: return settings.enable_vent;
-        case 3: return settings.enable_ha && settings.life360_a_entity[0] != 0;
+        case 3: return settings.enable_ha && (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0]);
         case 4: return 1;                                 /* air quality — core sensor */
         default: return 0;
     }

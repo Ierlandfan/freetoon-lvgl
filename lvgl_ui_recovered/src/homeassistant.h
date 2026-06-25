@@ -23,10 +23,12 @@ typedef struct {
      * Dutch city + street names without truncation. */
     char           loc_a[128];
     char           loc_b[128];
+    char           loc_c[128];
     /* Raw GPS for the map view (0 = unknown). From the device_tracker's
      * latitude/longitude attributes. */
     volatile float lat_a, lon_a;
     volatile float lat_b, lon_b;
+    volatile float lat_c, lon_c;
     /* Doorbell — doorbell_seq is bumped once when the trigger goes off->on
      * (opens the overlay). While the overlay is up the UI sets doorbell_live=1,
      * which makes the poll thread re-fetch the camera snapshot ~1x/s and bump

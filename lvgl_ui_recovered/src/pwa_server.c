@@ -1199,6 +1199,7 @@ static int handle_settings_get(int fd) {
         "\"update_check_enabled\":%d,\"update_channel\":%d,"
         "\"ha_host\":\"%s\",\"life360_a_entity\":\"%s\",\"life360_a_name\":\"%s\","
         "\"life360_b_entity\":\"%s\",\"life360_b_name\":\"%s\","
+        "\"life360_c_entity\":\"%s\",\"life360_c_name\":\"%s\","
         "\"curtain_entity\":\"%s\",\"curtain_bat_a\":\"%s\",\"curtain_bat_b\":\"%s\","
         "\"doorbell_entity\":\"%s\",\"doorbell_camera\":\"%s\",\"doorbell_seconds\":%d,"
         "\"doorbell_stream_url\":\"%s\","
@@ -1207,7 +1208,8 @@ static int handle_settings_get(int fd) {
         "\"news_enabled\":%d,\"news_rss_url\":\"%s\",\"news_scroll_speed\":%d,"
         "\"calendar_enabled\":%d,\"calendar_ha_entity\":\"%s\",\"calendar_ics_url\":\"%s\","
         "\"tile_rotate_enabled\":%d,\"tile_rotate_seconds\":%d,\"tile_rotate_members\":\"%s\","
-        "\"client_mode\":%d,\"master_host\":\"%s\""
+        "\"client_mode\":%d,\"master_host\":\"%s\","
+        "\"home_theme\":%d"
         "}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
         settings.active_brightness, settings.dim_brightness, settings.auto_brightness,
@@ -1226,6 +1228,7 @@ static int handle_settings_get(int fd) {
         settings.update_check_enabled, settings.update_channel,
         settings.ha_host, settings.life360_a_entity, settings.life360_a_name,
         settings.life360_b_entity, settings.life360_b_name,
+        settings.life360_c_entity, settings.life360_c_name,
         settings.curtain_entity, settings.curtain_bat_a, settings.curtain_bat_b,
         settings.doorbell_entity, settings.doorbell_camera, settings.doorbell_seconds,
         settings.doorbell_stream_url,
@@ -1234,7 +1237,8 @@ static int handle_settings_get(int fd) {
         settings.news_enabled, settings.news_rss_url, settings.news_scroll_speed,
         settings.calendar_enabled, settings.calendar_ha_entity, settings.calendar_ics_url,
         settings.tile_rotate_enabled, settings.tile_rotate_seconds, settings.tile_rotate_members,
-        settings.client_mode, settings.master_host);
+        settings.client_mode, settings.master_host,
+        settings.home_theme);
     char hdr[160];
     int hn = snprintf(hdr, sizeof hdr,
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
@@ -1331,6 +1335,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "client_mode", &iv))        settings.client_mode = !!iv;
     if (extract_str(body, "master_host", sv, sizeof sv))
         snprintf(settings.master_host, sizeof settings.master_host, "%s", sv);
+    if (extract_int(body, "home_theme", &iv))         settings.home_theme = !!iv;
     /* Home Assistant host + Life360 + curtain entities */
     if (extract_str(body, "ha_host", sv, sizeof sv))
         snprintf(settings.ha_host, sizeof settings.ha_host, "%s", sv);
@@ -1342,6 +1347,10 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.life360_b_entity, sizeof settings.life360_b_entity, "%s", sv);
     if (extract_str(body, "life360_b_name", sv, sizeof sv))
         snprintf(settings.life360_b_name, sizeof settings.life360_b_name, "%s", sv);
+    if (extract_str(body, "life360_c_entity", sv, sizeof sv))
+        snprintf(settings.life360_c_entity, sizeof settings.life360_c_entity, "%s", sv);
+    if (extract_str(body, "life360_c_name", sv, sizeof sv))
+        snprintf(settings.life360_c_name, sizeof settings.life360_c_name, "%s", sv);
     if (extract_str(body, "curtain_entity", sv, sizeof sv))
         snprintf(settings.curtain_entity, sizeof settings.curtain_entity, "%s", sv);
     if (extract_str(body, "curtain_bat_a", sv, sizeof sv))

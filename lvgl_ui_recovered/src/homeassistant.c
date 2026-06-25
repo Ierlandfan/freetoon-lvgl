@@ -656,6 +656,10 @@ static void poll_life360(void) {
         poll_life360_one(settings.life360_b_entity,
                          ha_state.loc_b,   sizeof(ha_state.loc_b),
                          &ha_state.lat_b, &ha_state.lon_b, 1);
+    if (settings.life360_c_entity[0])
+        poll_life360_one(settings.life360_c_entity,
+                         ha_state.loc_c,   sizeof(ha_state.loc_c),
+                         &ha_state.lat_c, &ha_state.lon_c, 2);
 }
 
 /* Fetch a fresh snapshot of the configured doorbell camera into
@@ -999,6 +1003,8 @@ static void dispatch_event(const char * msg) {
         apply_life360(ns, ha_state.loc_a, sizeof ha_state.loc_a, &ha_state.lat_a, &ha_state.lon_a, 0);
     else if (settings.life360_b_entity[0] && !strcmp(ent, settings.life360_b_entity))
         apply_life360(ns, ha_state.loc_b, sizeof ha_state.loc_b, &ha_state.lat_b, &ha_state.lon_b, 1);
+    else if (settings.life360_c_entity[0] && !strcmp(ent, settings.life360_c_entity))
+        apply_life360(ns, ha_state.loc_c, sizeof ha_state.loc_c, &ha_state.lat_c, &ha_state.lon_c, 2);
     else if (settings.doorbell_entity[0] && !strcmp(ent, settings.doorbell_entity))
         apply_doorbell(ns);
     /* Unified device list (light/cover/switch). */

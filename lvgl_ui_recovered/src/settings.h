@@ -171,6 +171,8 @@ typedef struct {
     char life360_a_name[24];
     char life360_b_entity[64];
     char life360_b_name[24];
+    char life360_c_entity[64];
+    char life360_c_name[24];
     /* Curtain tile — HA cover entity + two optional battery sensors. Empty
      * curtain_entity disables the curtain tile. All empty by default so no
      * personal entity ids ship in the binary. */
