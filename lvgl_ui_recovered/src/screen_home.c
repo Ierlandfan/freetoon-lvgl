@@ -2671,6 +2671,7 @@ static lv_obj_t  * map_addr_lbl = NULL;
 static lv_obj_t  * map_top_lbl  = NULL;   /* header: who + address */
 static lv_obj_t  * map_btn_a    = NULL;
 static lv_obj_t  * map_btn_b    = NULL;
+static lv_obj_t  * map_btn_c    = NULL;
 static lv_obj_t  * map_status   = NULL;
 static lv_timer_t * map_timer   = NULL;
 static volatile int g_map_ready = 0;            /* 0 loading, 1 ok, -1 fail */
@@ -2731,13 +2732,16 @@ static void map_tick(lv_timer_t * t) {
 }
 
 static void start_map_fetch(int person) {
+    if (person < 0 || person > 2) person = 0;
     g_map_person = person;
-    float lat = person ? ha_state.lat_b : ha_state.lat_a;
-    float lon = person ? ha_state.lon_b : ha_state.lon_a;
-    const char * who = person
-        ? (settings.life360_b_name[0] ? settings.life360_b_name : "B")
-        : (settings.life360_a_name[0] ? settings.life360_a_name : "A");
-    const char * loc = person ? (const char *)ha_state.loc_b : (const char *)ha_state.loc_a;
+    float lat = person == 2 ? ha_state.lat_c : person == 1 ? ha_state.lat_b : ha_state.lat_a;
+    float lon = person == 2 ? ha_state.lon_c : person == 1 ? ha_state.lon_b : ha_state.lon_a;
+    const char * names[3] = { settings.life360_a_name, settings.life360_b_name, settings.life360_c_name };
+    static const char * fallback[3] = { "A", "B", "C" };
+    const char * who = names[person][0] ? names[person] : fallback[person];
+    const char * loc = person == 2 ? (const char *)ha_state.loc_c
+                     : person == 1 ? (const char *)ha_state.loc_b
+                                   : (const char *)ha_state.loc_a;
     if (map_addr_lbl) lv_label_set_text_fmt(map_addr_lbl, "%s\n%s", who, loc[0] ? loc : "?");
     if (map_top_lbl)  lv_label_set_text_fmt(map_top_lbl, "%s  -  %s", who, loc[0] ? loc : "?");
     /* Highlight which person is selected. */
@@ -2745,6 +2749,8 @@ static void start_map_fetch(int person) {
                        lv_color_hex(person == 0 ? 0x2e6e3a : 0x2b3f5c), 0);
     if (map_btn_b) lv_obj_set_style_bg_color(map_btn_b,
                        lv_color_hex(person == 1 ? 0x2e6e3a : 0x2b3f5c), 0);
+    if (map_btn_c) lv_obj_set_style_bg_color(map_btn_c,
+                       lv_color_hex(person == 2 ? 0x2e6e3a : 0x2b3f5c), 0);
     if (map_marker)   lv_obj_add_flag(map_marker, LV_OBJ_FLAG_HIDDEN);
     if (map_status)   lv_obj_clear_flag(map_status, LV_OBJ_FLAG_HIDDEN);
 
@@ -2826,10 +2832,11 @@ static void map_close(lv_event_t * e) {
     if (map_modal) { lv_obj_del(map_modal); map_modal = NULL; }
     for (int i = 0; i < 4; i++) map_imgs[i] = NULL;
     map_box = map_marker = map_addr_lbl = map_status = NULL;
-    map_top_lbl = map_btn_a = map_btn_b = NULL;
+    map_top_lbl = map_btn_a = map_btn_b = map_btn_c = NULL;
 }
 static void on_map_a(lv_event_t * e) { (void)e; start_map_fetch(0); }
 static void on_map_b(lv_event_t * e) { (void)e; start_map_fetch(1); }
+static void on_map_c(lv_event_t * e) { (void)e; start_map_fetch(2); }
 static void on_map_zoom_in(lv_event_t * e)  { (void)e; if (g_map_zoom < 18) { g_map_zoom++; start_map_fetch(g_map_person); } }
 static void on_map_zoom_out(lv_event_t * e) { (void)e; if (g_map_zoom > 9)  { g_map_zoom--; start_map_fetch(g_map_person); } }
 
@@ -2940,10 +2947,10 @@ static void open_family_map(lv_event_t * e) {
     }
 
     if (settings.life360_c_entity[0]) {
-        lv_obj_t * map_btn_c = lv_btn_create(card);
+        map_btn_c = lv_btn_create(card);
         lv_obj_set_size(map_btn_c, SX(168), SY(50));
         lv_obj_align(map_btn_c, LV_ALIGN_TOP_LEFT, px, SY(360));
-        lv_obj_add_event_cb(map_btn_c, on_map_b, LV_EVENT_CLICKED, NULL); /* reuse on_map_b for now */
+        lv_obj_add_event_cb(map_btn_c, on_map_c, LV_EVENT_CLICKED, NULL);
         lv_obj_t * ccl = lv_label_create(map_btn_c);
         lv_label_set_text(ccl, settings.life360_c_name[0] ? settings.life360_c_name : "C");
         lv_obj_center(ccl);
@@ -2958,6 +2965,10 @@ static void open_family_map(lv_event_t * e) {
 
     start_map_fetch(0);
 }
+
+/* Public entry so other screens (e.g. the stock-theme home's Trackers tile)
+ * can open the same Life360 location map modal. */
+void life360_map_open(void) { open_family_map(NULL); }
 
 lv_obj_t * screen_home_create(void) {
     if (scr_root) return scr_root;

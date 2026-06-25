@@ -56,7 +56,7 @@
 #define N_ESEG  12
 
 /* ---- tile types ---------------------------------------------------------- */
-enum { LINK_NONE = 0, LINK_STATS, LINK_FORECAST, LINK_HEATER, LINK_VENT };
+enum { LINK_NONE = 0, LINK_STATS, LINK_FORECAST, LINK_HEATER, LINK_VENT, LINK_TRACKERS };
 typedef enum {
     TT_EMPTY = 0, TT_CLOCK, TT_HUMID, TT_POWER, TT_WATERP, TT_INDOOR,
     TT_CO2, TT_TVOC, TT_WEATHER, TT_BOILIN, TT_BOILOUT, TT_GAS, TT_VENT,
@@ -77,7 +77,7 @@ static const struct { const char * key; const char * nl; const char * en; int li
     { "gas",     "Gas",           "Gas",          LINK_STATS    },
     { "vent",    "Ventilatie",    "Ventilation",  LINK_VENT     },
     { "agenda",  "Agenda",        "Calendar",     LINK_NONE     },
-    { "trackers","Trackers",      "Trackers",     LINK_NONE     },
+    { "trackers","Trackers",      "Trackers",     LINK_TRACKERS },
 };
 
 typedef struct {
@@ -416,6 +416,7 @@ static void on_slot_click(lv_event_t * e) {
         case LINK_FORECAST: ui_push(screen_forecast_create());        break;
         case LINK_HEATER:   ui_push(screen_heater_advanced_create()); break;
         case LINK_VENT:     ui_push(screen_vent_remote_create());     break;
+        case LINK_TRACKERS: life360_map_open();                       break;
     }
 }
 

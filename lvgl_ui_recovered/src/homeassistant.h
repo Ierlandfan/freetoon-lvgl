@@ -51,6 +51,10 @@ typedef struct {
 
 extern ha_state_t ha_state;
 
+/* Opens the Life360/tracker location-map modal (defined in screen_home.c).
+ * Used by the native Family tile and the stock-theme Trackers tile. */
+void life360_map_open(void);
+
 /* Per-light state. The list is loaded at runtime from
  * /mnt/data/ha_lights.conf (one "entity_id|Name|Area" per line) so no
  * personal entity ids ship in the binary. ha_light_count holds how many
