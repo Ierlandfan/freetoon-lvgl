@@ -90,6 +90,8 @@ settings_t settings = {
     .life360_a_name      = "",
     .life360_b_entity    = "",
     .life360_b_name      = "",
+    .life360_c_entity    = "",
+    .life360_c_name      = "",
     .curtain_entity      = "",
     .curtain_bat_a       = "",
     .curtain_bat_b       = "",
@@ -302,6 +304,8 @@ void settings_load(void) {
         else if (strcmp(k, "life360_a_name")   == 0) snprintf(settings.life360_a_name, sizeof settings.life360_a_name, "%s", v);
         else if (strcmp(k, "life360_b_entity") == 0) snprintf(settings.life360_b_entity, sizeof settings.life360_b_entity, "%s", v);
         else if (strcmp(k, "life360_b_name")   == 0) snprintf(settings.life360_b_name, sizeof settings.life360_b_name, "%s", v);
+        else if (strcmp(k, "life360_c_entity") == 0) snprintf(settings.life360_c_entity, sizeof settings.life360_c_entity, "%s", v);
+        else if (strcmp(k, "life360_c_name")   == 0) snprintf(settings.life360_c_name, sizeof settings.life360_c_name, "%s", v);
         else if (strcmp(k, "curtain_entity")   == 0) snprintf(settings.curtain_entity, sizeof settings.curtain_entity, "%s", v);
         else if (strcmp(k, "curtain_bat_a")    == 0) snprintf(settings.curtain_bat_a, sizeof settings.curtain_bat_a, "%s", v);
         else if (strcmp(k, "curtain_bat_b")    == 0) snprintf(settings.curtain_bat_b, sizeof settings.curtain_bat_b, "%s", v);
@@ -482,6 +486,7 @@ static void sanitize_all_strings(void) {
         settings.tile_slot_energy, settings.tile_slot_family, settings.tile_slot_vent,
         settings.tile_slot_water, settings.life360_a_entity, settings.life360_a_name,
         settings.life360_b_entity, settings.life360_b_name,
+        settings.life360_c_entity, settings.life360_c_name,
     };
     for (size_t i = 0; i < sizeof fields / sizeof fields[0]; i++)
         settings_sanitize_str(fields[i]);
@@ -646,6 +651,8 @@ void settings_save(void) {
     fprintf(f, "life360_a_name=%s\n", settings.life360_a_name);
     fprintf(f, "life360_b_entity=%s\n", settings.life360_b_entity);
     fprintf(f, "life360_b_name=%s\n", settings.life360_b_name);
+    fprintf(f, "life360_c_entity=%s\n", settings.life360_c_entity);
+    fprintf(f, "life360_c_name=%s\n", settings.life360_c_name);
     fprintf(f, "curtain_entity=%s\n", settings.curtain_entity);
     fprintf(f, "curtain_bat_a=%s\n", settings.curtain_bat_a);
     fprintf(f, "curtain_bat_b=%s\n", settings.curtain_bat_b);

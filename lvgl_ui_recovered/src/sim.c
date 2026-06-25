@@ -174,6 +174,21 @@ static void mock_state(void) {
         settings.enable_ha = 0;
     }
     ha_state.connected = 1;
+    /* Sim-only: SIM_TRACKERS=1 seeds the stock-home Trackers tile (one tile,
+     * 3 rows) so the new tile can be rendered/verified headless. */
+    if (getenv("SIM_TRACKERS")) {
+        snprintf(settings.life360_a_entity, sizeof settings.life360_a_entity, "device_tracker.auto");
+        snprintf(settings.life360_a_name,   sizeof settings.life360_a_name,   "Auto");
+        snprintf(settings.life360_b_entity, sizeof settings.life360_b_entity, "device_tracker.google_pixel_6a");
+        snprintf(settings.life360_b_name,   sizeof settings.life360_b_name,   "Telefoon");
+        snprintf(settings.life360_c_entity, sizeof settings.life360_c_entity, "device_tracker.life360_member");
+        snprintf(settings.life360_c_name,   sizeof settings.life360_c_name,   "Caja");
+        snprintf(ha_state.loc_a, sizeof ha_state.loc_a, "Niet thuis");
+        snprintf(ha_state.loc_b, sizeof ha_state.loc_b, "Thuis");
+        snprintf(ha_state.loc_c, sizeof ha_state.loc_c, "Breezand");
+        snprintf(settings.stock_tiles, sizeof settings.stock_tiles,
+                 "clock,trackers,power,waterp,indoor,weather,vent,agenda,empty,empty,empty,empty,empty,empty,empty,empty");
+    }
     struct { int type; const char * ent; const char * name; int on; int bri; int pos; int pin; } d[] = {
         { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 0 },
         { HADEV_LIGHT,  "light.keuken",      "Keuken",      0,  -1, -1, 0 },

@@ -18,6 +18,7 @@
 #include "boxtalk.h"
 #include "icons.h"
 #include "settings.h"
+#include "homeassistant.h"
 #include "meteradapter.h"
 #include "homewizard.h"
 #include "weather.h"
@@ -59,7 +60,7 @@ enum { LINK_NONE = 0, LINK_STATS, LINK_FORECAST, LINK_HEATER, LINK_VENT };
 typedef enum {
     TT_EMPTY = 0, TT_CLOCK, TT_HUMID, TT_POWER, TT_WATERP, TT_INDOOR,
     TT_CO2, TT_TVOC, TT_WEATHER, TT_BOILIN, TT_BOILOUT, TT_GAS, TT_VENT,
-    TT_AGENDA, TT_COUNT
+    TT_AGENDA, TT_TRACKERS, TT_COUNT
 } ttype_t;
 static const struct { const char * key; const char * nl; const char * en; int link; } TM[TT_COUNT] = {
     { "empty",   "Verwijderen",   "Remove",       LINK_NONE     },
@@ -76,6 +77,7 @@ static const struct { const char * key; const char * nl; const char * en; int li
     { "gas",     "Gas",           "Gas",          LINK_STATS    },
     { "vent",    "Ventilatie",    "Ventilation",  LINK_VENT     },
     { "agenda",  "Agenda",        "Calendar",     LINK_NONE     },
+    { "trackers","Trackers",      "Trackers",     LINK_NONE     },
 };
 
 typedef struct {
@@ -289,6 +291,15 @@ static void render_slot(slot_t * s) {
         lv_obj_set_style_text_align(s->val, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(s->val, LV_ALIGN_CENTER, 0, SY(8));
         break;
+    case TT_TRACKERS:
+        /* One tile, up to three "Name: location" rows (configured trackers only).
+         * Left-aligned multi-line label below the title, mirrors the dim stack. */
+        s->val = mklabel(s->card, "", OSR(16), C_TITLE);
+        lv_label_set_long_mode(s->val, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(s->val, SX(G_COLW - 28));
+        lv_obj_set_style_text_align(s->val, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(s->val, LV_ALIGN_TOP_LEFT, SX(14), SY(48));
+        break;
     default: {
         /* big Open Sans Light is glyph-subset (digits/°/bar/Watt); values with
          * arbitrary letters (ppm/ppb/m3) need the full-Latin Regular face. */
@@ -352,6 +363,27 @@ static void refresh_slot(slot_t * s) {
             lv_label_set_text(s->val, b);
         } else lv_label_set_text(s->val, tr("Geen afspraken", "No events"));
         break;
+    case TT_TRACKERS: {
+        /* Build up to three rows from the configured trackers (A/B/C). Skip any
+         * slot with no entity set; show "--" until HA delivers a location. */
+        char tb[256]; size_t n = 0; int any = 0;
+        const struct { const char * name; const char * entity; const char * loc; } trk[3] = {
+            { settings.life360_a_name, settings.life360_a_entity, ha_state.loc_a },
+            { settings.life360_b_name, settings.life360_b_entity, ha_state.loc_b },
+            { settings.life360_c_name, settings.life360_c_entity, ha_state.loc_c },
+        };
+        tb[0] = 0;
+        for (int i = 0; i < 3; i++) {
+            if (!trk[i].entity[0]) continue;
+            const char * nm = trk[i].name[0] ? trk[i].name : trk[i].entity;
+            const char * lc = trk[i].loc[0]  ? trk[i].loc  : "--";
+            n += snprintf(tb + n, sizeof tb - n, "%s%s: %s", any ? "\n" : "", nm, lc);
+            any = 1;
+            if (n >= sizeof tb) break;
+        }
+        if (!any) snprintf(tb, sizeof tb, "%s", tr("Geen trackers", "No trackers"));
+        lv_label_set_text(s->val, tb);
+        break; }
     case TT_WEATHER: {
         snprintf(b, sizeof b, "%.1f°", weather_state.current_temp); comma(b); lv_label_set_text(s->val, b);
         lv_label_set_text(s->sub, weather_state.current_desc[0] ? weather_state.current_desc : tr("Buiten", "Outside"));
