@@ -591,13 +591,20 @@ static void apply_life360(const char * body, char * out, size_t outsz,
     }
     char state[24] = {0};
     extract_str(body, "state", state, sizeof(state));
-    if (strcmp(state, "home") == 0) {
+    if (strcasecmp(state, "home") == 0) {
         snprintf(out, outsz, "home");
         return;
     }
     char addr[160] = {0};
     extract_str(body, "address", addr, sizeof(addr));
     if (!addr[0]) {
+        /* No Life360 address — try reverse geocode from coords (works for any
+         * device_tracker that exposes latitude/longitude, e.g. Google Find My). */
+        if (lat && lon && (*lat != 0.0f || *lon != 0.0f)) {
+            char gcity[48] = {0};
+            reverse_city(*lat, *lon, person, gcity, sizeof gcity);
+            if (gcity[0]) { snprintf(out, outsz, "%s", gcity); return; }
+        }
         if (state[0]) snprintf(out, outsz, "%s", state);
         return;
     }

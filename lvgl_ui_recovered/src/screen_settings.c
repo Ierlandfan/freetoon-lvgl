@@ -2247,17 +2247,17 @@ static void open_ha_entities_modal(lv_event_t * e) {
     y = ha_field_row(p, y, tr("MJPEG-stream-URL:", "MJPEG stream URL:"), settings.doorbell_stream_url, "http://.../stream.mjpeg", tw, &ta_doorbell_stream, NULL);
     y += 8;
 
-    /* ── Family / Life360 ── */
+    /* ── Family / Trackers ── */
     lsec = lv_label_create(p);
     lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
-    lv_label_set_text(lsec, tr("\xE2\x94\x80\xE2\x94\x80 Gezin \xE2\x94\x80\xE2\x94\x80", "\xE2\x94\x80\xE2\x94\x80 Family \xE2\x94\x80\xE2\x94\x80"));
+    lv_label_set_text(lsec, tr("\xE2\x94\x80\xE2\x94\x80 Trackers \xE2\x94\x80\xE2\x94\x80", "\xE2\x94\x80\xE2\x94\x80 Trackers \xE2\x94\x80\xE2\x94\x80"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
-    y = ha_field_row(p, y, tr("Persoon A entiteit:", "Person A entity:"), settings.life360_a_entity, "device_tracker.life360_alice", tw, &ta_life360_a_entity, "device_tracker");
-    y = ha_field_row(p, y, tr("Persoon A naam:", "Person A name:"), settings.life360_a_name, "Alice", tw, &ta_life360_a_name, NULL);
-    y = ha_field_row(p, y, tr("Persoon B entiteit:", "Person B entity:"), settings.life360_b_entity, "device_tracker.life360_bob", tw, &ta_life360_b_entity, "device_tracker");
-    y = ha_field_row(p, y, tr("Persoon B naam:", "Person B name:"), settings.life360_b_name, "Bob", tw, &ta_life360_b_name, NULL);
+    y = ha_field_row(p, y, tr("Tracker A entiteit:", "Tracker A entity:"), settings.life360_a_entity, "device_tracker.auto", tw, &ta_life360_a_entity, "device_tracker");
+    y = ha_field_row(p, y, tr("Tracker A naam:", "Tracker A name:"), settings.life360_a_name, "Auto", tw, &ta_life360_a_name, NULL);
+    y = ha_field_row(p, y, tr("Tracker B entiteit:", "Tracker B entity:"), settings.life360_b_entity, "device_tracker.google_pixel_6a", tw, &ta_life360_b_entity, "device_tracker");
+    y = ha_field_row(p, y, tr("Tracker B naam:", "Tracker B name:"), settings.life360_b_name, "Telefoon", tw, &ta_life360_b_name, NULL);
     y += 8;
 
     /* ── Calendar ── */
