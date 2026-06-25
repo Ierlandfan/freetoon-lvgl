@@ -551,29 +551,45 @@ static const char * strip_postcode(const char * city) {
 /* Life360's address attribute often lacks the city (just "street, province"),
  * so reverse-geocode the GPS via OSM Nominatim to get the real town/city.
  * Cached per person on a ~100m grid so we don't hammer the service. */
-static char geo_key[2][32];
-static char geo_city[2][48];
-static void reverse_city(double lat, double lon, int person, char * out, size_t osz) {
+static char geo_key[3][40];
+static char geo_city[3][64];
+/* Reverse-geocode lat/lon for a tracker.
+ *   want_street=0 → town/city name (zoom 14) — used to supplement a Life360
+ *                   address that only carries the province.
+ *   want_street=1 → street name (zoom 18, the road field, NO house number) —
+ *                   used for GPS-only trackers (e.g. a Google Find My car) where
+ *                   the street is more useful than the town. Falls back to the
+ *                   town when no road is returned (e.g. on open road / water). */
+static void reverse_city(double lat, double lon, int person, int want_street,
+                         char * out, size_t osz) {
     out[0] = 0;
-    if (person < 0 || person > 1) return;
-    char key[32];
-    snprintf(key, sizeof key, "%.3f,%.3f", lat, lon);   /* ~100m bucket */
+    if (person < 0 || person > 2) return;
+    char key[40];
+    snprintf(key, sizeof key, "%d:%.3f,%.3f", want_street, lat, lon);   /* ~100m bucket */
     if (strcmp(key, geo_key[person]) == 0) { snprintf(out, osz, "%s", geo_city[person]); return; }
     char cmd[400];
     snprintf(cmd, sizeof cmd,
         "/usr/bin/curl -fsSL -k --max-time 8 -A 'freetoon-lvgl/1.0' "
         "'https://nominatim.openstreetmap.org/reverse?lat=%.5f&lon=%.5f"
-        "&format=json&zoom=14&addressdetails=1'", lat, lon);
+        "&format=json&zoom=%d&addressdetails=1'", lat, lon, want_street ? 18 : 14);
     FILE * fp = popen(cmd, "r");
     if (!fp) return;
     static char body[4096];
     size_t n = fread(body, 1, sizeof body - 1, fp);
     pclose(fp);
     body[n] = 0;
-    /* Nominatim address sub-object: prefer city, then town/village/municipality. */
-    const char * keys[] = { "city", "town", "village", "municipality", "suburb", NULL };
-    for (int i = 0; keys[i]; i++)
-        if (extract_str(body, keys[i], out, osz) && out[0]) break;
+    /* Street first when asked (road, then pedestrian/footway-style ways). */
+    if (want_street) {
+        const char * skeys[] = { "road", "pedestrian", "footway", "cycleway", "path", NULL };
+        for (int i = 0; skeys[i]; i++)
+            if (extract_str(body, skeys[i], out, osz) && out[0]) break;
+    }
+    /* City/town — the want_street fallback, or the primary result otherwise. */
+    if (!out[0]) {
+        const char * keys[] = { "city", "town", "village", "municipality", "suburb", NULL };
+        for (int i = 0; keys[i]; i++)
+            if (extract_str(body, keys[i], out, osz) && out[0]) break;
+    }
     snprintf(geo_key[person], sizeof geo_key[person], "%s", key);
     snprintf(geo_city[person], sizeof geo_city[person], "%s", out);
 }
@@ -601,8 +617,9 @@ static void apply_life360(const char * body, char * out, size_t outsz,
         /* No Life360 address — try reverse geocode from coords (works for any
          * device_tracker that exposes latitude/longitude, e.g. Google Find My). */
         if (lat && lon && (*lat != 0.0f || *lon != 0.0f)) {
-            char gcity[48] = {0};
-            reverse_city(*lat, *lon, person, gcity, sizeof gcity);
+            char gcity[64] = {0};
+            /* GPS-only tracker (no Life360 address): show the street name. */
+            reverse_city(*lat, *lon, person, 1, gcity, sizeof gcity);
             if (gcity[0]) { snprintf(out, outsz, "%s", gcity); return; }
         }
         if (state[0]) snprintf(out, outsz, "%s", state);
@@ -624,9 +641,9 @@ static void apply_life360(const char * body, char * out, size_t outsz,
     split_street(work, street, sizeof(street), num, sizeof(num));
     /* Prefer the reverse-geocoded city (Life360 only gives the province); fall
      * back to the address's region segment when geocoding has nothing yet. */
-    char gcity[48] = {0};
+    char gcity[64] = {0};
     if (lat && lon && (*lat != 0.0f || *lon != 0.0f))
-        reverse_city(*lat, *lon, person, gcity, sizeof gcity);
+        reverse_city(*lat, *lon, person, 0, gcity, sizeof gcity);   /* city to supplement the address */
     const char * city = gcity[0] ? gcity : (c1 ? strip_postcode(trim(c1 + 1)) : "");
 
     /* Compose "city > street > number" with graceful elision. */
