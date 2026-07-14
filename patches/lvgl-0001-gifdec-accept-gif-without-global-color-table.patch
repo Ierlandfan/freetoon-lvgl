@@ -1,0 +1,42 @@
+diff --git a/src/extra/libs/gif/gifdec.c b/src/extra/libs/gif/gifdec.c
+index 3ee9b71..47cdc7f 100644
+--- a/src/extra/libs/gif/gifdec.c
++++ b/src/extra/libs/gif/gifdec.c
+@@ -92,16 +92,16 @@ static gd_GIF * gif_open(gd_GIF * gif_base)
+     height = read_num(gif_base);
+     /* FDSZ */
+     f_gif_read(gif_base, &fdsz, 1);
+-    /* Presence of GCT */
+-    if (!(fdsz & 0x80)) {
+-        LV_LOG_WARN("no global color table\n");
+-        goto fail;
+-    }
++    /* Presence of GCT. Buienradar's radar GIF emits no GCT — every
++       frame carries its own LCT — so we accept the no-GCT case here and
++       leave the GCT empty (gct.size = 0). The per-frame LCT path later
++       fills in palette.colors for the active frame. */
++    int has_gct = (fdsz & 0x80) ? 1 : 0;
+     /* Color Space's Depth */
+     depth = ((fdsz >> 4) & 7) + 1;
+     /* Ignore Sort Flag. */
+-    /* GCT Size */
+-    gct_sz = 1 << ((fdsz & 0x07) + 1);
++    /* GCT Size — only meaningful when has_gct, but compute regardless. */
++    gct_sz = has_gct ? (1 << ((fdsz & 0x07) + 1)) : 0;
+     /* Background Color Index */
+     f_gif_read(gif_base, &bgidx, 1);
+     /* Aspect Ratio */
+@@ -120,9 +120,11 @@ static gd_GIF * gif_open(gd_GIF * gif_base)
+     gif->width  = width;
+     gif->height = height;
+     gif->depth  = depth;
+-    /* Read GCT */
++    /* Read GCT — skip the byte read entirely in the no-GCT case so we
++       don't consume bytes that belong to the first frame block. */
+     gif->gct.size = gct_sz;
+-    f_gif_read(gif, gif->gct.colors, 3 * gif->gct.size);
++    if (gct_sz)
++        f_gif_read(gif, gif->gct.colors, 3 * gif->gct.size);
+     gif->palette = &gif->gct;
+     gif->bgindex = bgidx;
+     gif->canvas = (uint8_t *) &gif[1];

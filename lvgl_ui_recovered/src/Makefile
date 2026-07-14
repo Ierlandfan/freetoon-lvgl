@@ -152,8 +152,34 @@ OBJ           := $(patsubst %.c,$(BUILDDIR)/%.o,$(ALL_SRC))
 VERFILE := $(BUILDDIR)/.buildver
 $(shell mkdir -p $(BUILDDIR); [ "$$(cat $(VERFILE) 2>/dev/null)" = "$(BUILD_VERSION)" ] || printf '%s' "$(BUILD_VERSION)" > $(VERFILE))
 
-.PHONY: all clean abi-check
+# --- vendored-LVGL patches -------------------------------------------------
+# The lvgl submodule tracks upstream lvgl/lvgl, so our fixes can't be committed
+# into it and a fresh `clone --recursive` would come up without them — silently,
+# with a broken Buienradar radar image. Apply patches/lvgl-*.patch here instead.
+#
+# Done at parse time (not as a prerequisite of `all`) so it is guaranteed to
+# finish before any recipe runs: as a phony prereq it could race the -j4 compile
+# of the very file it patches. `apply --check --reverse` succeeds when a patch is
+# already applied, which makes this idempotent.
+LVGL_PATCHES := $(sort $(wildcard ../../patches/lvgl-*.patch))
+ifneq ($(wildcard lvgl/.git),)
+LVGL_PATCH_ERR := $(shell for p in $(LVGL_PATCHES); do \
+    a=$$(cd $$(dirname $$p) && pwd)/$$(basename $$p); \
+    git -C lvgl apply --check --reverse "$$a" >/dev/null 2>&1 && continue; \
+    git -C lvgl apply "$$a" >/dev/null 2>&1 || echo "$$(basename $$p)"; \
+  done)
+ifneq ($(strip $(LVGL_PATCH_ERR)),)
+$(error LVGL patch failed to apply: $(LVGL_PATCH_ERR) — the submodule has \
+        diverged. See patches/README.md; do not build an unpatched tree)
+endif
+endif
+
+.PHONY: all clean abi-check lvgl-patches
 all: $(BUILDDIR)/$(OUT) $(EXTRA)
+
+# Manual/explicit application (the parse-time block above already did it).
+lvgl-patches:
+	@echo "LVGL patches applied: $(notdir $(LVGL_PATCHES))"
 
 # Recompile the version-bearing objects whenever BUILD_VERSION changes
 # (placed after `all` so it doesn't hijack the default goal).
