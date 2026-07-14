@@ -1,12 +1,16 @@
+# Cross toolchains — persistent by default (they used to sit in /tmp, which a
+# reboot wipes). Fetch with ../scripts/setup-toolchains.sh; override with TC_ROOT.
+TC_ROOT ?= $(HOME)/toolchains
+
 TARGET ?= host
 ifeq ($(TARGET),toon2)
-  CC := /tmp/qt_rebuild/linaro/bin/arm-linux-gnueabihf-gcc
-  SR := --sysroot=/tmp/qt_rebuild/linaro/arm-linux-gnueabihf/libc
+  CC := $(TC_ROOT)/linaro/bin/arm-linux-gnueabihf-gcc
+  SR := --sysroot=$(TC_ROOT)/linaro/arm-linux-gnueabihf/libc
   AR :=
   OUT := boxtalk_mirror
 else ifeq ($(TARGET),toon1)
-  CC := /tmp/qt_rebuild/toon1-toolchain/bin/arm-linux-gcc
-  SR := --sysroot=/tmp/qt_rebuild/toon1-toolchain/arm-buildroot-linux-gnueabi/sysroot
+  CC := $(TC_ROOT)/toon1-toolchain/bin/arm-linux-gcc
+  SR := --sysroot=$(TC_ROOT)/toon1-toolchain/arm-buildroot-linux-gnueabi/sysroot
   AR := -march=armv5te -marm -mfloat-abi=soft
   OUT := boxtalk_mirror-toon1
 else

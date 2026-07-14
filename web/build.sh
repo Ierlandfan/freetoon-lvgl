@@ -11,13 +11,19 @@
 set -e
 cd "$(dirname "$0")"
 
+# Pull in the toolchain environment ourselves if the caller hasn't. build-env.sh
+# both sources emsdk and puts a python >= 3.10 ahead of the system one, which
+# emscripten hard-requires (Debian's 3.9 makes emcc abort).
+if ! command -v emcc >/dev/null 2>&1 && [ -f ../scripts/build-env.sh ]; then
+    . ../scripts/build-env.sh
+fi
+
 if ! command -v emcc >/dev/null 2>&1; then
     cat <<EOF >&2
-emcc not found. Install Emscripten (https://emscripten.org/docs/getting_started/downloads.html):
-    git clone https://github.com/emscripten-core/emsdk
-    cd emsdk && ./emsdk install latest && ./emsdk activate latest
-    source ./emsdk_env.sh
-then re-run this script.
+emcc not found. Set the build environment up once:
+    ./scripts/setup-toolchains.sh      # fetches emsdk (+ both ARM toolchains)
+then re-run this script. To use an emsdk you already have, source its
+emsdk_env.sh first — but note emscripten needs python >= 3.10 on PATH.
 EOF
     exit 1
 fi

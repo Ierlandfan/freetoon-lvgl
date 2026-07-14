@@ -250,15 +250,37 @@ Use this if you want to modify the UI or the bridges.
    git submodule update --init --recursive
    ```
 
-2. Cross-compile for ARMv7 hardfloat. The Makefile expects a Linaro
-   toolchain at `/tmp/qt_rebuild/linaro/` (mirror of
-   `gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz`). Adjust
-   the path in the Makefiles if yours lives elsewhere.
+2. Fetch the cross toolchains — once. They land in `~/toolchains`
+   (override with `TC_ROOT`), which is where every Makefile looks by default.
 
    ```bash
-   make -C lvgl_ui_recovered/src        # produces lvgl_ui_recovered/build/toonui
-   make -C p1bridge                     # produces p1bridge/p1bridge
-   make -C quby_bridge                  # produces quby_bridge/quby_bridge (optional)
+   ./scripts/setup-toolchains.sh
+   ```
+
+   That pulls the Linaro armhf compiler (Toon 2), the Bootlin armv5
+   soft-float one (Toon 1), and — only if you want the browser/PWA
+   bundle — emsdk. It's idempotent, so re-running is harmless.
+
+3. Cross-compile for ARMv7 hardfloat.
+
+   ```bash
+   make -C lvgl_ui_recovered/src              # → lvgl_ui_recovered/build/toonui
+   make -C lvgl_ui_recovered/src abi-check    # ALWAYS: see below
+   make -C p1bridge                           # produces p1bridge/p1bridge
+   make -C quby_bridge                        # produces quby_bridge/quby_bridge (optional)
+   ```
+
+   **Run `abi-check`.** The Toon's glibc is 2.21 and the toolchains are
+   much newer, so it is easy to link something the device cannot load —
+   the binary builds cleanly and then dies at startup. `abi-check` fails
+   the build if any glibc symbol newer than 2.21, or any symbol missing
+   from the Toon 1's firmware, is imported. It is the thing that makes a
+   different-but-equivalent toolchain safe to use.
+
+   For the browser/PWA (WASM) bundle:
+
+   ```bash
+   web/build.sh     # sources scripts/build-env.sh itself if emcc isn't on PATH
    ```
 
    Native desktop build with the SDL2 driver is also wired up — useful
