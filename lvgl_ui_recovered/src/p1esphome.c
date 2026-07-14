@@ -81,22 +81,30 @@ static int http_get(const char * host, const char * path, char * out, size_t out
     return got ? 0 : -1;
 }
 
-/* Read one ESPHome sensor's `value`. Returns 0 on success. A sensor that is
- * present but has no reading yet serialises as "value":null → treated as a
- * miss so we don't latch a 0. */
+/* read_sensor outcomes. The difference matters: a wrong sensor name and an
+ * unreachable box are completely different problems, and reporting the first as
+ * the second sends the user off tweaking ESPHome config that was never broken.
+ * The object id is the sensor's *name*, slugified — so a device whose YAML was
+ * customised (or localised) answers 404 on the stock ids below. */
+#define RS_OK        0
+#define RS_NO_CONN  -1   /* nothing answered on the socket */
+#define RS_NO_VALUE -2   /* something answered, but not a sensor value (404?) */
+
+/* A sensor that is present but has no reading yet serialises as "value":null →
+ * also RS_NO_VALUE, so we don't latch a 0. */
 static int read_sensor(const char * host, const char * object_id, float * out) {
     char path[96], body[512];
     snprintf(path, sizeof path, "/sensor/%s", object_id);
-    if (http_get(host, path, body, sizeof body) != 0) return -1;
+    if (http_get(host, path, body, sizeof body) != 0) return RS_NO_CONN;
     const char * j = strstr(body, "\r\n\r\n");
     j = j ? j + 4 : body;
     const char * v = strstr(j, "\"value\":");
-    if (!v) return -1;
+    if (!v) return RS_NO_VALUE;
     v += 8;
     while (*v == ' ' || *v == '\t') v++;
-    if (*v == 'n') return -1;                  /* null — no reading yet */
+    if (*v == 'n') return RS_NO_VALUE;         /* null — no reading yet */
     *out = (float)strtod(v, NULL);
-    return 0;
+    return RS_OK;
 }
 
 /* Trailing-60-min gas, derived from the cumulative counter — same approach as
@@ -132,14 +140,25 @@ static void gas_hour_update(float gas_now) {
 /* Live power. DSMR reports consumption and production as two separate positive
  * sensors; the rest of the UI wants one signed watt figure (negative = export),
  * matching what the HomeWizard's active_power_w gives us. */
+/* Set by poll_power so the thread can log *why* it failed. */
+static int last_fail = RS_NO_CONN;
+
 static void poll_power(const char * host) {
     float consumed_kw = 0, produced_kw = 0;
-    int have_c = (read_sensor(host, "power_consumed", &consumed_kw) == 0);
-    int have_p = (read_sensor(host, "power_produced", &produced_kw) == 0);
+    int rc_c = read_sensor(host, "power_consumed", &consumed_kw);
+    int rc_p = read_sensor(host, "power_produced", &produced_kw);
     p1esp_state.polled = 1;
-    if (!have_c && !have_p) { p1esp_state.connected = 0; return; }
-    p1esp_state.consumed_w = consumed_kw * 1000.0f;
-    p1esp_state.produced_w = produced_kw * 1000.0f;
+    if (rc_c != RS_OK && rc_p != RS_OK) {
+        /* Reached the box but neither sensor answered with a value → the names
+         * don't match this device's YAML, not a connectivity problem. */
+        last_fail = (rc_c == RS_NO_CONN && rc_p == RS_NO_CONN) ? RS_NO_CONN : RS_NO_VALUE;
+        p1esp_state.connected = 0;
+        return;
+    }
+    /* A single-phase meter that never exports still publishes power_produced, so
+     * a miss on one of the two is fine — treat it as zero rather than dropping. */
+    p1esp_state.consumed_w = (rc_c == RS_OK) ? consumed_kw * 1000.0f : 0.0f;
+    p1esp_state.produced_w = (rc_p == RS_OK) ? produced_kw * 1000.0f : 0.0f;
     p1esp_state.power_w    = p1esp_state.consumed_w - p1esp_state.produced_w;
     p1esp_state.connected  = 1;
 }
@@ -172,6 +191,11 @@ static void * p1_thread(void * arg) {
                 if (logged_up)
                     fprintf(stderr, "[p1esp] %s: %.0f W (in %.0f / out %.0f)\n", host,
                             p1esp_state.power_w, p1esp_state.consumed_w, p1esp_state.produced_w);
+                else if (last_fail == RS_NO_VALUE)
+                    fprintf(stderr, "[p1esp] %s answered but has no 'power_consumed' / "
+                                    "'power_produced' sensor — the sensor names in its ESPHome "
+                                    "YAML differ from Zuidwijk's stock config. Check "
+                                    "http://%s/sensor/power_consumed in a browser.\n", host, host);
                 else
                     fprintf(stderr, "[p1esp] %s unreachable — is ESPHome's web_server "
                                     "enabled on port 80?\n", host);

@@ -1973,11 +1973,24 @@ static void on_int_energy_src(lv_event_t * e) {
     settings_save();
     integ_dirty_hint();
 }
+/* Unlike the HA modal, Integrations has no Save button to collect textareas on
+ * the way out — it's otherwise all switches, which persist as they're flipped.
+ * So commit on DEFOCUSED *and* on DELETE: closing the modal with the keyboard
+ * still up tears the textarea down without ever defocusing it, and the value
+ * would be lost. DELETE fires before the object's text is freed, and
+ * modal_close()'s own settings_save() has already run by then (the delete is
+ * async), so save again here. */
 static void on_int_p1esp_host(lv_event_t * e) {
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c != LV_EVENT_DEFOCUSED && c != LV_EVENT_DELETE) return;
     const char * v = lv_textarea_get_text(lv_event_get_target(e));
-    snprintf(settings.p1esp_host, sizeof settings.p1esp_host, "%s", v ? v : "");
+    if (!v) return;
+    if (strcmp(v, settings.p1esp_host) == 0) return;   /* unchanged — don't churn the flash */
+    snprintf(settings.p1esp_host, sizeof settings.p1esp_host, "%s", v);
     settings_save();
-    integ_dirty_hint();
+    /* NOT on DELETE: the hint label is a sibling in the modal being torn down and
+     * may already be freed. Only touch UI while the modal is still alive. */
+    if (c == LV_EVENT_DEFOCUSED) integ_dirty_hint();
 }
 
 static void open_ha_entities_modal(lv_event_t * e);
@@ -2011,7 +2024,7 @@ static void open_integrations_modal(lv_event_t * e) {
         lv_textarea_set_one_line(ta, true);
         lv_textarea_set_placeholder_text(ta, "192.168.1.20 / slimmelezer.local");
         lv_textarea_set_text(ta, settings.p1esp_host);
-        lv_obj_add_event_cb(ta, on_int_p1esp_host, LV_EVENT_DEFOCUSED, NULL);
+        lv_obj_add_event_cb(ta, on_int_p1esp_host, LV_EVENT_ALL, NULL);
     }
     y += 84;
 
