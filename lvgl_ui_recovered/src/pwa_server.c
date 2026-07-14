@@ -1374,7 +1374,9 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.vent_host, sizeof settings.vent_host, "%s", sv);
     if (extract_str(body, "opnsense_host", sv, sizeof sv))
         snprintf(settings.opnsense_host, sizeof settings.opnsense_host, "%s", sv);
-    if (extract_int(body, "energy_source", &iv))      settings.energy_source = !!iv;
+    /* 0=meteradapter 1=HomeWizard 2=ESPHome/Zuidwijk 3=HA — not a boolean */
+    if (extract_int(body, "energy_source", &iv) && iv >= 0 && iv <= 3)
+        settings.energy_source = iv;
     /* Auto-update */
     if (extract_int(body, "auto_update_enabled", &iv))settings.auto_update_enabled = !!iv;
     if (extract_int(body, "auto_update_hour", &iv))   settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;

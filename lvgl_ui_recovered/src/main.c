@@ -144,6 +144,9 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[main] boxtalk_start failed\n");
         if (homewizard_start() != 0)
             fprintf(stderr, "[main] homewizard_start failed\n");
+        extern int p1esphome_start(void);
+        if (p1esphome_start() != 0)
+            fprintf(stderr, "[main] p1esphome_start failed\n");
         extern int meteradapter_start(void);
         if (meteradapter_start() != 0)
             fprintf(stderr, "[main] meteradapter_start failed\n");

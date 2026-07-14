@@ -9,6 +9,7 @@
 #include "boxtalk.h"
 #include "settings.h"
 #include "homewizard.h"
+#include "energy.h"
 #include "homeassistant.h"
 #include "packages.h"
 #include "weather.h"
@@ -574,19 +575,17 @@ static void refresh_cb(lv_timer_t * t) {
      * on a fixed full-scale. Side honours dim_bars_swap; gated by show_dim_bars.
      * Gas needs the P1; energy follows settings.energy_source (Toon vs HWE). */
     if (bar_l_env) {
-        int   e_conn = (settings.energy_source == 0)
-                         ? meter_state.connected
-                         : (settings.enable_p1_elec && hw_state.connected_p1);
-        float e = (settings.energy_source == 0) ? meter_state.power_w
-                                                : hw_state.power_w;
+        int   e_conn = energy_connected();
+        float e = energy_power_w();
         if (e < 0) e = 0;                          /* export → empty */
         float er = e / DIM_E_FULL_W;
         char etxt[24];
         if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
         else           snprintf(etxt, sizeof etxt, "%.0f W", e);
 
-        int   g_conn = hw_state.connected_p1;
-        float g = hw_state.gas_hour_m3; if (g < 0) g = 0;
+        float gh = energy_gas_hour_m3();
+        int   g_conn = (gh >= 0);
+        float g = gh; if (g < 0) g = 0;
         float gr = g / DIM_G_FULL_M3H;
         char gtxt[24];
         snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);

@@ -9,6 +9,7 @@
 #include "boxtalk.h"
 #include "settings.h"
 #include "homewizard.h"
+#include "energy.h"
 #include "homeassistant.h"
 #include "packages.h"
 #include "weather.h"
@@ -548,18 +549,16 @@ static void refresh_cb(lv_timer_t * t) {
      * settings.energy_source (Toon vs HWE). The whole block can be toggled off
      * via the existing show_dim_bars setting (or hidden in the dim editor). */
     if (en_pwr_lbl) {
-        int   e_conn = (settings.energy_source == 0)
-                         ? meter_state.connected
-                         : (settings.enable_p1_elec && hw_state.connected_p1);
-        float e = (settings.energy_source == 0) ? meter_state.power_w
-                                                : hw_state.power_w;
+        int   e_conn = energy_connected();
+        float e = energy_power_w();
         if (e < 0) e = 0;                          /* export → empty */
         char etxt[24];
         if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
         else           snprintf(etxt, sizeof etxt, "%.0f W", e);
 
-        int   g_conn = hw_state.connected_p1;
-        float g = hw_state.gas_hour_m3; if (g < 0) g = 0;
+        float gh = energy_gas_hour_m3();
+        int   g_conn = (gh >= 0);
+        float g = gh; if (g < 0) g = 0;
         char gtxt[24];
         snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
 

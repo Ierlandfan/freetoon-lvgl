@@ -18,6 +18,7 @@
 #include "homeassistant.h"
 #include "meteradapter.h"
 #include "homewizard.h"
+#include "energy.h"
 #include "weather.h"
 #include "icons.h"
 #include "ventilation.h"
@@ -56,9 +57,7 @@ extern meter_state_t meter_state;
 extern hw_state_t    hw_state;
 const char * program_label(void);
 
-static float d_power_w(void) {
-    return settings.energy_source == 0 ? meter_state.power_w : hw_state.power_w;
-}
+static float d_power_w(void) { return energy_power_w(); }
 static void d_comma(char * s) { for (; *s; s++) if (*s == '.') *s = ','; }
 
 /* The dim screen mirrors the stock home: if the user dropped the water-pressure

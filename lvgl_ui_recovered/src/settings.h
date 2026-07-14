@@ -115,9 +115,23 @@ typedef struct {
      *   0 = meteradapter — the Toon's own built-in smart-meter reading via
      *       happ_pwrusage (the official/stock path). Default.
      *   1 = p1 — HomeWizard P1 over the LAN (the homewizard.c poller).
+     *   2 = p1esp — ESPHome P1 reader, e.g. a Zuidwijk SlimmeLezer (p1esphome.c).
+     *   3 = ha — Home Assistant sensor entities (energy_* below).
      * Per-device: a Toon with a working meteradapter uses 0; a setup that
      * reads the meter via a HomeWizard P1 instead picks 1. */
     int energy_source;
+    char p1esp_host[64];        /* ESPHome P1 reader — ip, host or host:port */
+
+    /* HA sensor entities for energy_source == 3. Power is watts, gas m³. */
+    char ha_power_entity[64];
+    char ha_gas_entity[64];
+    /* Solar production. This is deliberately NOT part of energy_source: a P1
+     * meter can only see what crosses the meter (i.e. net export), never gross
+     * panel production — the house consumes some of its own solar directly. So
+     * the solar tile always reads an HA inverter/production sensor (watts), and
+     * shows "--" when it isn't configured, rather than quietly mislabelling
+     * export as yield. */
+    char ha_solar_entity[64];
 
     /* Boot-picker — when 1, the launcher-spawned `toonui --bootpick`
      * shows a 10 s "freetoon vs stock qt-gui" picker before dispatching.

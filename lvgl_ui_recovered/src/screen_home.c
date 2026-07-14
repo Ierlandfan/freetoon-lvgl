@@ -16,6 +16,7 @@
 #endif
 #include "icons.h"
 #include "homewizard.h"
+#include "energy.h"
 #include "meteradapter.h"
 #include "settings.h"
 #include "weather.h"
@@ -287,31 +288,8 @@ static int        vent_anim_period_ms = -1;
 
 static lv_timer_t * refresh_timer = NULL;
 
-/* ---- Energy source selector ----
- * settings.energy_source: 0 = meteradapter (Toon's own meter via happ_pwrusage),
- * 1 = HomeWizard P1. The Energy tile reads through these so the user can switch
- * source in Settings without touching the rest of the layout. */
-static int energy_connected(void) {
-    return settings.energy_source == 0 ? meter_state.connected
-                                       : (settings.enable_p1_elec && hw_state.connected_p1);
-}
-static float energy_power_w(void) {
-    return settings.energy_source == 0 ? meter_state.power_w : hw_state.power_w;
-}
-/* Cumulative gas (m³) is only available from the HomeWizard P1; happ_pwrusage's
- * HTTP path doesn't expose it. Returns <0 when unavailable. */
-static float energy_gas_m3(void) {
-    if (settings.energy_source == 1 && hw_state.connected_p1) return hw_state.gas_m3;
-    return -1.0f;
-}
-static const char * energy_offline_label(void) {
-    if (settings.energy_source == 1)        /* HomeWizard P1 */
-        return hw_state.polled_p1 ? tr("P1 offline", "P1 offline")
-                                  : tr("Initialiseren...", "Initializing...");
-    /* meteradapter: last_flow_s == 0 means no notify has arrived yet */
-    return meter_state.last_flow_s ? tr("meter offline", "meter offline")
-                                   : tr("Initialiseren...", "Initializing...");
-}
+/* Energy readings come from energy.c, which resolves settings.energy_source
+ * (Toon meteradapter / HomeWizard P1 / ESPHome P1 / Home Assistant). */
 
 /* ---------- tile builder helpers ---------- */
 typedef struct {

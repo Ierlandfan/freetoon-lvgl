@@ -43,6 +43,15 @@ typedef struct {
     volatile int   blinds_is_closed;  /* 0/1 */
     volatile int   blinds_battery;    /* % — min of the two child sensors */
     char           blinds_state[16];  /* "open" / "closed" / "opening" / "closing" / "unknown" */
+    /* Energy sensors (settings.ha_power_entity / ha_gas_entity / ha_solar_entity).
+     * have_* is 0 until the entity has actually returned a number, so the UI can
+     * tell "not configured / not answering" from a genuine 0 W. */
+    volatile float energy_power_w;    /* grid power, watts (negative = export) */
+    volatile float energy_gas_m3;     /* cumulative gas, m³ */
+    volatile float solar_w;           /* gross solar production, watts */
+    volatile int   have_power;
+    volatile int   have_gas;
+    volatile int   have_solar;
 } ha_state_t;
 
 /* Where poll_doorbell() writes the fetched JPEG (LVGL stdio drive 'S'). */

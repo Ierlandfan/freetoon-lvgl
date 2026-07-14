@@ -122,7 +122,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  screen_adapters.c screen_appliances.c screen_energy_timeline.c screen_domoticz.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
                  screen_dim_layout_editor.c screen_dim_grid.c \
                  screen_crypto_picker.c screen_crypto.c screen_ha_picker.c screen_ha_devices.c \
-                 stats.c airhist.c homewizard.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c \
+                 stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c \
                  wastecollection.c ventilation.c homeassistant.c efanlamp.c monocypher.c sha2.c \
                  notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \

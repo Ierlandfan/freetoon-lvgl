@@ -174,6 +174,13 @@ static void mock_state(void) {
         settings.enable_ha = 0;
     }
     ha_state.connected = 1;
+    /* Solar production, so the Zonnepanelen tile has something to draw.
+     * SIM_NO_SOLAR=1 renders the unconfigured state instead. */
+    if (!getenv("SIM_NO_SOLAR")) {
+        snprintf(settings.ha_solar_entity, sizeof settings.ha_solar_entity, "sensor.solar_power");
+        ha_state.solar_w = 1240.0f;
+        ha_state.have_solar = 1;
+    }
     /* Sim-only: SIM_TRACKERS=1 seeds the stock-home Trackers tile (one tile,
      * 3 rows) so the new tile can be rendered/verified headless. */
     if (getenv("SIM_TRACKERS")) {

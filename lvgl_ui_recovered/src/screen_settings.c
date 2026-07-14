@@ -1929,7 +1929,6 @@ static lv_obj_t * sw_int_p1_water;
 static lv_obj_t * sw_int_vent;
 static lv_obj_t * sw_int_ha;
 static lv_obj_t * sw_int_hide_offline;
-static lv_obj_t * sw_int_energy_src;
 
 static void integ_dirty_hint(void) {
     if (!lbl_integ_hint) return;
@@ -1964,13 +1963,21 @@ static void on_int_hide_offline(lv_event_t * e) {
     settings.hide_offline_tiles =
         lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
-/* Energy source: OFF = meteradapter (Toon's own meter, default), ON = HomeWizard
- * P1. Live — both pollers always run, the Energy tile just reads the chosen one,
- * so no restart needed (persist it though). */
+/* Energy source. Every poller runs regardless; the tiles just read the chosen
+ * one through energy.c, so switching is live — but persist it. Changing to/from
+ * the ESPHome reader needs a restart to start its poller (it only spawns when a
+ * host is configured), hence the dirty hint. */
+static lv_obj_t * dd_energy_src = NULL;
 static void on_int_energy_src(lv_event_t * e) {
-    settings.energy_source =
-        lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings.energy_source = (int)lv_dropdown_get_selected(lv_event_get_target(e));
     settings_save();
+    integ_dirty_hint();
+}
+static void on_int_p1esp_host(lv_event_t * e) {
+    const char * v = lv_textarea_get_text(lv_event_get_target(e));
+    snprintf(settings.p1esp_host, sizeof settings.p1esp_host, "%s", v ? v : "");
+    settings_save();
+    integ_dirty_hint();
 }
 
 static void open_ha_entities_modal(lv_event_t * e);
@@ -1983,8 +1990,29 @@ static void open_integrations_modal(lv_event_t * e) {
     int y = 70;
 
     lv_obj_t * r;
-    r = panel_row(p, y, tr("Energiebron: AAN = HomeWizard P1, UIT = meteradapter", "Energy source: ON = HomeWizard P1, OFF = meteradapter"), NULL);
-    sw_int_energy_src = row_switch(r, settings.energy_source, on_int_energy_src);
+    r = panel_row(p, y, tr("Energiebron", "Energy source"), NULL);
+    dd_energy_src = lv_dropdown_create(r);
+    lv_dropdown_set_options(dd_energy_src,
+        tr("Toon meteradapter\nHomeWizard P1\nZuidwijk / ESPHome P1\nHome Assistant",
+           "Toon meteradapter\nHomeWizard P1\nZuidwijk / ESPHome P1\nHome Assistant"));
+    lv_dropdown_set_selected(dd_energy_src, settings.energy_source);
+    lv_obj_set_width(dd_energy_src, SX(300));
+    lv_obj_align(dd_energy_src, LV_ALIGN_RIGHT_MID, SX(-12), 0);
+    lv_obj_add_event_cb(dd_energy_src, on_int_energy_src, LV_EVENT_VALUE_CHANGED, NULL);
+    y += 84;
+
+    /* Zuidwijk SlimmeLezer (or any ESPHome `dsmr` reader) — needs ESPHome's
+     * web_server enabled on port 80, which Zuidwijk's stock config ships with. */
+    r = panel_row(p, y, tr("Zuidwijk/ESPHome P1 host", "Zuidwijk/ESPHome P1 host"), NULL);
+    {
+        lv_obj_t * ta = lv_textarea_create(r);
+        lv_obj_set_size(ta, SX(300), SY(44));
+        lv_obj_align(ta, LV_ALIGN_RIGHT_MID, SX(-12), 0);
+        lv_textarea_set_one_line(ta, true);
+        lv_textarea_set_placeholder_text(ta, "192.168.1.20 / slimmelezer.local");
+        lv_textarea_set_text(ta, settings.p1esp_host);
+        lv_obj_add_event_cb(ta, on_int_p1esp_host, LV_EVENT_DEFOCUSED, NULL);
+    }
     y += 84;
 
     r = panel_row(p, y, tr("HomeWizard P1 (elektriciteit + gas)", "HomeWizard P1 (electricity + gas)"), NULL);
@@ -2053,6 +2081,9 @@ static lv_obj_t * ta_life360_b_name     = NULL;
 static lv_obj_t * ta_life360_c_entity   = NULL;
 static lv_obj_t * ta_life360_c_name     = NULL;
 static lv_obj_t * ta_calendar_ha_entity = NULL;
+static lv_obj_t * ta_ha_power_entity    = NULL;
+static lv_obj_t * ta_ha_gas_entity      = NULL;
+static lv_obj_t * ta_ha_solar_entity    = NULL;
 
 /* Browse-button context — heap-allocated, freed in the callback. */
 struct ha_browse_ctx {
@@ -2139,6 +2170,9 @@ static void on_ha_entities_save(lv_event_t * e) {
     SAVE_TA(ta_life360_c_entity,   settings.life360_c_entity);
     SAVE_TA(ta_life360_c_name,     settings.life360_c_name);
     SAVE_TA(ta_calendar_ha_entity, settings.calendar_ha_entity);
+    SAVE_TA(ta_ha_power_entity,    settings.ha_power_entity);
+    SAVE_TA(ta_ha_gas_entity,      settings.ha_gas_entity);
+    SAVE_TA(ta_ha_solar_entity,    settings.ha_solar_entity);
     if (ta_doorbell_seconds) {
         const char * v = lv_textarea_get_text(ta_doorbell_seconds);
         int iv = v ? atoi(v) : 30;
@@ -2160,7 +2194,7 @@ static void on_manage_devices(lv_event_t * e) {
 
 static void open_ha_entities_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Home Assistant", 760);
+    lv_obj_t * p = modal_open("Home Assistant", 980);
     int y = 70;
     const int tw = SX(480);
 
@@ -2174,13 +2208,14 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_obj_t * lh = lv_label_create(p);
     lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
-    lv_label_set_text(lh, tr("HA-host (ip:poort):", "HA host (ip:port):"));
+    lv_label_set_text(lh, tr("HA-host:", "HA host:"));
     lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_ha_host = lv_textarea_create(p);
     lv_obj_set_size(ta_ha_host, tw, SY(44));
     lv_obj_align(ta_ha_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_ha_host, true);
-    lv_textarea_set_placeholder_text(ta_ha_host, "192.168.1.10:8123");
+    /* ip:port, or a full URL — https:// is accepted (see homeassistant.c). */
+    lv_textarea_set_placeholder_text(ta_ha_host, "192.168.1.10:8123 of https://ha.thuis.nl");
     lv_textarea_set_text(ta_ha_host, settings.ha_host);
     y += 56;
 
@@ -2232,6 +2267,35 @@ static void open_ha_entities_modal(lv_event_t * e) {
         lv_obj_center(bml);
         y += 60;
     }
+
+    /* ── Energy ── */
+    lsec = lv_label_create(p);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(lsec, SF(22), 0);
+    lv_label_set_text(lsec, tr("\xE2\x94\x80\xE2\x94\x80 Energie \xE2\x94\x80\xE2\x94\x80", "\xE2\x94\x80\xE2\x94\x80 Energy \xE2\x94\x80\xE2\x94\x80"));
+    lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 36;
+    {
+        lv_obj_t * hint = lv_label_create(p);
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(hint, SF(18), 0);
+        lv_label_set_text(hint, tr(
+            "Stroom/gas worden alleen gebruikt als de energiebron op\n"
+            "'Home Assistant' staat (Integraties). Zon werkt altijd.",
+            "Power/gas are only used when the energy source is set to\n"
+            "'Home Assistant' (Integrations). Solar always applies."));
+        lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+        y += 52;
+    }
+    y = ha_field_row(p, y, tr("Stroom nu (W):", "Power now (W):"),
+                     settings.ha_power_entity, "sensor.power_consumption", tw,
+                     &ta_ha_power_entity, "sensor");
+    y = ha_field_row(p, y, tr("Gasmeter (m3):", "Gas meter (m3):"),
+                     settings.ha_gas_entity, "sensor.gas_consumption", tw,
+                     &ta_ha_gas_entity, "sensor");
+    y = ha_field_row(p, y, tr("Zonnepanelen (W):", "Solar production (W):"),
+                     settings.ha_solar_entity, "sensor.solar_power", tw,
+                     &ta_ha_solar_entity, "sensor");
 
     /* ── Doorbell ── */
     lsec = lv_label_create(p);

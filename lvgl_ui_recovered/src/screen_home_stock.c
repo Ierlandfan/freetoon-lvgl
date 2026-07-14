@@ -22,6 +22,7 @@
 #include "efanlamp.h"
 #include "meteradapter.h"
 #include "homewizard.h"
+#include "energy.h"
 #include "weather.h"
 #include "ventilation.h"
 #include "calendar.h"
@@ -61,7 +62,7 @@ enum { LINK_NONE = 0, LINK_STATS, LINK_FORECAST, LINK_HEATER, LINK_VENT, LINK_TR
 typedef enum {
     TT_EMPTY = 0, TT_CLOCK, TT_HUMID, TT_POWER, TT_WATERP, TT_INDOOR,
     TT_CO2, TT_TVOC, TT_WEATHER, TT_BOILIN, TT_BOILOUT, TT_GAS, TT_VENT,
-    TT_AGENDA, TT_TRACKERS, TT_EFAN, TT_COUNT
+    TT_AGENDA, TT_TRACKERS, TT_EFAN, TT_SOLAR, TT_COUNT
 } ttype_t;
 static const struct { const char * key; const char * nl; const char * en; int link; } TM[TT_COUNT] = {
     { "empty",   "Verwijderen",   "Remove",       LINK_NONE     },
@@ -80,6 +81,7 @@ static const struct { const char * key; const char * nl; const char * en; int li
     { "agenda",  "Agenda",        "Calendar",     LINK_NONE     },
     { "trackers","Trackers",      "Trackers",     LINK_TRACKERS },
     { "efan",    "Ventilator",    "Fan + Lamp",   LINK_EFAN     },
+    { "solar",   "Zonnepanelen",  "Solar",        LINK_STATS    },
 };
 
 typedef struct {
@@ -108,7 +110,7 @@ extern hw_state_t    hw_state;
 static const char * MND[12] = {"januari","februari","maart","april","mei","juni",
     "juli","augustus","september","oktober","november","december"};
 
-static float cur_power_w(void) { return settings.energy_source == 0 ? meter_state.power_w : hw_state.power_w; }
+static float cur_power_w(void) { return energy_power_w(); }
 static void  comma(char * s) { for (; *s; s++) if (*s == '.') *s = ','; }
 
 /* ---- builders ------------------------------------------------------------ */
@@ -263,6 +265,18 @@ static void render_slot(slot_t * s) {
         }
         s->val = mklabel(s->card, "-- Watt", OSL(30), C_TITLE); lv_obj_align(s->val, LV_ALIGN_BOTTOM_MID, 0, SY(-14));
         break; }
+    case TT_SOLAR:
+        s->icon = lv_img_create(s->card);
+        lv_img_set_src(s->icon, &icon_wx_sun_lg);
+        lv_obj_set_style_img_recolor(s->icon, lv_color_hex(0xF5A623), 0);
+        lv_obj_set_style_img_recolor_opa(s->icon, LV_OPA_COVER, 0);
+        lv_obj_align(s->icon, LV_ALIGN_CENTER, 0, SY(-26));   /* same as the weather tile */
+        lv_obj_clear_flag(s->icon, LV_OBJ_FLAG_CLICKABLE);
+        s->val = mklabel(s->card, "-- Watt", OSL(30), C_TITLE);
+        lv_obj_align(s->val, LV_ALIGN_BOTTOM_MID, 0, SY(-32));
+        s->sub = mklabel(s->card, "", OSR(15), C_SECOND);
+        lv_obj_align(s->sub, LV_ALIGN_BOTTOM_MID, 0, SY(-12));
+        break;
     case TT_WATERP: {
         s->val = mklabel(s->card, "-- bar", OSL(40), C_TITLE); lv_obj_align(s->val, LV_ALIGN_CENTER, 0, SY(-2));
         s->banner = lv_obj_create(s->card);
@@ -406,6 +420,26 @@ static void refresh_slot(slot_t * s) {
         else                   snprintf(lamp, sizeof lamp, "%s", tr("Lamp: uit", "Lamp: off"));
         snprintf(eb, sizeof eb, "%s\n%s", fan, lamp);
         lv_label_set_text(s->val, eb);
+        break; }
+    case TT_SOLAR: {
+        /* Gross production from the configured HA sensor. Deliberately not
+         * derived from the P1: a meter only sees the surplus that actually
+         * leaves the house, so it would under-report yield whenever anything
+         * indoors is running. */
+        if (!energy_have_solar()) {
+            lv_label_set_text(s->val, "-- Watt");
+            lv_label_set_text(s->sub, settings.ha_solar_entity[0]
+                ? tr("Geen data", "No data")
+                : tr("Stel sensor in", "Set up sensor"));
+            break;
+        }
+        /* "Watt", never "kW" — the big Open Sans Light face is glyph-subset and
+         * has no 'k' (it would render as a missing-glyph box). Same as TT_POWER. */
+        float w = energy_solar_w();
+        snprintf(b, sizeof b, "%.0f Watt", w);
+        lv_label_set_text(s->val, b);
+        lv_label_set_text(s->sub, w > 0 ? tr("Opbrengst nu", "Yield now")
+                                        : tr("Geen opbrengst", "No yield"));
         break; }
     case TT_WEATHER: {
         /* Before the first forecast lands, current_temp is still 0 — painting it

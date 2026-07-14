@@ -123,6 +123,10 @@ settings_t settings = {
     .update_check_enabled = 1,
     .update_channel       = 1,   /* beta/dev by default */
     .energy_source       = 0,   /* meteradapter (official) by default */
+    .p1esp_host          = "",
+    .ha_power_entity     = "",
+    .ha_gas_entity       = "",
+    .ha_solar_entity     = "",
 
     /* Toon 1 panel mounting orientation — TSC2007 reports Y flipped vs the
      * framebuffer on EVERY Toon 1 (not a per-device tweak). Default this
@@ -336,6 +340,10 @@ void settings_load(void) {
             snprintf(settings.domoticz_pass, sizeof settings.domoticz_pass, "%s", v);
         else if (strcmp(k, "enable_zwave")    == 0) settings.enable_zwave = iv;
         else if (strcmp(k, "energy_source")   == 0) settings.energy_source = iv;
+        else if (strcmp(k, "p1esp_host")      == 0) snprintf(settings.p1esp_host, sizeof settings.p1esp_host, "%s", v);
+        else if (strcmp(k, "ha_power_entity") == 0) snprintf(settings.ha_power_entity, sizeof settings.ha_power_entity, "%s", v);
+        else if (strcmp(k, "ha_gas_entity")   == 0) snprintf(settings.ha_gas_entity, sizeof settings.ha_gas_entity, "%s", v);
+        else if (strcmp(k, "ha_solar_entity") == 0) snprintf(settings.ha_solar_entity, sizeof settings.ha_solar_entity, "%s", v);
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
         else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
         else if (strcmp(k, "update_check_enabled") == 0) settings.update_check_enabled = iv;
@@ -681,6 +689,10 @@ void settings_save(void) {
     fprintf(f, "domoticz_pass=%s\n",   settings.domoticz_pass);
     fprintf(f, "enable_zwave=%d\n",    settings.enable_zwave);
     fprintf(f, "energy_source=%d\n",   settings.energy_source);
+    if (settings.p1esp_host[0])      fprintf(f, "p1esp_host=%s\n", settings.p1esp_host);
+    if (settings.ha_power_entity[0]) fprintf(f, "ha_power_entity=%s\n", settings.ha_power_entity);
+    if (settings.ha_gas_entity[0])   fprintf(f, "ha_gas_entity=%s\n", settings.ha_gas_entity);
+    if (settings.ha_solar_entity[0]) fprintf(f, "ha_solar_entity=%s\n", settings.ha_solar_entity);
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
     fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fprintf(f, "update_check_enabled=%d\n", settings.update_check_enabled);

@@ -733,6 +733,39 @@ static void poll_life360_one(const char * entity_id, char * out, size_t outsz,
         apply_life360(body, out, outsz, lat, lon, person);
 }
 
+/* Read one numeric HA sensor. HA renders every state as a string, and an entity
+ * that is merely stale reads "unknown"/"unavailable" — which strtod would
+ * happily turn into 0.0, i.e. a plausible-looking 0 W. Reject those explicitly
+ * and leave the previous reading (and have_*) alone. */
+static int apply_ha_number(const char * json, volatile float * out, volatile int * have) {
+    char st[32];
+    if (!extract_str(json, "state", st, sizeof st)) return -1;
+    if (!strcmp(st, "unknown") || !strcmp(st, "unavailable") || !st[0]) return -1;
+    char * end = NULL;
+    double v = strtod(st, &end);
+    if (end == st) return -1;              /* not a number at all */
+    *out = (float)v;
+    *have = 1;
+    return 0;
+}
+
+static int poll_ha_number(const char * entity_id, volatile float * out, volatile int * have) {
+    char body[1024];
+    if (!entity_id[0]) { *have = 0; return -1; }
+    if (ha_get_state(entity_id, body, sizeof body) != 0) return -1;
+    return apply_ha_number(body, out, have);
+}
+
+/* Energy + solar sensors. Solar is polled regardless of energy_source: it is a
+ * separate reading (gross production), not an alternative to the meter. */
+static void poll_energy(void) {
+    if (settings.energy_source == 3) {
+        poll_ha_number(settings.ha_power_entity, &ha_state.energy_power_w, &ha_state.have_power);
+        poll_ha_number(settings.ha_gas_entity,   &ha_state.energy_gas_m3,  &ha_state.have_gas);
+    }
+    poll_ha_number(settings.ha_solar_entity, &ha_state.solar_w, &ha_state.have_solar);
+}
+
 static void poll_life360(void) {
     if (settings.life360_a_entity[0])
         poll_life360_one(settings.life360_a_entity,
@@ -1094,6 +1127,7 @@ static void seed_all(void) {
     poll_lights();
     poll_devices();     /* unified device list */
     poll_life360();
+    poll_energy();      /* power/gas (when energy_source == HA) + solar */
     poll_doorbell();    /* arms the trigger edge-detector */
 }
 
@@ -1123,6 +1157,16 @@ static void dispatch_event(const char * msg) {
         apply_life360(ns, ha_state.loc_c, sizeof ha_state.loc_c, &ha_state.lat_c, &ha_state.lon_c, 2);
     else if (settings.doorbell_entity[0] && !strcmp(ent, settings.doorbell_entity))
         apply_doorbell(ns);
+    /* Energy/solar sensors — without this they would only ever hold the value
+     * seed_all() read at connect, since the WS path never re-polls. */
+    else if (settings.ha_solar_entity[0] && !strcmp(ent, settings.ha_solar_entity))
+        apply_ha_number(ns, &ha_state.solar_w, &ha_state.have_solar);
+    else if (settings.energy_source == 3 && settings.ha_power_entity[0] &&
+             !strcmp(ent, settings.ha_power_entity))
+        apply_ha_number(ns, &ha_state.energy_power_w, &ha_state.have_power);
+    else if (settings.energy_source == 3 && settings.ha_gas_entity[0] &&
+             !strcmp(ent, settings.ha_gas_entity))
+        apply_ha_number(ns, &ha_state.energy_gas_m3, &ha_state.have_gas);
     /* Unified device list (light/cover/switch). */
     for (int i = 0; i < ha_device_count; i++)
         if (!strcmp(ent, ha_devices[i].entity_id)) { apply_device(&ha_devices[i], ns); break; }
