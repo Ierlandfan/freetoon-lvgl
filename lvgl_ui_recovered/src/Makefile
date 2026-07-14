@@ -26,9 +26,18 @@ GLIBC_SRC     :=
 
 TARGET ?= toon2
 
+# Cross toolchains. These used to be hardcoded under /tmp/qt_rebuild, which is
+# wiped on reboot — and then no release can be built until they're re-fetched.
+# Default to a persistent location; override with `make TC_ROOT=/path ...`.
+#   toon2: Linaro armhf   (gcc-linaro-*-x86_64_arm-linux-gnueabihf)
+#   toon1: Bootlin        (armv5-eabi--glibc--stable, arm926ej-s soft-float)
+# `make TARGET=<t> abi-check` is what actually guarantees the binary loads on the
+# device's glibc 2.21 — run it after changing toolchain, not just `make`.
+TC_ROOT ?= $(HOME)/toolchains
+
 ifeq ($(TARGET),toon1)
-  CROSS      := /tmp/qt_rebuild/toon1-toolchain/bin/arm-linux-
-  SYSROOT    := /tmp/qt_rebuild/toon1-toolchain/arm-buildroot-linux-gnueabi/sysroot
+  CROSS      := $(TC_ROOT)/toon1-toolchain/bin/arm-linux-
+  SYSROOT    := $(TC_ROOT)/toon1-toolchain/arm-buildroot-linux-gnueabi/sysroot
   SYSROOTFLAG:= --sysroot=$(SYSROOT)
   ARCHFLAGS  := -march=armv5te -marm -mfloat-abi=soft
   TARGET_DEF := -DTOON1
@@ -50,8 +59,8 @@ ifeq ($(TARGET),toon1)
                 patchelf --add-needed libpthread.so.0 $(BUILDDIR)/$(OUT) && \
                 $(CROSS)strip $(BUILDDIR)/$(OUT)
 else ifeq ($(TARGET),toon2)
-  CROSS      := /tmp/qt_rebuild/linaro/bin/arm-linux-gnueabihf-
-  SYSROOT    := /tmp/qt_rebuild/linaro/arm-linux-gnueabihf/libc
+  CROSS      := $(TC_ROOT)/linaro/bin/arm-linux-gnueabihf-
+  SYSROOT    := $(TC_ROOT)/linaro/arm-linux-gnueabihf/libc
   SYSROOTFLAG:= --sysroot=$(SYSROOT)
   ARCHFLAGS  :=
   TARGET_DEF :=
