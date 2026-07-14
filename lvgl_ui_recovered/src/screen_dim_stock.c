@@ -36,6 +36,7 @@
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * d_clock, * d_date, * d_water, * d_water_ts, * d_setpoint, * d_eco, * d_prog;
 static lv_obj_t * d_water_banner, * d_watts;
+static lv_obj_t * d_water_lbl;              /* "Waterdruk" caption */
 static lv_obj_t * d_wx_icon, * d_wx_temp;   /* outside weather, top-right */
 static lv_obj_t * d_trk[3] = { NULL, NULL, NULL };   /* tracker lines, top-centre */
 static lv_obj_t * d_vent_fan = NULL;         /* Itho spinning fan icon */
@@ -59,6 +60,14 @@ static float d_power_w(void) {
     return settings.energy_source == 0 ? meter_state.power_w : hw_state.power_w;
 }
 static void d_comma(char * s) { for (; *s; s++) if (*s == '.') *s = ','; }
+
+/* The dim screen mirrors the stock home: if the user dropped the water-pressure
+ * tile from the home layout, the standby block goes with it. Empty stock_tiles
+ * means "never customised" → the default layout, which does carry waterp. */
+static int d_show_waterp(void) {
+    if (!settings.stock_tiles[0]) return 1;
+    return strstr(settings.stock_tiles, "waterp") != NULL;
+}
 
 static lv_obj_t * d_lbl(lv_obj_t * par, const char * txt, const lv_font_t * font, uint32_t col) {
     lv_obj_t * l = lv_label_create(par);
@@ -153,16 +162,26 @@ static void d_refresh(lv_timer_t * t) {
 
     /* water pressure + low alert — wp<=0 means no reading (boxtalk swallows
      * zeros), so show -- without the false "te laag" alarm. */
-    float wp = toon_state.water_pressure;
-    int have = (wp > 0.05f);
-    if (have) { snprintf(b, sizeof b, "%.1f bar", wp); d_comma(b); } else strcpy(b, "-- bar");
-    lv_label_set_text(d_water, b);
-    int low = (have && wp < 1.0f);
-    lv_obj_set_style_text_color(d_water, lv_color_hex(low ? D_RED : D_WHITE), 0);
-    (low ? lv_obj_clear_flag : lv_obj_add_flag)(d_water_banner, LV_OBJ_FLAG_HIDDEN);
-    snprintf(b, sizeof b, "%02d-%02d-%04d %02d:%02d:00",
-             tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
-    lv_label_set_text(d_water_ts, b);
+    if (d_show_waterp()) {
+        float wp = toon_state.water_pressure;
+        int have = (wp > 0.05f);
+        if (have) { snprintf(b, sizeof b, "%.1f bar", wp); d_comma(b); } else strcpy(b, "-- bar");
+        lv_label_set_text(d_water, b);
+        int low = (have && wp < 1.0f);
+        lv_obj_set_style_text_color(d_water, lv_color_hex(low ? D_RED : D_WHITE), 0);
+        (low ? lv_obj_clear_flag : lv_obj_add_flag)(d_water_banner, LV_OBJ_FLAG_HIDDEN);
+        snprintf(b, sizeof b, "%02d-%02d-%04d %02d:%02d:00",
+                 tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
+        lv_label_set_text(d_water_ts, b);
+        lv_obj_clear_flag(d_water_lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(d_water,     LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(d_water_ts,  LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(d_water_lbl,    LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(d_water,        LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(d_water_ts,     LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(d_water_banner, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* big readout = indoor temp (default) or setpoint, per stock_big_indoor */
     float big_v = settings.stock_big_indoor ? toon_state.indoor_temp : toon_state.setpoint;
@@ -325,9 +344,10 @@ lv_obj_t * screen_dim_stock_create(void) {
     lv_obj_set_style_text_align(d_watts, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(d_watts, SX(127), SY(470));
 
-    /* Waterdruk (centre) */
-    lv_obj_t * wlab = d_lbl(scr_root, tr("Waterdruk", "Water pressure"), OSR(24), D_WHITE);
-    lv_obj_set_pos(wlab, SX(360), SY(322));
+    /* Waterdruk (centre) — always built, shown only while the home layout still
+     * carries the tile (d_refresh gates it, so a live tile edit applies at once) */
+    d_water_lbl = d_lbl(scr_root, tr("Waterdruk", "Water pressure"), OSR(24), D_WHITE);
+    lv_obj_set_pos(d_water_lbl, SX(360), SY(322));
     d_water = d_lbl(scr_root, "-- bar", OSL(50), D_WHITE);
     lv_obj_set_pos(d_water, SX(360), SY(366));
     d_water_ts = d_lbl(scr_root, "", OSR(13), D_GREY);

@@ -233,7 +233,9 @@ static void render_slot(slot_t * s) {
     int t = s->type;
     if (t == TT_EMPTY) {   /* faint "+" — long-press (or tap) to add a tile */
         lv_obj_t * plus = mklabel(s->card, "+", OSL(50), 0xCCCCCC);
-        lv_obj_center(plus);
+        lv_obj_align(plus, LV_ALIGN_CENTER, 0, SY(-10));
+        lv_obj_t * add = mklabel(s->card, tr("Tegel toevoegen", "Add tile"), OSR(15), C_SECOND);
+        lv_obj_align(add, LV_ALIGN_CENTER, 0, SY(28));
         return;
     }
     if (t != TT_CLOCK) s->title = tile_title(s->card, tr(TM[t].nl, TM[t].en));
@@ -406,6 +408,13 @@ static void refresh_slot(slot_t * s) {
         lv_label_set_text(s->val, eb);
         break; }
     case TT_WEATHER: {
+        /* Before the first forecast lands, current_temp is still 0 — painting it
+         * reads as a real "0,0°" outside. Show placeholders until connected. */
+        if (!weather_state.connected) {
+            lv_label_set_text(s->val, "--°");
+            lv_label_set_text(s->sub, tr("Geen weerdata", "No weather data"));
+            break;
+        }
         snprintf(b, sizeof b, "%.1f°", weather_state.current_temp); comma(b); lv_label_set_text(s->val, b);
         lv_label_set_text(s->sub, weather_state.current_desc[0] ? weather_state.current_desc : tr("Buiten", "Outside"));
         if (s->icon && weather_state.current_icon[0]) {
@@ -734,6 +743,20 @@ lv_obj_t * screen_home_stock_create(void) {
         lv_obj_clear_flag(dots[i], LV_OBJ_FLAG_SCROLLABLE);
     }
     update_dots();
+
+    /* Tile editing is a long-press with no visible affordance, so users have
+     * reported the layout as "not customisable". Say so once, under the page
+     * dots — and only while the layout is still untouched: the moment any tile
+     * is changed, save_layout() fills stock_tiles and the hint is gone for good.
+     * No extra setting to persist, no nagging. */
+    if (!settings.stock_tiles[0]) {
+        lv_obj_t * hint = mklabel(scr_root,
+            tr("Houd een tegel ingedrukt om hem te wijzigen",
+               "Hold a tile to change it"), OSR(15), C_SECOND);
+        lv_obj_set_width(hint, SX(2 * G_COLW + G_GAPX));
+        lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(hint, SX(G_X0), SY(572));
+    }
 
     /* Lights / devices handle — same collapsible left-edge tab as the LVGL
      * home screen. Idles as a slim pill peeking from the left edge; press

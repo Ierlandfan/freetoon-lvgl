@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>   /* strncasecmp */
 #include <unistd.h>
 #include <time.h>
 #include <errno.h>
@@ -25,9 +26,34 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
-/* Host comes from settings (settings.ha_host, "ip:port" no scheme) so no
- * personal address ships in the binary. Empty host = HA disabled. */
+/* Host comes from settings (settings.ha_host) so no personal address ships in
+ * the binary. Empty host = HA disabled. The field is documented as "ip:poort",
+ * but users routinely paste the full URL they use in a browser
+ * ("https://ha.example.com", "http://10.0.0.5:8123/lovelace"), which used to
+ * produce "http://https://ha.example.com/api/states" and fail every call. So
+ * accept any of those forms: remember the scheme, strip it off the host. */
 #define HA_HOST   (settings.ha_host)
+
+static int ha_is_https(void) {
+    return strncasecmp(settings.ha_host, "https://", 8) == 0;
+}
+static const char * ha_scheme(void) { return ha_is_https() ? "https" : "http"; }
+/* HA's own cert is usually self-signed or from a CA the Toon's 2018 trust store
+ * has never heard of, and there is no way to install one from the UI — so skip
+ * verification rather than fail every request. */
+static const char * ha_tls_opt(void) { return ha_is_https() ? "-k " : ""; }
+
+/* settings.ha_host minus scheme, trailing slash and any pasted path. */
+static const char * ha_hostport(char * out, size_t outsz) {
+    const char * h = settings.ha_host;
+    if      (strncasecmp(h, "https://", 8) == 0) h += 8;
+    else if (strncasecmp(h, "http://",  7) == 0) h += 7;
+    snprintf(out, outsz, "%s", h);
+    char * slash = strchr(out, '/');
+    if (slash) *slash = 0;
+    for (size_t n = strlen(out); n && (out[n-1] == ' ' || out[n-1] == '/'); n--) out[n-1] = 0;
+    return out;
+}
 #define HA_POLL_S 10
 #define HA_TOKEN_PATH "/mnt/data/ha.cfg"
 /* Last good GPS fix per tracker, persisted so a tag drop-out (unknown/
@@ -134,12 +160,12 @@ static int extract_str(const char * json, const char * key, char * out, size_t o
  * everywhere is more churn than just inlining popen here. */
 static int ha_get_state(const char * entity_id, char * out, size_t out_max) {
     if (!g_token[0] || !ha_id_safe(entity_id)) return -1;
-    char cmd[1024];
+    char cmd[1024], hp[192];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "
+        "/usr/bin/curl -s %s--max-time 6 --connect-timeout 3 "
         "-H 'Authorization: Bearer %s' "
-        "'http://%s/api/states/%s' 2>/dev/null",
-        g_token, HA_HOST, entity_id);
+        "'%s://%s/api/states/%s' 2>/dev/null",
+        ha_tls_opt(), g_token, ha_scheme(), ha_hostport(hp, sizeof hp), entity_id);
     FILE * p = popen(cmd, "r");
     if (!p) return -1;
     size_t n = fread(out, 1, out_max - 1, p);
@@ -156,12 +182,13 @@ int ha_fetch_calendar(const char * entity, const char * start_iso,
                       const char * end_iso, char * out, size_t out_max) {
     if (!g_token[0]) load_token();
     if (!g_token[0] || !ha_id_safe(entity) || !HA_HOST[0]) return -1;
-    char cmd[1024];
+    char cmd[1024], hp[192];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 8 --connect-timeout 4 "
+        "/usr/bin/curl -s %s--max-time 8 --connect-timeout 4 "
         "-H 'Authorization: Bearer %s' "
-        "'http://%s/api/calendars/%s?start=%s&end=%s' 2>/dev/null",
-        g_token, HA_HOST, entity, start_iso, end_iso);
+        "'%s://%s/api/calendars/%s?start=%s&end=%s' 2>/dev/null",
+        ha_tls_opt(), g_token, ha_scheme(), ha_hostport(hp, sizeof hp),
+        entity, start_iso, end_iso);
     FILE * p = popen(cmd, "r");
     if (!p) return -1;
     size_t n = fread(out, 1, out_max - 1, p);
@@ -177,16 +204,16 @@ int ha_fetch_calendar(const char * entity, const char * start_iso,
 static int ha_call_service(const char * domain, const char * service,
                            const char * entity_id, const char * extra_json) {
     if (!g_token[0] || !ha_id_safe(entity_id)) return -1;
-    char cmd[1024], out[256];
+    char cmd[1024], out[256], hp[192];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 6 --connect-timeout 3 "
+        "/usr/bin/curl -s %s--max-time 6 --connect-timeout 3 "
         "-X POST -H 'Authorization: Bearer %s' "
         "-H 'Content-Type: application/json' "
         "--data '{\"entity_id\":\"%s\"%s}' "
-        "'http://%s/api/services/%s/%s' 2>/dev/null",
-        g_token, entity_id,
+        "'%s://%s/api/services/%s/%s' 2>/dev/null",
+        ha_tls_opt(), g_token, entity_id,
         extra_json ? extra_json : "",
-        HA_HOST, domain, service);
+        ha_scheme(), ha_hostport(hp, sizeof hp), domain, service);
     FILE * p = popen(cmd, "r");
     if (!p) {
         notify_show("system", "ha_offline", "HA niet bereikbaar — actie niet uitgevoerd");
@@ -725,12 +752,13 @@ static void poll_life360(void) {
  * DOORBELL_SNAP_PATH (JPEG). Returns 0 on success. */
 static int fetch_doorbell_snapshot(void) {
     if (!g_token[0] || !settings.doorbell_camera[0]) return -1;
-    char cmd[1024];
+    char cmd[1024], hp[192];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 8 --connect-timeout 3 "
+        "/usr/bin/curl -s %s--max-time 8 --connect-timeout 3 "
         "-H 'Authorization: Bearer %s' "
-        "-o '%s' 'http://%s/api/camera_proxy/%s' 2>/dev/null",
-        g_token, DOORBELL_SNAP_PATH, HA_HOST, settings.doorbell_camera);
+        "-o '%s' '%s://%s/api/camera_proxy/%s' 2>/dev/null",
+        ha_tls_opt(), g_token, DOORBELL_SNAP_PATH,
+        ha_scheme(), ha_hostport(hp, sizeof hp), settings.doorbell_camera);
     int rc = system(cmd);
     return rc == 0 ? 0 : -1;
 }
@@ -943,7 +971,17 @@ static int ws_recv_msg(int fd, char * buf, size_t bufsz) {
 }
 static int ws_connect(void) {
     char host[80], port[8];
-    snprintf(host, sizeof host, "%s", HA_HOST);
+    /* This is a plaintext WebSocket. An https:// HA has no wss here, so the live
+     * push loop stays down while REST (which does speak TLS) keeps the UI fed —
+     * state just refreshes on the poll interval instead of instantly. */
+    if (ha_is_https()) {
+        static int warned = 0;
+        if (!warned) { warned = 1;
+            fprintf(stderr, "[ha] host is https:// — live WebSocket push unavailable "
+                            "(no TLS in the WS client); falling back to REST polling\n"); }
+        return -1;
+    }
+    ha_hostport(host, sizeof host);
     char * colon = strrchr(host, ':');
     if (colon) { *colon = 0; snprintf(port, sizeof port, "%s", colon + 1); }
     else snprintf(port, sizeof port, "8123");
@@ -1031,6 +1069,25 @@ static void poll_blinds(void) {
 }
 
 /* Seed all watched state once over REST (events carry only future changes). */
+/* GET /api/ — HA answers {"message":"API running."}. Used by the REST-polling
+ * fallback to own the connected flag, which otherwise is only ever set as a
+ * side effect of the curtain/device pollers (and so stays 0 for a user who has
+ * configured neither). */
+static int ha_rest_ping(void) {
+    if (!g_token[0] || !HA_HOST[0]) return -1;
+    char cmd[512], hp[192], body[256] = {0};
+    snprintf(cmd, sizeof cmd,
+        "/usr/bin/curl -s %s--max-time 6 --connect-timeout 3 "
+        "-H 'Authorization: Bearer %s' '%s://%s/api/' 2>/dev/null",
+        ha_tls_opt(), g_token, ha_scheme(), ha_hostport(hp, sizeof hp));
+    FILE * p = popen(cmd, "r");
+    if (!p) return -1;
+    size_t n = fread(body, 1, sizeof body - 1, p);
+    body[n] = 0;
+    pclose(p);
+    return strstr(body, "API running") ? 0 : -1;
+}
+
 static void seed_all(void) {
     poll_once();        /* curtain group + battery */
     poll_blinds();      /* blinds cover + battery */
@@ -1095,7 +1152,27 @@ static void * ha_thread(void * arg) {
     static char msg[64 * 1024];
     while (1) {
         int fd = ws_connect();
-        if (fd < 0) { ha_state.connected = 0; sleep(8); continue; }
+        if (fd < 0) {
+            /* No live push — but everything the UI shows is REST underneath, so
+             * poll instead of going dark. This is the only path an https:// HA
+             * ever takes (the WS client has no TLS), and it also keeps entities
+             * updating while a plain-http HA is restarting. */
+            /* Log only on transitions — this branch re-runs every HA_POLL_S, and
+             * a permanently misconfigured HA would otherwise bury the log. */
+            static int rest_up = -1;   /* -1 unknown, 0 down, 1 up */
+            int up = (ha_rest_ping() == 0);
+            if (up != rest_up) {
+                if (up) fprintf(stderr, "[ha] REST reachable — polling every %ds "
+                                        "(no live push)\n", HA_POLL_S);
+                else    fprintf(stderr, "[ha] unreachable at %s://%s (token %s)\n",
+                                ha_scheme(), settings.ha_host, g_token[0] ? "set" : "MISSING");
+                rest_up = up;
+            }
+            ha_state.connected = up;
+            if (up) seed_all();
+            sleep(HA_POLL_S);
+            continue;
+        }
         /* auth_required → auth → auth_ok */
         if (ws_recv_msg(fd, msg, sizeof msg) < 0) { close(fd); sleep(5); continue; }
         char auth[320];
@@ -1223,15 +1300,23 @@ void ha_cover_stop_async(const char * entity_id) {
 int ha_discover_entities(const char * domain_prefix,
                           ha_discovered_t * out, int * count, int max) {
     *count = 0;
-    if (!g_token[0] || !domain_prefix || !domain_prefix[0]) return -1;
-    if (!HA_HOST[0]) return -1;
+    if (!g_token[0]) load_token();   /* may run before the HA thread has started */
+    if (!domain_prefix || !domain_prefix[0]) return -1;
+    if (!g_token[0]) {
+        fprintf(stderr, "[ha] discover: no token in %s\n", HA_TOKEN_PATH);
+        return -1;
+    }
+    if (!HA_HOST[0]) {
+        fprintf(stderr, "[ha] discover: ha_host is empty\n");
+        return -1;
+    }
 
-    char cmd[512];
+    char cmd[512], hp[192];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 10 --connect-timeout 4 "
+        "/usr/bin/curl -s %s--max-time 10 --connect-timeout 4 "
         "-H 'Authorization: Bearer %s' "
-        "'http://%s/api/states' 2>/dev/null",
-        g_token, HA_HOST);
+        "'%s://%s/api/states' 2>/dev/null",
+        ha_tls_opt(), g_token, ha_scheme(), ha_hostport(hp, sizeof hp));
     FILE * p = popen(cmd, "r");
     if (!p) return -1;
 
@@ -1240,8 +1325,19 @@ int ha_discover_entities(const char * domain_prefix,
     static char body[131072];    /* 128 KB — enough for ~500 entities */
     size_t n = fread(body, 1, sizeof(body) - 1, p);
     pclose(p);
-    if (n == 0) return -1;
+    if (n == 0) {
+        fprintf(stderr, "[ha] discover: no response from %s://%s/api/states\n",
+                ha_scheme(), hp);
+        return -1;
+    }
     body[n] = 0;
+    /* HA answers 401 with a JSON body, so an empty entity list after this point
+     * is indistinguishable from a bad token unless we say so here. */
+    if (strstr(body, "401: Unauthorized") || strstr(body, "Invalid access token")) {
+        fprintf(stderr, "[ha] discover: token rejected (401) — regenerate the "
+                        "Long-Lived Access Token\n");
+        return -1;
+    }
 
     /* Build a match needle: "entity_id":"<prefix>." — the dot guarantees we
      * match e.g. "cover.living" but NOT "cover_long_entity". */

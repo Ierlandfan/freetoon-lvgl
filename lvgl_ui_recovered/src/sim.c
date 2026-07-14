@@ -279,6 +279,11 @@ int main(int argc, char ** argv) {
         settings.custom_layout_enabled = 1;
         layout_load_named("");
     }
+    /* Sim-only: $TOONUI_SIM_STOCK_TILES sets the stock-theme tile layout so the
+     * stock home and its dim screen can be rendered for an arbitrary layout
+     * without a /mnt/data/toonui.cfg. */
+    { const char * st = getenv("TOONUI_SIM_STOCK_TILES");
+      if (st) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", st); }
 
     const char * mode = (argc > 1) ? argv[1] : "home";
 

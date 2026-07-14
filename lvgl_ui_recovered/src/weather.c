@@ -355,10 +355,17 @@ int weather_geocode(const char * city) {
         "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=nl&format=json",
         enc);
     static char body[4096];
-    if (http_fetch(url, body, sizeof body) != 0) return 0;
+    if (http_fetch(url, body, sizeof body) != 0) {
+        fprintf(stderr, "[wx] geocode '%s': no response from geocoding-api.open-meteo.com\n", city);
+        return 0;
+    }
     /* First "id": in the response is the top result's GeoNames id. */
     const char * p = strstr(body, "\"id\":");
-    if (!p) return 0;
+    if (!p) {
+        fprintf(stderr, "[wx] geocode '%s': no match — check the spelling in "
+                        "Settings > Weather\n", city);
+        return 0;
+    }
     int id = atoi(p + 5);
     /* Capture the exact lat/lon — this is what the Open-Meteo current+forecast
      * fetch keys on (the GeoNames id is only kept for settings back-compat). */
@@ -373,11 +380,33 @@ static void * wx_thread(void * arg) {
     (void)arg;
     static char body[64 * 1024];
     int radar_tick = 0;
+    int geo_fails = 0, geo_fallback = 0;
     while (1) {
         /* Resolve the configured city's exact lat/lon once (re-tried each loop
            until it sticks). Everything temperature/forecast keys off this. */
-        if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && settings.weather_location[0])
+        if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && settings.weather_location[0]) {
             weather_geocode(settings.weather_location);
+            /* The geocoder is a second host that can be down/blocked/misspelled
+               while api.open-meteo.com is fine — and without a lat/lon there is
+               no fetch at all, so the user sees no weather whatsoever. After a
+               few tries, fall back to the centre of NL so something shows, and
+               keep retrying the real location in the background. */
+            if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && ++geo_fails >= 3) {
+                g_cfg_lat = 52.1009; g_cfg_lon = 5.1783;   /* De Bilt (KNMI) */
+                geo_fallback = 1;
+                fprintf(stderr, "[wx] geocode failed %d times — falling back to "
+                                "De Bilt (52.10,5.18); weather will be approximate\n", geo_fails);
+            }
+        }
+        /* Still trying to pin down the real location while running on the fallback. */
+        if (geo_fallback && settings.weather_location[0]) {
+            double fb_lat = g_cfg_lat, fb_lon = g_cfg_lon;
+            g_cfg_lat = g_cfg_lon = 0.0;
+            weather_geocode(settings.weather_location);
+            if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0) { g_cfg_lat = fb_lat; g_cfg_lon = fb_lon; }
+            else { geo_fallback = 0; geo_fails = 0;
+                   fprintf(stderr, "[wx] geocode recovered — using the configured location\n"); }
+        }
 
         /* Current conditions + 5-day + hourly — exact point, from Open-Meteo. */
         if (fetch_openmeteo() == 0) {
