@@ -44,8 +44,9 @@ ifeq ($(TARGET),toon1)
   GLIBC_CFLAGS  := -include glibc_compat.h
   GLIBC_LDFLAGS := -Wl,--wrap=stat -Wl,--wrap=fstat -Wl,--wrap=lstat \
                    -Wl,--wrap=__libc_start_main \
+                   -Wl,--wrap=strcasecmp -Wl,--wrap=fputc -Wl,--wrap=pthread_attr_destroy \
                    -Wl,--no-as-needed,-lpthread,--as-needed
-  GLIBC_SRC     := glibc_compat_wrap.c
+  GLIBC_SRC     := glibc_compat_wrap.c glibc_compat_missing.c
   OUT        := toonui-toon1
   BUILDDIR   := ../build-toon1
   EXTRA      := $(BUILDDIR)/fbvnc_input $(BUILDDIR)/wastefetch $(BUILDDIR)/doorbell_daemon
@@ -69,9 +70,13 @@ else ifeq ($(TARGET),toon2)
   EXTRA      := $(BUILDDIR)/fbvnc_input $(BUILDDIR)/wastefetch
   WF_POST    := :
   POSTLINK   := :
-  # Downgrade fcntl@GLIBC_2.28 → GLIBC_2.4 (see glibc_compat_toon2.c)
-  GLIBC_SRC     := glibc_compat_toon2.c
-  GLIBC_LDFLAGS := -Wl,--wrap=fcntl
+  # Downgrade fcntl@GLIBC_2.28 → GLIBC_2.4 (see glibc_compat_toon2.c). Also wrap
+  # strcasecmp/fputc/pthread_attr_destroy: no Toon 2 report, but v0.9.56's Toon 2
+  # binary imported the same three @GLIBC_2.4 symbols that crash-looped Toon 1,
+  # and .212 is offline to confirm — so close the latent gap here too.
+  GLIBC_SRC     := glibc_compat_toon2.c glibc_compat_missing.c
+  GLIBC_LDFLAGS := -Wl,--wrap=fcntl \
+                   -Wl,--wrap=strcasecmp -Wl,--wrap=fputc -Wl,--wrap=pthread_attr_destroy
 else ifeq ($(TARGET),sim)
   # Headless host build — render UI to a PPM, no device/X/SDL. 1024x600.
   CROSS      :=
@@ -185,6 +190,13 @@ lvgl-patches:
 # (placed after `all` so it doesn't hijack the default goal).
 $(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o: $(VERFILE)
 
+# The libc-replacement wrappers must NOT be built with builtins: at -O2 GCC
+# would fold __wrap_fputc's fwrite(&c,1,1,f) straight back into fputc — the very
+# symbol we're removing — and self-recurse. Overrides the generic rule below.
+$(BUILDDIR)/glibc_compat_missing.o: glibc_compat_missing.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -fno-builtin -c $< -o $@
+
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -217,7 +229,33 @@ abi-check: $(BUILDDIR)/$(OUT)
 	if [ -n "$$deny" ]; then \
 	  echo "  FAIL — imports symbols not available on Toon 1 firmware glibc:"; echo "$$deny" | sed 's/^/    /'; \
 	  echo "  (these load fine on the build glibc but abort on-device — use a fallback)"; exit 1; \
-	else echo "  OK — no Toon 1-unavailable libc symbols imported"; fi
+	else echo "  OK — no denylisted symbols imported"; fi
+	@# Baseline subset check. The denylist above only knows symbols that ALREADY
+	@# bit us; this catches the NEXT one before it ships. abi-baseline-$(TARGET).txt
+	@# is the UND symbol set of the last release known to load on-device (v0.9.54).
+	@# Any import not in it is a new on-device dependency that must be proven to
+	@# resolve on the firmware glibc (or routed through glibc_compat_missing.c) and
+	@# then re-baselined. This is what would have caught v0.9.56's strcasecmp/fputc.
+	@base=abi-baseline-$(TARGET).txt; \
+	if [ -f "$$base" ]; then \
+	  cur=$$($(CROSS)readelf --dyn-syms $(BUILDDIR)/$(OUT) 2>/dev/null \
+	         | awk '$$7=="UND" && ($$4=="FUNC"||$$4=="OBJECT"){print $$8}' | sort -u); \
+	  new=$$(printf '%s\n' "$$cur" | grep -vxF -f "$$base" || true); \
+	  if [ -n "$$new" ]; then \
+	    echo "  FAIL — imports NOT in $$base (new on-device dependency):"; echo "$$new" | sed 's/^/    /'; \
+	    echo "  Confirm each resolves on the device glibc or wrap it in"; \
+	    echo "  glibc_compat_missing.c, then refresh the baseline:"; \
+	    echo "    make TARGET=$(TARGET) abi-baseline"; exit 1; \
+	  else echo "  OK — no imports beyond the $$(wc -l < $$base | tr -d ' ')-symbol v0.9.54 baseline"; fi \
+	else echo "  (no baseline for $(TARGET) — skipping subset check)"; fi
+
+# Refresh the on-device import baseline from the current binary. Run ONLY after
+# confirming the new imports actually resolve on the device (or are wrapped).
+.PHONY: abi-baseline
+abi-baseline: $(BUILDDIR)/$(OUT)
+	@$(CROSS)readelf --dyn-syms $(BUILDDIR)/$(OUT) 2>/dev/null \
+	  | awk '$$7=="UND" && ($$4=="FUNC"||$$4=="OBJECT"){print $$8}' | sort -u > abi-baseline-$(TARGET).txt
+	@echo "wrote abi-baseline-$(TARGET).txt ($$(wc -l < abi-baseline-$(TARGET).txt | tr -d ' ') symbols)"
 
 # Standalone VNC touch-injection bridge (no LVGL deps). Shipped alongside
 # toonui so VNC gives full control on the multi-touch screen.
