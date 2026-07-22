@@ -180,11 +180,11 @@ static void publish_discovery(int fd) {
 
     /* climate */
     snprintf(b, sizeof(b),
-        "{\"name\":\"Toon\",\"uniq_id\":\"freetoon_thermostat\","
+        "{\"name\":null,\"uniq_id\":\"freetoon_thermostat\","
         "\"avty_t\":\"" T_AVAIL "\",\"temp_unit\":\"C\","
         "\"min_temp\":6,\"max_temp\":30,\"temp_step\":0.5,\"modes\":[\"heat\"],"
         "\"mode_stat_t\":\"" T_STATE "\",\"mode_stat_tpl\":\"heat\","
-        "\"cur_temp_t\":\"" T_STATE "\",\"cur_temp_tpl\":\"{{ value_json.indoor_temp }}\","
+        "\"curr_temp_t\":\"" T_STATE "\",\"curr_temp_tpl\":\"{{ value_json.indoor_temp }}\","
         "\"temp_stat_t\":\"" T_STATE "\",\"temp_stat_tpl\":\"{{ value_json.setpoint }}\","
         "\"temp_cmd_t\":\"" T_CMD_SETP "\","
         "\"act_t\":\"" T_STATE "\",\"act_tpl\":\"{{ value_json.action }}\","
