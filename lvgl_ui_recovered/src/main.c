@@ -163,6 +163,9 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[main] efanlamp_start failed\n");
         if (ha_start() != 0)
             fprintf(stderr, "[main] ha_start failed\n");
+        extern int ha_mqtt_start(void);
+        if (ha_mqtt_start() != 0)
+            fprintf(stderr, "[main] ha_mqtt_start failed\n");
         extern int domoticz_start(void);
         if (domoticz_start() != 0)
             fprintf(stderr, "[main] domoticz_start failed\n");
