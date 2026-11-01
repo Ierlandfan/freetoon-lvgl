@@ -20,6 +20,7 @@
 #include "theme.h"
 #include "boxtalk.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <string.h>
 
@@ -32,6 +33,30 @@ static lv_obj_t * lbl_value;
 static lv_obj_t * tab_metric_btns[6];
 #define N_PERIOD 6
 static lv_obj_t * tab_period_btns[N_PERIOD];
+
+/* Mode (UoM vs Euro) & rate widgets */
+static lv_obj_t * btn_mode_uom = NULL;
+static lv_obj_t * btn_mode_euro = NULL;
+static lv_obj_t * lbl_rates_title = NULL;
+static lv_obj_t * btn_rate_elec = NULL;
+static lv_obj_t * lbl_rate_elec = NULL;
+static lv_obj_t * btn_rate_gas = NULL;
+static lv_obj_t * lbl_rate_gas = NULL;
+
+static int g_gas_now_hourly_fallback = 0;
+
+/* Rate edit modal */
+static lv_obj_t * g_rate_backdrop = NULL;
+static lv_obj_t * g_rate_ta = NULL;
+static int        g_rate_edit_target = 0; /* 0 = elec, 1 = gas */
+
+static void close_rate_modal(void) {
+    if (g_rate_backdrop) {
+        lv_obj_del(g_rate_backdrop);
+        g_rate_backdrop = NULL;
+        g_rate_ta = NULL;
+    }
+}
 
 /* Time navigation widgets */
 static lv_obj_t * btn_nav_prev = NULL;
@@ -67,7 +92,7 @@ typedef struct {
 static const metric_t metrics[5] = {
     {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt",      "elec_quantity_lt",      0xaa77ff, 0},
     {"Solar",       "W",     "kWh",  "elec_flow_prod",             "elec_quantity_nt_prod", "elec_quantity_lt_prod", 0xeeaa22, 0},
-    {"Gas",         "l/h",   "m3",   "gas_flow",                   "gas_quantity",          NULL,                    0xffaa44, 0},
+    {"Gas",         "m3/h",  "m3",   "gas_flow",                   "gas_quantity",          NULL,                    0xffaa44, 0},
     {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",        NULL,                    0x44aaff, 0},
     {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,          0x5fb3ff, 0},
 };
@@ -89,7 +114,11 @@ static period_t selected_period = PERIOD_NOW;
 static stats_series_t  series;
 static stats_series_t  series2;   /* for elec second tariff */
 
-static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
+static void on_back(lv_event_t * e) {
+    (void)e;
+    close_rate_modal();
+    ui_pop();
+}
 
 static void reload_and_render(void);
 
@@ -305,6 +334,18 @@ static int load_for_period(void) {
             if ((rc != 0 || series.n == 0) && is_solar) {
                 rc = stats_fetch_range("solar_flow", "5min", from, to, 12, &series);
             }
+            int valid_cnt = 0;
+            for (int i = 0; i < series.n; i++) {
+                if (!isnan(series.samples[i])) valid_cnt++;
+            }
+            if (valid_cnt == 0 && selected_metric == 2) {
+                /* Gas fallback: gas_flow is often empty/NaN on stock Toon (DSMR meters).
+                 * Fetch the last 13-14 hours from gas_quantity 5yrhours to show recent hourly bars. */
+                rc = stats_fetch_range("gas_quantity", "5yrhours", to - 13 * HOUR, to, 14, &series);
+                g_gas_now_hourly_fallback = 1;
+            } else {
+                g_gas_now_hourly_fallback = 0;
+            }
             return rc;
         }
 
@@ -438,24 +479,47 @@ static void chart_draw_event_cb(lv_event_t * e) {
     if (!dsc) return;
     if (dsc->part == LV_PART_TICKS && dsc->type == LV_CHART_DRAW_PART_TICK_LABEL && dsc->id == LV_CHART_AXIS_PRIMARY_Y) {
         if (dsc->text) {
-            if (dsc->value == 0) {
-                lv_snprintf(dsc->text, dsc->text_length, "0");
-            } else if (g_y_scale == 100) {
-                float v = (float)dsc->value / 100.0f;
-                if ((dsc->value % 100) == 0)
-                    lv_snprintf(dsc->text, dsc->text_length, "%d", (int)v);
-                else if ((dsc->value % 10) == 0)
-                    lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
-                else
-                    lv_snprintf(dsc->text, dsc->text_length, "%.2f", v);
-            } else if (g_y_scale == 10) {
-                float v = (float)dsc->value / 10.0f;
-                if ((dsc->value % 10) == 0)
-                    lv_snprintf(dsc->text, dsc->text_length, "%d", (int)v);
-                else
-                    lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+            int show_euro = settings.stats_show_euro && (selected_metric <= 2);
+            if (show_euro) {
+                if (dsc->value == 0) {
+                    lv_snprintf(dsc->text, dsc->text_length, "€0");
+                } else if (g_y_scale == 100) {
+                    float v = (float)dsc->value / 100.0f;
+                    if ((dsc->value % 100) == 0)
+                        lv_snprintf(dsc->text, dsc->text_length, "€%d", (int)v);
+                    else if ((dsc->value % 10) == 0)
+                        lv_snprintf(dsc->text, dsc->text_length, "€%.1f", v);
+                    else
+                        lv_snprintf(dsc->text, dsc->text_length, "€%.2f", v);
+                } else if (g_y_scale == 10) {
+                    float v = (float)dsc->value / 10.0f;
+                    if ((dsc->value % 10) == 0)
+                        lv_snprintf(dsc->text, dsc->text_length, "€%d", (int)v);
+                    else
+                        lv_snprintf(dsc->text, dsc->text_length, "€%.1f", v);
+                } else {
+                    lv_snprintf(dsc->text, dsc->text_length, "€%d", dsc->value);
+                }
             } else {
-                lv_snprintf(dsc->text, dsc->text_length, "%d", dsc->value);
+                if (dsc->value == 0) {
+                    lv_snprintf(dsc->text, dsc->text_length, "0");
+                } else if (g_y_scale == 100) {
+                    float v = (float)dsc->value / 100.0f;
+                    if ((dsc->value % 100) == 0)
+                        lv_snprintf(dsc->text, dsc->text_length, "%d", (int)v);
+                    else if ((dsc->value % 10) == 0)
+                        lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+                    else
+                        lv_snprintf(dsc->text, dsc->text_length, "%.2f", v);
+                } else if (g_y_scale == 10) {
+                    float v = (float)dsc->value / 10.0f;
+                    if ((dsc->value % 10) == 0)
+                        lv_snprintf(dsc->text, dsc->text_length, "%d", (int)v);
+                    else
+                        lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+                } else {
+                    lv_snprintf(dsc->text, dsc->text_length, "%d", dsc->value);
+                }
             }
         }
     }
@@ -524,7 +588,22 @@ static void render_chart(void) {
 
     g_bar_count = 0;
 
-    if (selected_period == PERIOD_YEARS) {
+    if (selected_period == PERIOD_NOW && selected_metric == 2 && g_gas_now_hourly_fallback) {
+        /* Group hourly cumulative gas readings into usage deltas (m3/h) */
+        for (int i = 1; i < n && g_bar_count < 12; i++) {
+            double prev = series.samples[i - 1];
+            double cur_s = series.samples[i];
+            if (!isnan(prev) && !isnan(cur_s) && cur_s >= prev) {
+                double diff_m3 = (cur_s - prev) / 1000.0; /* Liters to m3 */
+                if (diff_m3 < 50.0) {
+                    g_bar_val[g_bar_count] = diff_m3;
+                    const char * lab = series.labels[i];
+                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%.5s", lab + 6);
+                    g_bar_count++;
+                }
+            }
+        }
+    } else if (selected_period == PERIOD_YEARS) {
         /* Group consecutive monthly samples by calendar year -> exactly 1 bar per year */
         char cur_yy[3] = "";
         int bar_cnt[64] = {0};
@@ -612,11 +691,31 @@ static void render_chart(void) {
     if (is_cum)
         for (int i = 0; i < g_bar_count; i++) g_bar_val[i] /= 1000.0;
 
+    /* Gas flow in PERIOD_NOW: convert L/h to m3/h when from gas_flow */
+    if (selected_period == PERIOD_NOW && selected_metric == 2 && !g_gas_now_hourly_fallback)
+        for (int i = 0; i < g_bar_count; i++) g_bar_val[i] /= 1000.0;
+
     /* Extra safeguard: ensure CV bar values are in bar (e.g. 1.3 bar, not 13 or 130) */
     if (strcmp(m->label, "CV bar") == 0) {
         for (int i = 0; i < g_bar_count; i++) {
             if (g_bar_val[i] >= 50.0)      g_bar_val[i] /= 100.0;
             else if (g_bar_val[i] >= 5.0)  g_bar_val[i] /= 10.0;
+        }
+    }
+
+    /* If Euro mode is enabled, convert bar values for Electricity, Solar and Gas */
+    if (settings.stats_show_euro && selected_metric <= 2) {
+        float rate = (selected_metric == 2) ? settings.rate_gas_m3 : settings.rate_elec_kwh;
+        for (int i = 0; i < g_bar_count; i++) {
+            if (selected_period == PERIOD_NOW) {
+                if (selected_metric == 0 || selected_metric == 1) {
+                    g_bar_val[i] = (g_bar_val[i] / 1000.0) * rate; /* W -> kW * rate = €/h */
+                } else if (selected_metric == 2) {
+                    g_bar_val[i] = g_bar_val[i] * rate;            /* m3/h * rate = €/h */
+                }
+            } else {
+                g_bar_val[i] = g_bar_val[i] * rate;                /* kWh or m3 * rate = € */
+            }
         }
     }
 
@@ -634,8 +733,11 @@ static void render_chart(void) {
     }
 
     double step = top / 4.0;
-    /* Determine scale factor so that each of the 4 tick values is an exact integer in chart coords */
-    if (fabs(step - floor(step + 0.0001)) < 0.001) {
+    /* Determine scale factor so that each of the 4 tick values is an exact integer in chart coords.
+     * When top <= 200.0, use scale 100 so bars retain 2 decimal places and don't round to integer coordinates! */
+    if (top <= 200.0) {
+        g_y_scale = 100;
+    } else if (fabs(step - floor(step + 0.0001)) < 0.001) {
         g_y_scale = 1;
     } else if (fabs(step * 10.0 - floor(step * 10.0 + 0.0001)) < 0.001) {
         g_y_scale = 10;
@@ -679,6 +781,7 @@ static void render_chart(void) {
     }
 
     /* Caption + headline value. */
+    int show_euro = settings.stats_show_euro && (selected_metric <= 2);
     if (!is_cum) {
         if (g_time_offset == 0)
             lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
@@ -689,17 +792,43 @@ static void render_chart(void) {
         if (g_time_offset == 0) {
             if (selected_metric == 0)                                            cur = hw_state.power_w;
             else if (selected_metric == 1 && energy_have_solar())                cur = energy_solar_w();
+            else if (selected_metric == 2) {
+                if (energy_gas_hour_m3() >= 0) cur = energy_gas_hour_m3();
+                else if (hw_state.gas_hour_m3 >= 0) cur = hw_state.gas_hour_m3;
+            }
             else if (selected_metric == 3)                                       cur = hw_state.water_lpm;
             else if (strcmp(m->label, "CV bar") == 0 && toon_state.water_pressure > 0.05f) cur = toon_state.water_pressure;
         }
         if (isnan(cur) || cur == 0) {
-            for (int i = series.n - 1; i >= 0; i--)
-                if (!isnan(series.samples[i])) { cur = series.samples[i]; break; }
+            if (selected_metric == 2 && g_gas_now_hourly_fallback && g_bar_count > 0) {
+                cur = g_bar_val[g_bar_count - 1];
+            } else {
+                for (int i = series.n - 1; i >= 0; i--) {
+                    if (!isnan(series.samples[i])) {
+                        cur = series.samples[i];
+                        if (selected_metric == 2 && !g_gas_now_hourly_fallback) cur /= 1000.0f;
+                        break;
+                    }
+                }
+            }
         }
         if (isnan(cur)) {
             lv_label_set_text(lbl_value, "--");
+        } else if (show_euro) {
+            float rate = (selected_metric == 2) ? settings.rate_gas_m3 : settings.rate_elec_kwh;
+            double eur_h;
+            if (selected_metric == 2 && g_gas_now_hourly_fallback && g_bar_count > 0 && cur == g_bar_val[g_bar_count - 1]) {
+                eur_h = cur;
+            } else if (selected_metric == 0 || selected_metric == 1) {
+                eur_h = (cur / 1000.0) * rate;
+            } else {
+                eur_h = cur * rate;
+            }
+            lv_label_set_text_fmt(lbl_value, "€ %.2f/u", eur_h);
         } else if (strcmp(m->unit_flow, "W") == 0) {
             lv_label_set_text_fmt(lbl_value, "%.0f %s", cur, m->unit_flow);
+        } else if (strcmp(m->unit_flow, "m3/h") == 0) {
+            lv_label_set_text_fmt(lbl_value, "%.2f %s", cur, m->unit_flow);
         } else {
             lv_label_set_text_fmt(lbl_value, "%.1f %s", cur, m->unit_flow);
         }
@@ -708,12 +837,15 @@ static void render_chart(void) {
         if (g_bar_count == 0) {
             lv_label_set_text(lbl_value, tr("geen data", "no data"));
         } else {
-            double total = 0;   /* g_bar_val already in kWh/m3 for cumulative */
+            double total = 0;   /* g_bar_val already in kWh/m3 (or €) for cumulative */
             for (int i = 0; i < g_bar_count; i++) total += g_bar_val[i];
-            if (total < 10.0 && total > 0.0)
+            if (show_euro) {
+                lv_label_set_text_fmt(lbl_value, "€ %.2f", total);
+            } else if (total < 10.0 && total > 0.0) {
                 lv_label_set_text_fmt(lbl_value, "%.2f %s", total, m->unit_cum);
-            else
+            } else {
                 lv_label_set_text_fmt(lbl_value, "%.1f %s", total, m->unit_cum);
+            }
         }
     }
 }
@@ -723,6 +855,20 @@ static void reload_and_render(void) {
     lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
     load_for_period();
     render_chart();
+
+    if (btn_mode_uom && btn_mode_euro) {
+        if (settings.stats_show_euro) {
+            lv_obj_set_style_bg_color(btn_mode_uom, lv_color_hex(THEME_BTN_BG), 0);
+            lv_obj_set_style_bg_color(btn_mode_euro, lv_color_hex(THEME_ACCENT_BLUE), 0);
+        } else {
+            lv_obj_set_style_bg_color(btn_mode_uom, lv_color_hex(THEME_ACCENT_BLUE), 0);
+            lv_obj_set_style_bg_color(btn_mode_euro, lv_color_hex(THEME_BTN_BG), 0);
+        }
+    }
+    if (lbl_rate_elec)
+        lv_label_set_text_fmt(lbl_rate_elec, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
+    if (lbl_rate_gas)
+        lv_label_set_text_fmt(lbl_rate_gas, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
 }
 
 static void on_metric_tap(lv_event_t * e) {
@@ -742,6 +888,128 @@ static void on_period_tap(lv_event_t * e) {
     reload_and_render();
 }
 
+static void on_rate_save(lv_event_t * e) {
+    (void)e;
+    if (g_rate_ta) {
+        const char * txt = lv_textarea_get_text(g_rate_ta);
+        if (txt && *txt) {
+            float val = strtof(txt, NULL);
+            if (val > 0.0001f) {
+                if (g_rate_edit_target == 0) {
+                    settings.rate_elec_kwh = val;
+                } else {
+                    settings.rate_gas_m3 = val;
+                }
+                settings_save();
+            }
+        }
+    }
+    close_rate_modal();
+    reload_and_render();
+}
+
+static void on_rate_cancel(lv_event_t * e) {
+    (void)e;
+    close_rate_modal();
+}
+
+static void open_rate_modal(int target) {
+    close_rate_modal();
+    g_rate_edit_target = target;
+
+    g_rate_backdrop = lv_obj_create(lv_scr_act());
+    lv_obj_remove_style_all(g_rate_backdrop);
+    lv_obj_set_size(g_rate_backdrop, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(g_rate_backdrop, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(g_rate_backdrop, LV_OPA_70, 0);
+    lv_obj_add_flag(g_rate_backdrop, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(g_rate_backdrop, LV_OBJ_FLAG_SCROLLABLE);
+
+    int panel_w = (DISP_HOR < 800) ? DISP_HOR - 40 : 440;
+    int panel_h = (DISP_VER < 600) ? DISP_VER - 40 : 360;
+    lv_obj_t * panel = lv_obj_create(g_rate_backdrop);
+    lv_obj_set_size(panel, panel_w, panel_h);
+    lv_obj_center(panel);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_radius(panel, 12, 0);
+    lv_obj_set_style_pad_all(panel, 12, 0);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * title = lv_label_create(panel);
+    lv_label_set_text(title, target == 0 ? tr("Stroomtarief (€ / kWh)", "Electricity rate (€ / kWh)")
+                                         : tr("Gastarief (€ / m3)", "Gas rate (€ / m3)"));
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(title, SF(20), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    g_rate_ta = lv_textarea_create(panel);
+    lv_textarea_set_one_line(g_rate_ta, true);
+    lv_textarea_set_max_length(g_rate_ta, 10);
+    char cur_str[32];
+    snprintf(cur_str, sizeof cur_str, "%.2f", (double)(target == 0 ? settings.rate_elec_kwh : settings.rate_gas_m3));
+    lv_textarea_set_text(g_rate_ta, cur_str);
+    lv_obj_set_width(g_rate_ta, panel_w - 60);
+    lv_obj_align(g_rate_ta, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_set_style_text_font(g_rate_ta, SF(22), 0);
+    lv_obj_set_style_text_align(g_rate_ta, LV_TEXT_ALIGN_CENTER, 0);
+
+    /* Numeric keyboard */
+    lv_obj_t * kb = lv_keyboard_create(panel);
+    lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
+    lv_keyboard_set_textarea(kb, g_rate_ta);
+    lv_obj_set_size(kb, panel_w - 24, SY(180));
+    lv_obj_align(kb, LV_ALIGN_TOP_MID, 0, 85);
+    lv_obj_add_event_cb(kb, on_rate_save, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(kb, on_rate_cancel, LV_EVENT_CANCEL, NULL);
+
+    /* Cancel & Save buttons row */
+    lv_obj_t * btn_cancel = lv_btn_create(panel);
+    lv_obj_set_size(btn_cancel, (panel_w - 40) / 2, SY(38));
+    lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(btn_cancel, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(btn_cancel, 8, 0);
+    lv_obj_add_event_cb(btn_cancel, on_rate_cancel, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * l_c = lv_label_create(btn_cancel);
+    lv_label_set_text(l_c, tr("Annuleren", "Cancel"));
+    lv_obj_center(l_c);
+
+    lv_obj_t * btn_save = lv_btn_create(panel);
+    lv_obj_set_size(btn_save, (panel_w - 40) / 2, SY(38));
+    lv_obj_align(btn_save, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(btn_save, lv_color_hex(THEME_ACCENT_BLUE), 0);
+    lv_obj_set_style_radius(btn_save, 8, 0);
+    lv_obj_add_event_cb(btn_save, on_rate_save, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * l_s = lv_label_create(btn_save);
+    lv_label_set_text(l_s, tr("Opslaan", "Save"));
+    lv_obj_center(l_s);
+}
+
+static void on_mode_uom_click(lv_event_t * e) {
+    (void)e;
+    settings.stats_show_euro = 0;
+    settings_save();
+    reload_and_render();
+}
+
+static void on_mode_euro_click(lv_event_t * e) {
+    (void)e;
+    settings.stats_show_euro = 1;
+    settings_save();
+    reload_and_render();
+}
+
+static void on_rate_elec_click(lv_event_t * e) {
+    (void)e;
+    open_rate_modal(0);
+}
+
+static void on_rate_gas_click(lv_event_t * e) {
+    (void)e;
+    open_rate_modal(1);
+}
+
 static int scr_light_mode = -1;
 
 lv_obj_t * screen_stats_create(void) {
@@ -749,7 +1017,18 @@ lv_obj_t * screen_stats_create(void) {
         reload_and_render();
         return scr_root;
     }
-    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    if (scr_root) {
+        close_rate_modal();
+        lv_obj_del(scr_root);
+        scr_root = NULL;
+    }
+    btn_mode_uom = NULL;
+    btn_mode_euro = NULL;
+    lbl_rates_title = NULL;
+    btn_rate_elec = NULL;
+    lbl_rate_elec = NULL;
+    btn_rate_gas = NULL;
+    lbl_rate_gas = NULL;
     scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
@@ -882,6 +1161,62 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_font(lbl_value, SF(36), 0);
     lv_label_set_text(lbl_value, "--");
     lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, SX(30), SY(310));
+
+    /* Euro / UoM toggle buttons */
+    btn_mode_uom = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_mode_uom, SX(115), SY(32));
+    lv_obj_set_pos(btn_mode_uom, SX(30), SY(365));
+    lv_obj_set_style_radius(btn_mode_uom, 6, 0);
+    lv_obj_add_event_cb(btn_mode_uom, on_mode_uom_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lbl_mu = lv_label_create(btn_mode_uom);
+    lv_label_set_text(lbl_mu, tr("Verbruik", "Usage"));
+    lv_obj_set_style_text_font(lbl_mu, SF(15), 0);
+    lv_obj_center(lbl_mu);
+
+    btn_mode_euro = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_mode_euro, SX(95), SY(32));
+    lv_obj_set_pos(btn_mode_euro, SX(150), SY(365));
+    lv_obj_set_style_radius(btn_mode_euro, 6, 0);
+    lv_obj_add_event_cb(btn_mode_euro, on_mode_euro_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lbl_me = lv_label_create(btn_mode_euro);
+    lv_label_set_text(lbl_me, tr("Euro", "Euro"));
+    lv_obj_set_style_text_font(lbl_me, SF(15), 0);
+    lv_obj_center(lbl_me);
+
+    /* Rates section */
+    lbl_rates_title = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(lbl_rates_title, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_rates_title, SF(13), 0);
+    lv_label_set_text(lbl_rates_title, tr("Tarieven (tik = wijzig):", "Rates (tap = edit):"));
+    lv_obj_set_pos(lbl_rates_title, SX(30), SY(410));
+
+    btn_rate_elec = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_rate_elec, SX(215), SY(34));
+    lv_obj_set_pos(btn_rate_elec, SX(30), SY(434));
+    lv_obj_set_style_bg_color(btn_rate_elec, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_border_color(btn_rate_elec, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(btn_rate_elec, 1, 0);
+    lv_obj_set_style_radius(btn_rate_elec, 6, 0);
+    lv_obj_add_event_cb(btn_rate_elec, on_rate_elec_click, LV_EVENT_CLICKED, NULL);
+    lbl_rate_elec = lv_label_create(btn_rate_elec);
+    lv_label_set_text_fmt(lbl_rate_elec, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
+    lv_obj_set_style_text_color(lbl_rate_elec, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_rate_elec, SF(14), 0);
+    lv_obj_center(lbl_rate_elec);
+
+    btn_rate_gas = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_rate_gas, SX(215), SY(34));
+    lv_obj_set_pos(btn_rate_gas, SX(30), SY(474));
+    lv_obj_set_style_bg_color(btn_rate_gas, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_border_color(btn_rate_gas, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(btn_rate_gas, 1, 0);
+    lv_obj_set_style_radius(btn_rate_gas, 6, 0);
+    lv_obj_add_event_cb(btn_rate_gas, on_rate_gas_click, LV_EVENT_CLICKED, NULL);
+    lbl_rate_gas = lv_label_create(btn_rate_gas);
+    lv_label_set_text_fmt(lbl_rate_gas, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
+    lv_obj_set_style_text_color(lbl_rate_gas, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_rate_gas, SF(14), 0);
+    lv_obj_center(lbl_rate_gas);
 
     /* Chart */
     chart = lv_chart_create(scr_root);

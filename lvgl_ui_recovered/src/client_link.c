@@ -37,6 +37,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdarg.h>
 
 #define MASTER_PORT 10081
 
@@ -484,8 +485,26 @@ static inline void client_set_water_pressure(float v) {
     else toon_state.water_pressure = v;
 }
 
+static void get_stock_url(char * out, size_t outsz, const char * fmt, ...) {
+    char path_buf[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(path_buf, sizeof(path_buf), fmt, args);
+    va_end(args);
+
+    char host_buf[64];
+    snprintf(host_buf, sizeof(host_buf), "%s", settings.master_host);
+    char * colon = strchr(host_buf, ':');
+    const char * slash = (path_buf[0] == '/') ? "" : "/";
+    if (colon) {
+        snprintf(out, outsz, "http://%s%s%s", host_buf, slash, path_buf);
+    } else {
+        snprintf(out, outsz, "http://%s:80%s%s", host_buf, slash, path_buf);
+    }
+}
+
 static void poll_stock_master(void) {
-    char url[256];
+    char url[512];
     char buf[4096];
     int fails = 0;
     int power_counter = 4; /* fetch immediately on first tick */
@@ -500,8 +519,8 @@ static void poll_stock_master(void) {
             continue;
         }
 
-        /* 1. Thermostat Info from happ_thermstat on port 10080 */
-        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=getThermostatInfo", settings.master_host);
+        /* 1. Thermostat Info from happ_thermstat on port 80 */
+        get_stock_url(url, sizeof url, "happ_thermstat?action=getThermostatInfo");
         if (http_fetch_to(url, buf, sizeof buf, 2) == 0 && strstr(buf, "\"currentTemp\"")) {
             fails = 0;
             int ct = parse_json_val(buf, "currentTemp", 0);
@@ -556,7 +575,7 @@ static void poll_stock_master(void) {
         if (power_counter >= 4) {
             power_counter = 0;
             /* Live real-time power from happ_pwrusage GetCurrentUsage on stock master */
-            snprintf(url, sizeof url, "http://%s:10080/happ_pwrusage?action=GetCurrentUsage", settings.master_host);
+            get_stock_url(url, sizeof url, "happ_pwrusage?action=GetCurrentUsage");
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0 && strstr(buf, "\"powerUsage\"")) {
                 double pu = 0.0, pp = 0.0;
                 const char * p_pu = strstr(buf, "\"powerUsage\"");
@@ -571,7 +590,7 @@ static void poll_stock_master(void) {
                 }
             } else {
                 /* Fallback to hcb_rrd elec_flow */
-                snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=elec_flow&rra=5min&samples=1", settings.master_host);
+                get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=elec_flow&rra=5min&samples=1");
                 if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
                     float pw = 0.0f;
                     if (parse_rrd_val(buf, &pw)) {
@@ -593,9 +612,9 @@ static void poll_stock_master(void) {
             localtime_r(&now_ts, &ltm);
             ltm.tm_hour = 0; ltm.tm_min = 0; ltm.tm_sec = 0;
             time_t midnight = mktime(&ltm);
-            snprintf(url, sizeof url,
-                     "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=gas_quantity&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
-                     settings.master_host, (long)midnight, (long)now_ts);
+            get_stock_url(url, sizeof url,
+                     "hcb_rrd?action=getRrdData&loggerName=gas_quantity&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                     (long)midnight, (long)now_ts);
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
                 float d = 0.0f, tot = 0.0f;
                 if (parse_rrd_delta(buf, &d, &tot)) {
@@ -620,12 +639,12 @@ static void poll_stock_master(void) {
             };
             static int press_idx = 0;
             int n_press = (int)(sizeof(press_sources) / sizeof(press_sources[0]));
-            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
-                     settings.master_host, press_sources[press_idx].name, press_sources[press_idx].rra);
+            get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
+                     press_sources[press_idx].name, press_sources[press_idx].rra);
             int prc = http_fetch_to(url, buf, sizeof buf, 2);
             if (prc != 0) {
-                snprintf(url, sizeof url, "http://%s/hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
-                         settings.master_host, press_sources[press_idx].name, press_sources[press_idx].rra);
+                get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
+                         press_sources[press_idx].name, press_sources[press_idx].rra);
                 prc = http_fetch_to(url, buf, sizeof buf, 2);
             }
             if (prc == 0) {
@@ -640,8 +659,8 @@ static void poll_stock_master(void) {
             /* Boiler outgoing (flow) temperature from hcb_rrd */
             static const char * flow_loggers[] = { "ch_temp", "boiler_temp", "ch_flow_temp", "boiler_out_temp" };
             static int flow_idx = 0;
-            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
-                     settings.master_host, flow_loggers[flow_idx]);
+            get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
+                     flow_loggers[flow_idx]);
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
                 float tf = 0.0f;
                 if (parse_rrd_val(buf, &tf) && tf > 0.0f) {
@@ -654,8 +673,8 @@ static void poll_stock_master(void) {
             /* Boiler incoming (return) temperature from hcb_rrd */
             static const char * ret_loggers[] = { "ch_return_temp", "boiler_return_temp", "boiler_in_temp" };
             static int ret_idx = 0;
-            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
-                     settings.master_host, ret_loggers[ret_idx]);
+            get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
+                     ret_loggers[ret_idx]);
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
                 float tr = 0.0f;
                 if (parse_rrd_val(buf, &tr) && tr > 0.0f) {
@@ -706,8 +725,8 @@ static void * reader_thread(void * arg) {
             continue;
         }
 
-        /* Check if master is a stock Toon with happ_thermstat on port 10080 */
-        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=getThermostatInfo", settings.master_host);
+        /* Check if master is a stock Toon with happ_thermstat on port 80 */
+        get_stock_url(url, sizeof url, "happ_thermstat?action=getThermostatInfo");
         if (http_fetch_to(url, probe_buf, sizeof probe_buf, 2) == 0 && strstr(probe_buf, "currentTemp")) {
             g_is_stock_master = 1;
             poll_stock_master();
@@ -734,9 +753,8 @@ static int post_json(const char * path, const char * json) {
 int client_link_setpoint(float temp) {
     if (g_is_stock_master) {
         int centi = (int)(temp * 100.0f + 0.5f);
-        char url[256], buf[256];
-        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=roomSetpoint&Setpoint=%d",
-                 settings.master_host, centi);
+        char url[512], buf[256];
+        get_stock_url(url, sizeof url, "happ_thermstat?action=roomSetpoint&Setpoint=%d", centi);
         int rc = http_fetch_to(url, buf, sizeof buf, 3);
         if (rc == 0) toon_state.setpoint = temp;
         return rc;
@@ -748,13 +766,12 @@ int client_link_setpoint(float temp) {
 
 int client_link_program(int state) {
     if (g_is_stock_master) {
-        char url[256], buf[256];
+        char url[512], buf[256];
         int rc;
         if (state < 0) {
             /* Manual hold */
             int ts = (toon_state.active_state >= 0 && toon_state.active_state <= 3) ? toon_state.active_state : 1;
-            snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=changeSchemeState&state=0&temperatureState=%d",
-                     settings.master_host, ts);
+            get_stock_url(url, sizeof url, "happ_thermstat?action=changeSchemeState&state=0&temperatureState=%d", ts);
             rc = http_fetch_to(url, buf, sizeof buf, 3);
             if (rc == 0) {
                 toon_state.program_state = 0;
@@ -769,8 +786,7 @@ int client_link_program(int state) {
         else if (toon_state.active_state == state) mode = 8;/* tap same -> LOCKEDBASE */
         else mode = 2;                                     /* TEMPOVERRIDE */
 
-        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=changeSchemeState&state=%d&temperatureState=%d",
-                 settings.master_host, mode, state);
+        get_stock_url(url, sizeof url, "happ_thermstat?action=changeSchemeState&state=%d&temperatureState=%d", mode, state);
         rc = http_fetch_to(url, buf, sizeof buf, 3);
         if (rc == 0) {
             toon_state.active_state  = state;
@@ -785,10 +801,9 @@ int client_link_program(int state) {
 
 int client_link_resume_schedule(void) {
     if (g_is_stock_master) {
-        char url[256], buf[256];
+        char url[512], buf[256];
         int now_state = toon_state.active_state >= 0 ? toon_state.active_state : 1;
-        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=changeSchemeState&state=1&temperatureState=%d",
-                 settings.master_host, now_state);
+        get_stock_url(url, sizeof url, "happ_thermstat?action=changeSchemeState&state=1&temperatureState=%d", now_state);
         int rc = http_fetch_to(url, buf, sizeof buf, 3);
         if (rc == 0) toon_state.program_state = 1;
         return rc;

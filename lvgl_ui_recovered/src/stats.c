@@ -64,16 +64,38 @@ static int http_get_body(const char * path_qs, char * out, size_t outsz) {
 static int http_get_body(const char * path_qs, char * out, size_t outsz) {
     const char * host = "127.0.0.1";
     char host_buf[64];
+    char port_buf[16] = "80";
+    int custom_port = 0;
     if (settings.client_mode && settings.master_host[0]) {
         snprintf(host_buf, sizeof(host_buf), "%s", settings.master_host);
         char * colon = strchr(host_buf, ':');
-        if (colon) *colon = '\0';
+        if (colon) {
+            *colon = '\0';
+            snprintf(port_buf, sizeof(port_buf), "%s", colon + 1);
+            custom_port = 1;
+        } else {
+            snprintf(port_buf, sizeof(port_buf), "80");
+        }
         host = host_buf;
     }
 
-    const char * ports[] = { "10080", "80" };
+    const char * ports[2];
+    int nports = 1;
+    if (custom_port) {
+        ports[0] = port_buf;
+        nports = 1;
+    } else if (settings.client_mode) {
+        ports[0] = "80";
+        ports[1] = "10080";
+        nports = 2;
+    } else {
+        ports[0] = "10080";
+        ports[1] = "80";
+        nports = 2;
+    }
+
     int s = -1;
-    for (int pi = 0; pi < 2 && s < 0; pi++) {
+    for (int pi = 0; pi < nports && s < 0; pi++) {
         struct addrinfo hints, *res = NULL, *rp;
         memset(&hints, 0, sizeof(hints));
         hints.ai_family = AF_INET;

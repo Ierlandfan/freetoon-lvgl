@@ -153,6 +153,9 @@ settings_t settings = {
     .ha_power_entity     = "",
     .ha_gas_entity       = "",
     .ha_solar_entity     = "",
+    .rate_elec_kwh       = 0.30f,
+    .rate_gas_m3         = 1.35f,
+    .stats_show_euro     = 0,
 
     /* Toon 1 panel mounting orientation — TSC2007 reports Y flipped vs the
      * framebuffer on EVERY Toon 1 (not a per-device tweak). Default this
@@ -318,6 +321,9 @@ void settings_load(void) {
         else if (strcmp(k, "client_mode")     == 0) settings.client_mode = iv;
         else if (strcmp(k, "master_host")     == 0)
             snprintf(settings.master_host, sizeof settings.master_host, "%s", v);
+        else if (strcmp(k, "rate_elec_kwh")   == 0) settings.rate_elec_kwh = strtof(v, NULL);
+        else if (strcmp(k, "rate_gas_m3")     == 0) settings.rate_gas_m3   = strtof(v, NULL);
+        else if (strcmp(k, "stats_show_euro") == 0) settings.stats_show_euro = iv;
         else if (strncmp(k, "tile_slot_p1_", 13) == 0) {
             int n = atoi(k + 13);                  /* tile_slot_p1_0 .. _11 */
             if (n >= 0 && n < 12) snprintf(settings.tile_slot_page1[n], 48, "%s", v);
@@ -691,6 +697,8 @@ autodetect:
      * over SSH. With no file there, the user has to invent the key names
      * from memory. autodetect + mqtt migration run before this so the
      * persisted values reflect the right post-detect defaults. */
+    if (settings.rate_elec_kwh <= 0.0001f) settings.rate_elec_kwh = 0.30f;
+    if (settings.rate_gas_m3 <= 0.0001f)   settings.rate_gas_m3   = 1.35f;
     if (!cfg_existed) {
         settings_save();
     }
@@ -878,6 +886,9 @@ void settings_save(void) {
     fprintf(f, "sonos_zone=%s\n",      settings.sonos_zone);
     fprintf(f, "client_mode=%d\n",     settings.client_mode);
     fprintf(f, "master_host=%s\n",     settings.master_host);
+    fprintf(f, "rate_elec_kwh=%.4f\n", settings.rate_elec_kwh);
+    fprintf(f, "rate_gas_m3=%.4f\n",   settings.rate_gas_m3);
+    fprintf(f, "stats_show_euro=%d\n", settings.stats_show_euro);
     for (int i = 0; i < 12; i++)
         fprintf(f, "tile_slot_p1_%d=%s\n", i, settings.tile_slot_page1[i]);
     fprintf(f, "tile_rotate_enabled=%d\n", settings.tile_rotate_enabled);

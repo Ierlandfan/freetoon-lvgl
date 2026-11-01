@@ -147,6 +147,11 @@ typedef struct {
      * export as yield. */
     char ha_solar_entity[64];
 
+    /* Energy statistics rates and display mode */
+    float rate_elec_kwh;         /* Electricity rate in € per kWh (default 0.30) */
+    float rate_gas_m3;           /* Gas rate in € per m3 (default 1.35) */
+    int   stats_show_euro;       /* 0 = physical UoM (W, kWh, m3), 1 = Euro (€) */
+
     /* Boot-picker — when 1, the launcher-spawned `toonui --bootpick`
      * shows a 10 s "freetoon vs stock qt-gui" picker before dispatching.
      * When 0 the picker short-circuits and the launcher boots straight
