@@ -15,6 +15,7 @@
 #include "stats.h"
 #include "airhist.h"
 #include "homewizard.h"
+#include "energy.h"
 #include "settings.h"
 #include "theme.h"
 #include "boxtalk.h"
@@ -63,20 +64,22 @@ typedef struct {
        (instantaneous ppm/ppb, never diffed). which = metric index - 3. */
     int local_hist;
 } metric_t;
-static const metric_t metrics[4] = {
-    {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt", "elec_quantity_lt", 0xaa77ff, 0},
-    {"Gas",         "l/h",   "m3",   "gas_flow",                   "gas_quantity",     NULL,                0xffaa44, 0},
-    {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",   NULL,                0x44aaff, 0},
-    {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,     0x5fb3ff, 0},
+static const metric_t metrics[5] = {
+    {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt",      "elec_quantity_lt",      0xaa77ff, 0},
+    {"Solar",       "W",     "kWh",  "elec_flow_prod",             "elec_quantity_nt_prod", "elec_quantity_lt_prod", 0xeeaa22, 0},
+    {"Gas",         "l/h",   "m3",   "gas_flow",                   "gas_quantity",          NULL,                    0xffaa44, 0},
+    {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",        NULL,                    0x44aaff, 0},
+    {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,          0x5fb3ff, 0},
 };
 #define N_METRIC ((int)(sizeof metrics / sizeof metrics[0]))
 
 static const char * metric_title(int i) {
     switch (i) {
         case 0: return tr("Elektriciteit", "Electricity");
-        case 1: return tr("Gas", "Gas");
-        case 2: return tr("Water", "Water");
-        case 3: return tr("CV bar", "CH bar");
+        case 1: return tr("Zon", "Solar");
+        case 2: return tr("Gas", "Gas");
+        case 3: return tr("Water", "Water");
+        case 4: return tr("CV bar", "CH bar");
         default: return "";
     }
 }
@@ -262,7 +265,7 @@ static int load_for_period(void) {
     g_current_start_t = from;
     g_current_end_t = to;
 
-    if (selected_metric == 3) {
+    if (strcmp(m->label, "CV bar") == 0) {
         series2.n = 0;
         int samples;
         switch (selected_period) {
@@ -296,10 +299,17 @@ static int load_for_period(void) {
         return airhist_pres_series_range(from, to, 365, &series);
     }
 
+    int is_solar = (selected_metric == 1);
+
     switch (selected_period) {
-        case PERIOD_NOW:
+        case PERIOD_NOW: {
             /* Live 5-minute flow: 12 samples over 1 hour */
-            return stats_fetch_range(m->flow_logger, "5min", from, to, 12, &series);
+            int rc = stats_fetch_range(m->flow_logger, "5min", from, to, 12, &series);
+            if ((rc != 0 || series.n == 0) && is_solar) {
+                rc = stats_fetch_range("solar_flow", "5min", from, to, 12, &series);
+            }
+            return rc;
+        }
 
         case PERIOD_HOURS:
             /* Cumulative meter, hourly samples — diff'd to per-hour usage.
@@ -309,7 +319,14 @@ static int load_for_period(void) {
             } else {
                 series2.n = 0;
             }
-            return stats_fetch_range(m->cum_logger, "5yrhours", from - 3600, to, 26, &series);
+            {
+                int rc = stats_fetch_range(m->cum_logger, "5yrhours", from - 3600, to, 26, &series);
+                if ((rc != 0 || series.n == 0) && is_solar) {
+                    series2.n = 0;
+                    rc = stats_fetch_range("solar_quantity", "5yrhours", from - 3600, to, 26, &series);
+                }
+                return rc;
+            }
 
         case PERIOD_DAYS:
             /* 31 days of daily cumulative meter samples -> diff'd to 31 daily bars */
@@ -318,7 +335,14 @@ static int load_for_period(void) {
             } else {
                 series2.n = 0;
             }
-            return stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 34, &series);
+            {
+                int rc = stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 34, &series);
+                if ((rc != 0 || series.n == 0) && is_solar) {
+                    series2.n = 0;
+                    rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 34, &series);
+                }
+                return rc;
+            }
 
         case PERIOD_WEEKS:
             /* 12 weeks = 84 days of daily cumulative meter samples -> diff'd to 84 daily deltas,
@@ -328,7 +352,14 @@ static int load_for_period(void) {
             } else {
                 series2.n = 0;
             }
-            return stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 88, &series);
+            {
+                int rc = stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 88, &series);
+                if ((rc != 0 || series.n == 0) && is_solar) {
+                    series2.n = 0;
+                    rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 88, &series);
+                }
+                return rc;
+            }
 
         case PERIOD_MONTHS:
             /* 12 months = 365 days of daily cumulative meter samples -> diff'd to daily deltas,
@@ -338,7 +369,14 @@ static int load_for_period(void) {
             } else {
                 series2.n = 0;
             }
-            return stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 370, &series);
+            {
+                int rc = stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 370, &series);
+                if ((rc != 0 || series.n == 0) && is_solar) {
+                    series2.n = 0;
+                    rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 370, &series);
+                }
+                return rc;
+            }
 
         case PERIOD_YEARS:
             /* Full 10-year archive at downsampled monthly resolution (~120 samples) -> grouped by year */
@@ -347,7 +385,14 @@ static int load_for_period(void) {
             } else {
                 series2.n = 0;
             }
-            return stats_fetch_range(m->cum_logger, "10yrdays", 0, 0, 120, &series);
+            {
+                int rc = stats_fetch_range(m->cum_logger, "10yrdays", 0, 0, 120, &series);
+                if ((rc != 0 || series.n == 0) && is_solar) {
+                    series2.n = 0;
+                    rc = stats_fetch_range("solar_quantity", "10yrdays", 0, 0, 120, &series);
+                }
+                return rc;
+            }
     }
     return -1;
 }
@@ -450,12 +495,13 @@ static double calculate_nice_top(double hi) {
 }
 
 static void render_chart(void) {
+    const metric_t * m = &metrics[selected_metric];
     int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
     if (n < 0) n = 0;
 
-    int is_cum = (selected_period != PERIOD_NOW) && (selected_metric != 3) && !metrics[selected_metric].local_hist;
+    int is_cum = (selected_period != PERIOD_NOW) && (strcmp(m->label, "CV bar") != 0) && !m->local_hist;
 
-    /* Cumulative meters → per-sample usage deltas. The elec NT/LT split is
+    /* Cumulative meters → per-sample usage deltas. The elec / solar NT/LT split is
      * diffed separately then summed. */
     if (is_cum) {
         double cap;
@@ -468,7 +514,7 @@ static void render_chart(void) {
             default:            cap = 200000.0; break;
         }
         diff_in_place(&series, n, cap);
-        if (selected_metric == 0 && series2.n >= n) {
+        if (m->cum_logger_extra && series2.n >= n) {
             diff_in_place(&series2, n, cap);
             for (int i = 0; i < n; i++) {
                 if (isnan(series.samples[i]) && !isnan(series2.samples[i]))
@@ -570,7 +616,7 @@ static void render_chart(void) {
         for (int i = 0; i < g_bar_count; i++) g_bar_val[i] /= 1000.0;
 
     /* Extra safeguard: ensure CV bar values are in bar (e.g. 1.3 bar, not 13 or 130) */
-    if (selected_metric == 3) {
+    if (strcmp(m->label, "CV bar") == 0) {
         for (int i = 0; i < g_bar_count; i++) {
             if (g_bar_val[i] >= 50.0)      g_bar_val[i] /= 100.0;
             else if (g_bar_val[i] >= 5.0)  g_bar_val[i] /= 10.0;
@@ -581,7 +627,7 @@ static void render_chart(void) {
     double hi = 0;
     for (int i = 0; i < g_bar_count; i++) if (g_bar_val[i] > hi) hi = g_bar_val[i];
     double top;
-    if (selected_metric == 3) {
+    if (strcmp(m->label, "CV bar") == 0) {
         if (hi <= 1.7) top = 2.0;       /* Standard 2.0 bar scale (ticks: 0, 0.5, 1, 1.5, 2) */
         else if (hi <= 2.2) top = 2.5;
         else if (hi <= 2.6) top = 3.0;
@@ -636,7 +682,6 @@ static void render_chart(void) {
     }
 
     /* Caption + headline value. */
-    const metric_t * m = &metrics[selected_metric];
     if (!is_cum) {
         if (g_time_offset == 0)
             lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
@@ -645,16 +690,22 @@ static void render_chart(void) {
 
         double cur = NAN;
         if (g_time_offset == 0) {
-            if (selected_metric == 0)      cur = hw_state.power_w;
-            else if (selected_metric == 2) cur = hw_state.water_lpm;
-            else if (selected_metric == 3 && toon_state.water_pressure > 0.05f) cur = toon_state.water_pressure;
+            if (selected_metric == 0)                                            cur = hw_state.power_w;
+            else if (selected_metric == 1 && energy_have_solar())                cur = energy_solar_w();
+            else if (selected_metric == 3)                                       cur = hw_state.water_lpm;
+            else if (strcmp(m->label, "CV bar") == 0 && toon_state.water_pressure > 0.05f) cur = toon_state.water_pressure;
         }
         if (isnan(cur) || cur == 0) {
             for (int i = series.n - 1; i >= 0; i--)
                 if (!isnan(series.samples[i])) { cur = series.samples[i]; break; }
         }
-        if (isnan(cur)) lv_label_set_text(lbl_value, "--");
-        else lv_label_set_text_fmt(lbl_value, "%.1f %s", cur, m->unit_flow);
+        if (isnan(cur)) {
+            lv_label_set_text(lbl_value, "--");
+        } else if (strcmp(m->unit_flow, "W") == 0) {
+            lv_label_set_text_fmt(lbl_value, "%.0f %s", cur, m->unit_flow);
+        } else {
+            lv_label_set_text_fmt(lbl_value, "%.1f %s", cur, m->unit_flow);
+        }
     } else {
         lv_label_set_text(lbl_unit, tr("Periodetotaal", "Period total"));
         if (g_bar_count == 0) {
@@ -745,11 +796,11 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_font(dbl, SF(17), 0);
     lv_obj_center(dbl);
 
-    /* Metric tabs row (4 metrics: Electricity, Gas, Water, CV bar) */
+    /* Metric tabs row (5 metrics: Electricity, Solar, Gas, Water, CV bar) */
     for (int i = 0; i < N_METRIC; i++) {
         lv_obj_t * t = lv_obj_create(scr_root);
-        lv_obj_set_size(t, SX(230), SY(54));
-        lv_obj_set_pos(t, SX(26 + i * 246), SY(100));
+        lv_obj_set_size(t, SX(180), SY(54));
+        lv_obj_set_pos(t, SX(26 + i * 198), SY(100));
         lv_obj_set_style_radius(t, 12, 0);
         lv_obj_set_style_pad_all(t, 0, 0);
         lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
