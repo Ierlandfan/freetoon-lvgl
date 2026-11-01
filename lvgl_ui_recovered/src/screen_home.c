@@ -1083,7 +1083,7 @@ static slot_agenda_view_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
     a->root = lv_obj_create(tile);
     lv_obj_set_size(a->root, LV_PCT(100), LV_PCT(100));
     lv_obj_align(a->root, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(a->root, lv_color_hex(settings.home_light_mode ? COL_TILE_BG : bg), 0);
+    lv_obj_set_style_bg_color(a->root, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_bg_opa(a->root, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(a->root, 10, 0);
     lv_obj_set_style_pad_all(a->root, SX(8), 0);
@@ -1095,7 +1095,7 @@ static slot_agenda_view_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
 
     a->lbl_hdr = lv_label_create(a->root);
     lv_obj_set_style_text_color(a->lbl_hdr, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(a->lbl_hdr, SF(16), 0);
+    lv_obj_set_style_text_font(a->lbl_hdr, SF(18), 0);
     lv_label_set_text(a->lbl_hdr, tr("Agenda", "Calendar"));
     lv_obj_align(a->lbl_hdr, LV_ALIGN_TOP_LEFT, 0, 0);
 
@@ -1283,7 +1283,7 @@ static void on_slot_waste_tap(lv_event_t * e) {
 static lv_obj_t * make_slot_waste(lv_obj_t * tile, uint32_t bg) {
     if (!tile) return NULL;
     lv_obj_t * l = lv_label_create(tile);
-    lv_obj_set_style_bg_color(l, lv_color_hex(settings.home_light_mode ? COL_TILE_BG : bg), 0);
+    lv_obj_set_style_bg_color(l, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_bg_opa(l, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(l, 10, 0);
     lv_obj_set_style_pad_all(l, SX(6), 0);
