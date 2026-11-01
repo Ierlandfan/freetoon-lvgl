@@ -58,6 +58,7 @@ static const uint32_t DB_COL[DB_COUNT] = {
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
     [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,     [DB_CLOCK]=0x2b7bbb,
     [DB_DATE]=0x486b88,   [DB_AGENDA]=0x4477cc,  [DB_RAINFALL]=0x3a77aa,
+    [DB_SOLAR]=0xeeaa22,
 };
 
 static void place_rect(int i);
@@ -278,8 +279,9 @@ static void on_resize(lv_event_t * e) {
     if (sel < 0 || sel >= DB_COUNT || !edit_dim[sel].visible) return;
     int d = (int)(intptr_t)lv_event_get_user_data(e);   /* 0:w- 1:w+ 2:h- 3:h+ */
     dim_block_t * b = &edit_dim[sel];
-    int min_h = (sel == DB_DATE || sel == DB_ENERGY || sel == DB_GAS) ? 1 : DIM_MIN_H;
-    int min_w = DIM_MIN_W;
+    int is_energy_block = (sel == DB_ENERGY || sel == DB_GAS || sel == DB_SOLAR);
+    int min_h = (sel == DB_DATE || is_energy_block) ? 1 : DIM_MIN_H;
+    int min_w = (is_energy_block && settings.dim_bars_vertical) ? 1 : DIM_MIN_W;
 
     if (d == 0) { /* W- */
         if (b->w > min_w) b->w--;
@@ -455,8 +457,10 @@ static void on_restore_block(lv_event_t * e) {
             int row = edit_dim[old_idx].row;
             int w = edit_dim[old_idx].w;
             int h = edit_dim[old_idx].h;
-            int min_h = (idx == DB_DATE || idx == DB_ENERGY || idx == DB_GAS) ? 1 : DIM_MIN_H;
-            if (w < DIM_MIN_W) w = DIM_MIN_W;
+            int is_energy_block = (idx == DB_ENERGY || idx == DB_GAS || idx == DB_SOLAR);
+            int min_h = (idx == DB_DATE || is_energy_block) ? 1 : DIM_MIN_H;
+            int min_w = (is_energy_block && settings.dim_bars_vertical) ? 1 : DIM_MIN_W;
+            if (w < min_w) w = min_w;
             if (h < min_h) h = min_h;
             if (col + w > LAYOUT_COLS) col = LAYOUT_COLS - w;
             if (row + h > LAYOUT_ROWS) row = LAYOUT_ROWS - h;
@@ -467,7 +471,7 @@ static void on_restore_block(lv_event_t * e) {
                 if (row > 0 && !would_overlap(idx, col, row - 1, w, h)) {
                     row--;
                 } else if (!find_free_cell(idx, w, h, &col, &row)) {
-                    w = DIM_MIN_W;
+                    w = min_w;
                     h = min_h;
                     if (!find_free_cell(idx, w, h, &col, &row)) {
                         col = 0; row = 0;
@@ -490,13 +494,15 @@ static void on_restore_block(lv_event_t * e) {
 
     int w = edit_dim[idx].w;
     int h = edit_dim[idx].h;
-    int min_h = (idx == DB_DATE || idx == DB_ENERGY || idx == DB_GAS) ? 1 : DIM_MIN_H;
-    if (w < DIM_MIN_W) w = DIM_MIN_W;
+    int is_energy_block = (idx == DB_ENERGY || idx == DB_GAS || idx == DB_SOLAR);
+    int min_h = (idx == DB_DATE || is_energy_block) ? 1 : DIM_MIN_H;
+    int min_w = (is_energy_block && settings.dim_bars_vertical) ? 1 : DIM_MIN_W;
+    if (w < min_w) w = min_w;
     if (h < min_h) h = min_h;
 
     int c, r;
     if (!find_free_cell(idx, w, h, &c, &r)) {
-        w = DIM_MIN_W;
+        w = min_w;
         h = min_h;
         if (!find_free_cell(idx, w, h, &c, &r)) {
             c = 0; r = 0;

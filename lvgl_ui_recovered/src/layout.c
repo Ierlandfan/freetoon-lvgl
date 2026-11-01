@@ -438,6 +438,7 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_DATE]     = { 3, 2, 6, 1, 1 },   /* date line below clock */
     [DB_AGENDA]   = { 0, 4, 3, 2, 0 },   /* agenda upcoming events (default hidden) */
     [DB_RAINFALL] = { 0, 6, 4, 2, 0 },   /* buienradar 3h rain graph (default hidden) */
+    [DB_SOLAR]    = { 9, 5, 3, 1, 0 },   /* solar production (default hidden) */
 };
 
 void dim_layout_reset_default(void) {
@@ -502,6 +503,7 @@ const char * dim_block_name(int id) {
         case DB_DATE:     return "Datum";
         case DB_AGENDA:   return "Agenda";
         case DB_RAINFALL: return "Neerslag";
+        case DB_SOLAR:    return "Zon";
     }
     return "?";
 }

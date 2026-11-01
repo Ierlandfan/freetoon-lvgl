@@ -76,6 +76,7 @@ typedef enum {
     DB_DATE,         /* Date */
     DB_AGENDA,       /* Agenda / Calendar */
     DB_RAINFALL,     /* Buienradar 3h rain graph */
+    DB_SOLAR,        /* solar power production (W) value + mini-bar */
     DB_COUNT
 } dim_block_id_t;
 

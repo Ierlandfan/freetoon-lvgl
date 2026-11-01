@@ -106,12 +106,15 @@ static lv_obj_t * dim_box(int id, int * ow, int * oh) {
  * When settings.dim_bars_vertical is on, renders classic Toon segmented vertical bars. */
 static lv_obj_t * en_pwr_track, * en_pwr_fill, * en_pwr_lbl;
 static lv_obj_t * en_gas_track, * en_gas_fill, * en_gas_lbl;
-static int   en_pwr_w = 0, en_gas_w = 0;   /* mini-bar track widths (px, set at create) */
+static lv_obj_t * en_sol_track, * en_sol_fill, * en_sol_lbl;
+static int   en_pwr_w = 0, en_gas_w = 0, en_sol_w = 0;   /* mini-bar track widths (px, set at create) */
 #define DIM_GRID_NSEG 12
 static lv_obj_t * en_pwr_segs[DIM_GRID_NSEG];
 static lv_obj_t * en_pwr_vlbl;
 static lv_obj_t * en_gas_segs[DIM_GRID_NSEG];
 static lv_obj_t * en_gas_vlbl;
+static lv_obj_t * en_sol_segs[DIM_GRID_NSEG];
+static lv_obj_t * en_sol_vlbl;
 #define DIM_E_FULL_W    5000.0f     /* power at a full bar (fixed scale) */
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at a full bar (fixed scale) */
 
@@ -193,7 +196,7 @@ static void en_set_bar(lv_obj_t * fill, lv_obj_t * lbl,
  * with a value label positioned underneath it. */
 static void en_make_vbar(lv_obj_t * parent, int bw, int bh, lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t ** lbl) {
     if (!parent) return;
-    int sw = (DISP_HOR < 1000) ? 26 : 34;
+    int sw = (DISP_HOR < 1000) ? (bw < 70 ? 22 : 26) : (bw < 90 ? 28 : 34);
     int lbl_h = (DISP_VER < 600) ? 18 : 22;
     int lbl_gap = (DISP_VER < 600) ? 2 : 4;
     int avail_th = bh - lbl_h - lbl_gap;
@@ -229,15 +232,18 @@ static void en_make_vbar(lv_obj_t * parent, int bw, int bh, lv_obj_t * segs[DIM_
 
     *lbl = lv_label_create(parent);
     lv_obj_set_style_text_color(*lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(*lbl, (DISP_VER < 600) ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
+    const lv_font_t * vfont = (bw < 70) ? &lv_font_montserrat_14 :
+                              ((DISP_VER < 600) ? &lv_font_montserrat_18 : &lv_font_montserrat_22);
+    lv_obj_set_style_text_font(*lbl, vfont, 0);
     lv_obj_set_style_text_align(*lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(*lbl, bw > 0 ? bw : LV_SIZE_CONTENT);
     lv_label_set_text(*lbl, "");
     lv_obj_set_pos(*lbl, 0, y0 + th + lbl_gap);
 }
 
-static void en_set_vbar(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
-                        float ratio, const char * txt) {
+static void en_set_vbar_color(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
+                              float ratio, const char * txt,
+                              uint32_t col_low, uint32_t col_high) {
     if (ratio < 0) ratio = 0;
     if (ratio > 1) ratio = 1;
     int lit = (int)(ratio * DIM_GRID_NSEG + 0.5f);
@@ -246,10 +252,15 @@ static void en_set_vbar(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
     for (int i = 0; i < DIM_GRID_NSEG; i++) {
         if (!segs[i]) continue;
         int fb = DIM_GRID_NSEG - 1 - i;   /* 0 = bottom, 11 = top */
-        uint32_t c = (fb < lit) ? (fb < 7 ? 0x689F38 : 0xCCCC33) : 0x2A3540;
+        uint32_t c = (fb < lit) ? (fb < 7 ? col_low : col_high) : 0x2A3540;
         lv_obj_set_style_bg_color(segs[i], lv_color_hex(c), 0);
     }
     if (lbl) lv_label_set_text(lbl, txt);
+}
+
+static void en_set_vbar(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
+                        float ratio, const char * txt) {
+    en_set_vbar_color(segs, lbl, ratio, txt, 0x689F38, 0xCCCC33);
 }
 
 static void on_wake_tap(lv_event_t * e) {
@@ -694,11 +705,11 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Energy block: power now (W, white) + gas trailing-hour (m³/h, amber),
+    /* Energy block: power now (W, white) + gas trailing-hour (m³/h, amber) + solar (W, gold),
      * each a value + fixed-full-scale mini-bar. Gas needs the P1; energy follows
-     * settings.energy_source (Toon vs HWE). The whole block can be toggled off
-     * via the existing show_dim_bars setting (or hidden in the dim editor). */
-    if (en_pwr_lbl) {
+     * settings.energy_source (Toon vs HWE); solar follows energy_solar_w().
+     * The whole block can be toggled off via the existing show_dim_bars setting. */
+    if (en_pwr_lbl || en_gas_lbl || en_sol_lbl) {
         int   e_conn = energy_connected();
         float e = energy_power_w();
         if (e < 0) e = 0;                          /* export → empty */
@@ -717,23 +728,35 @@ static void refresh_cb(lv_timer_t * t) {
             snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
         }
 
+        int   s_conn = energy_have_solar();
+        float s = energy_solar_w();
+        if (s < 0) s = 0;
+        char stxt[24];
+        if (s >= 1000) snprintf(stxt, sizeof stxt, "%.1f kW", s / 1000.0f);
+        else           snprintf(stxt, sizeof stxt, "%.0f W", s);
+
         float er = e / DIM_E_FULL_W;
         float gr = (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H);
+        float sr = s / DIM_E_FULL_W;
         const char * edisp = e_conn ? etxt : tr("-- W", "-- W");
         const char * gdisp = g_conn ? gtxt : tr("-- m3", "-- m3");
+        const char * sdisp = s_conn ? stxt : tr("-- W", "-- W");
 
         en_set_bar(en_pwr_fill, en_pwr_lbl, en_pwr_w, er, edisp);
         en_set_bar(en_gas_fill, en_gas_lbl, en_gas_w, gr, gdisp);
+        en_set_bar(en_sol_fill, en_sol_lbl, en_sol_w, sr, sdisp);
 
         en_set_vbar(en_pwr_segs, en_pwr_vlbl, er, edisp);
         en_set_vbar(en_gas_segs, en_gas_vlbl, gr, gdisp);
+        en_set_vbar_color(en_sol_segs, en_sol_vlbl, sr, sdisp, 0xE5A93B, 0xFFD54F);
 
-        /* show_dim_bars off → hide both blocks' contents.
+        /* show_dim_bars off → hide blocks' contents.
          * dim_bars_vertical chooses horizontal mini-bars vs classic vertical segmented bars. */
         int show = settings.show_dim_bars;
         int vert = settings.dim_bars_vertical;
 
-        lv_obj_t * en_parts[] = { en_pwr_track, en_gas_track, en_pwr_lbl, en_gas_lbl };
+        lv_obj_t * en_parts[] = { en_pwr_track, en_gas_track, en_sol_track,
+                                  en_pwr_lbl,   en_gas_lbl,   en_sol_lbl };
         for (unsigned i = 0; i < sizeof en_parts / sizeof en_parts[0]; i++)
             if (en_parts[i]) {
                 if (show && !vert) lv_obj_clear_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
@@ -748,6 +771,10 @@ static void refresh_cb(lv_timer_t * t) {
                 if (show && vert) lv_obj_clear_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
                 else              lv_obj_add_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
             }
+            if (en_sol_segs[i]) {
+                if (show && vert) lv_obj_clear_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
+                else              lv_obj_add_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
+            }
         }
         if (en_pwr_vlbl) {
             if (show && vert) lv_obj_clear_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
@@ -756,6 +783,10 @@ static void refresh_cb(lv_timer_t * t) {
         if (en_gas_vlbl) {
             if (show && vert) lv_obj_clear_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
             else              lv_obj_add_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (en_sol_vlbl) {
+            if (show && vert) lv_obj_clear_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
+            else              lv_obj_add_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -1104,7 +1135,7 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
     }
 
-    /* ---- STROOM (power) + GAS: separate single-metric blocks, each a value +
+    /* ---- STROOM (power) + GAS + ZON: separate single-metric blocks, each a value +
      * mini-bar. Independent so they can be placed/sized on their own. ---- */
     int ebw = 0, ebh = 0; lv_obj_t * bx_e = dim_box(DB_ENERGY, &ebw, &ebh);
     en_pwr_w = ebw - 8;
@@ -1115,6 +1146,11 @@ lv_obj_t * screen_dim_grid_create(void) {
     en_gas_w = gbw - 8;
     en_make_bar(bx_g, en_gas_w, 6, 0xffffff, &en_gas_track, &en_gas_fill, &en_gas_lbl);
     en_make_vbar(bx_g, gbw, gbh, en_gas_segs, &en_gas_vlbl);
+
+    int sbw_sol = 0, sbh_sol = 0; lv_obj_t * bx_sol = dim_box(DB_SOLAR, &sbw_sol, &sbh_sol);
+    en_sol_w = sbw_sol - 8;
+    en_make_bar(bx_sol, en_sol_w, 6, 0xffcc00, &en_sol_track, &en_sol_fill, &en_sol_lbl);
+    en_make_vbar(bx_sol, sbw_sol, sbh_sol, en_sol_segs, &en_sol_vlbl);
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
     int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);
