@@ -302,11 +302,12 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_add_event_cb(g_rename_modal, on_rename_cancel, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * card = lv_obj_create(g_rename_modal);
-    lv_obj_set_size(card, SX(640), SY(170));
+    lv_obj_set_size(card, SX(640), SY(200));
     lv_obj_align(card, LV_ALIGN_TOP_MID, 0, SY(24));
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_set_style_pad_all(card, SX(16), 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
 
@@ -314,18 +315,18 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(22), 0);
     lv_label_set_text(t, tr("Apparaat hernoemen", "Rename device"));
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(8), SY(6));
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
 
     g_rename_ta = lv_textarea_create(card);
     lv_textarea_set_one_line(g_rename_ta, true);
     lv_textarea_set_text(g_rename_ta, d->name[0] ? d->name : d->type);
-    lv_obj_set_size(g_rename_ta, SX(600), SY(46));
-    lv_obj_align(g_rename_ta, LV_ALIGN_TOP_MID, 0, SY(40));
+    lv_obj_set_size(g_rename_ta, SX(608), SY(46));
+    lv_obj_align(g_rename_ta, LV_ALIGN_TOP_MID, 0, SY(38));
     lv_obj_set_style_text_font(g_rename_ta, SF(20), 0);
 
     lv_obj_t * cancel = lv_btn_create(card);
     lv_obj_set_size(cancel, SX(130), SY(42));
-    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-8));
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(cancel, on_rename_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, tr("Annuleer", "Cancel"));
@@ -333,7 +334,7 @@ static void on_row_rename(lv_event_t * e) {
 
     lv_obj_t * save = lv_btn_create(card);
     lv_obj_set_size(save, SX(130), SY(42));
-    lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-8));
+    lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(save, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(save, on_rename_save, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, tr("Opslaan", "Save"));
