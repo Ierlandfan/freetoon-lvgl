@@ -123,7 +123,7 @@
   - **Stream/Snapshot Wake-up Latency**: Determine if a short delay or wake-up call (or MJPEG stream via go2rtc/RTSP) is needed for battery-powered cameras.
 
 ### 11. Settings Cleanup: Remove Redundant Options from 'Scherm'
-- **Status**: Open / Cleanup.
+- **Status**: Implemented.
 - **Description**:
   - Clean up and streamline `Instellingen -> Scherm` (`screen_settings.c`) by removing obsolete/redundant configuration rows:
     1. **Taal (Language selection)**: Remove toggle; streamline default UI language.
@@ -148,12 +148,12 @@
   - On the Dim screen, the next upcoming waste collection date now displays the category-specific waste icon (e.g. leaf for GFT, milk carton for PMD, newspaper for paper, bin for residual) rendered in crisp 80x80 white.
 
 ### 15. Thermostat Home Tile: Preset Buttons Should Resume Program Mode from Manual
-- **Status**: Open / Backlog.
+- **Status**: Implemented.
 - **Description**:
   - When the thermostat is in Manual mode and the user taps one of the preset buttons (Comfort, Thuis, Slapen, Weg) on the homescreen tile, the thermostat should activate Program mode (`PROG_TEMPOVERRIDE` or `PROG_BASE`) with that preset, rather than staying in Manual mode.
 
 ### 16. Vertical Meter Bars on Dim Screen: Value Text Below Bar
-- **Status**: Open / Backlog.
+- **Status**: Implemented.
 - **Description**:
   - When vertical segmented usage bars (`dim_bars_vertical`) are selected on the dim screen, position the reading / unit text underneath the bar rather than beside it to optimize horizontal space.
 
@@ -163,7 +163,7 @@
   - If the Agenda/Calendar function is assigned to a different slot (such as the ventilation tile), the background color and layout differ from the dedicated Agenda tile. Standardize them so all calendar representations use the preferred native Agenda tile style.
 
 ### 18. Temporary Setpoint Override Alignment Across Dim, Tile, and Full Thermostat Screen
-- **Status**: Open / Backlog.
+- **Status**: Implemented.
 - **Description**:
   - When the thermostat is in Program mode and the user adjusts the setpoint temperature on the homescreen tile (+/-), the dim screen switches its label to "Handmatig" while the homescreen tile and big thermostat screen stay in Program mode.
   - Align behavior so that a setpoint change is treated as a temporary override in Program mode (holding the new setpoint until the next scheduled program switch), consistently reflected across all screens.

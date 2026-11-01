@@ -190,19 +190,36 @@ static void en_set_bar(lv_obj_t * fill, lv_obj_t * lbl,
 
 /* One vertical segmented bar (classic Toon style) inside the energy/gas block:
  * 12 stacked segment rectangles lighting up bottom->top (green -> yellow),
- * with a value label positioned beside it. */
-static void en_make_vbar(lv_obj_t * parent, int bh, lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t ** lbl) {
-    int sw = (DISP_HOR < 1000) ? 22 : 28;
-    int sh = (DISP_VER < 600) ? 3 : 4;
-    int gp = (DISP_VER < 600) ? 1 : 2;
+ * with a value label positioned underneath it. */
+static void en_make_vbar(lv_obj_t * parent, int bw, int bh, lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t ** lbl) {
+    if (!parent) return;
+    int sw = (DISP_HOR < 1000) ? 26 : 34;
+    int lbl_h = (DISP_VER < 600) ? 18 : 22;
+    int lbl_gap = (DISP_VER < 600) ? 2 : 4;
+    int avail_th = bh - lbl_h - lbl_gap;
+
+    int sh = 2, gp = 1;
+    if (avail_th >= 80) {
+        sh = (DISP_VER < 600) ? 5 : 6;
+        gp = 2;
+    } else if (avail_th >= 50) {
+        sh = (DISP_VER < 600) ? 3 : 4;
+        gp = (DISP_VER < 600) ? 1 : 2;
+    } else {
+        sh = 2;
+        gp = 1;
+    }
+
     int th = DIM_GRID_NSEG * sh + (DIM_GRID_NSEG - 1) * gp;
-    int y0 = (bh > th) ? (bh - th) / 2 : 2;
+    int total_h = th + lbl_gap + lbl_h;
+    int y0 = (bh > total_h) ? (bh - total_h) / 2 : 1;
+    int x0 = (bw > sw) ? (bw - sw) / 2 : 4;
 
     for (int i = 0; i < DIM_GRID_NSEG; i++) {
         segs[i] = lv_obj_create(parent);
         lv_obj_remove_style_all(segs[i]);
         lv_obj_set_size(segs[i], sw, sh);
-        lv_obj_set_pos(segs[i], 6, y0 + i * (sh + gp));
+        lv_obj_set_pos(segs[i], x0, y0 + i * (sh + gp));
         lv_obj_set_style_radius(segs[i], 1, 0);
         lv_obj_set_style_border_width(segs[i], 0, 0);
         lv_obj_set_style_bg_color(segs[i], lv_color_hex(0x2A3540), 0);
@@ -213,8 +230,10 @@ static void en_make_vbar(lv_obj_t * parent, int bh, lv_obj_t * segs[DIM_GRID_NSE
     *lbl = lv_label_create(parent);
     lv_obj_set_style_text_color(*lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(*lbl, (DISP_VER < 600) ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_align(*lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(*lbl, bw > 0 ? bw : LV_SIZE_CONTENT);
     lv_label_set_text(*lbl, "");
-    lv_obj_align(*lbl, LV_ALIGN_LEFT_MID, sw + 14, 0);
+    lv_obj_set_pos(*lbl, 0, y0 + th + lbl_gap);
 }
 
 static void en_set_vbar(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
@@ -1090,12 +1109,12 @@ lv_obj_t * screen_dim_grid_create(void) {
     int ebw = 0, ebh = 0; lv_obj_t * bx_e = dim_box(DB_ENERGY, &ebw, &ebh);
     en_pwr_w = ebw - 8;
     en_make_bar(bx_e, en_pwr_w, 6, 0xffffff, &en_pwr_track, &en_pwr_fill, &en_pwr_lbl);
-    en_make_vbar(bx_e, ebh, en_pwr_segs, &en_pwr_vlbl);
+    en_make_vbar(bx_e, ebw, ebh, en_pwr_segs, &en_pwr_vlbl);
 
     int gbw = 0, gbh = 0; lv_obj_t * bx_g = dim_box(DB_GAS, &gbw, &gbh);
     en_gas_w = gbw - 8;
     en_make_bar(bx_g, en_gas_w, 6, 0xffffff, &en_gas_track, &en_gas_fill, &en_gas_lbl);
-    en_make_vbar(bx_g, gbh, en_gas_segs, &en_gas_vlbl);
+    en_make_vbar(bx_g, gbw, gbh, en_gas_segs, &en_gas_vlbl);
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
     int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);
