@@ -170,11 +170,25 @@ static int get_field_int(const char * s, const char * e, const char * key, int d
     return dflt;
 }
 
+static char master_device_uuid[96] = {0};
+
 /* Parse entries from XML or JSON text.
  * NOTE: Parses into a temporary array first. Never wipes in-memory entries if
  * no entries were found in the buffer. */
 static int parse_schedule_buffer(const char * buf) {
     if (!buf || !buf[0]) return -1;
+
+    /* Extract device uuid if present in the config */
+    const char * u1 = strstr(buf, "<uuid>");
+    if (u1) {
+        const char * u2 = strstr(u1 + 6, "</uuid>");
+        if (u2 && (size_t)(u2 - (u1 + 6)) < sizeof(master_device_uuid)) {
+            size_t ulen = u2 - (u1 + 6);
+            memcpy(master_device_uuid, u1 + 6, ulen);
+            master_device_uuid[ulen] = '\0';
+            fprintf(stderr, "[sched] captured master device uuid: %s\n", master_device_uuid);
+        }
+    }
 
     const char * sched_start = strstr(buf, "<schedule>");
     const char * sched_end   = sched_start ? strstr(sched_start, "</schedule>") : NULL;
@@ -364,33 +378,6 @@ static int http_request(const char * host, int port, const char * method, const 
     return 0;
 }
 
-/* Update schedule on target host (trying port 80 first, then port 10080; POST then GET) */
-static int http_hcb_set_config(const char * host, int explicit_port, const char * qs) {
-    int ports[2];
-    int nports = 0;
-    if (explicit_port > 0) {
-        ports[nports++] = explicit_port;
-    } else {
-        ports[nports++] = 80;
-        ports[nports++] = 10080;
-    }
-
-    for (int p = 0; p < nports; p++) {
-        int port = ports[p];
-        /* 1. Try POST with form data */
-        if (http_request(host, port, "POST", "hcb_config", qs, NULL, 0) == 0) {
-            fprintf(stderr, "[sched] setObjectConfig sent to %s:%d via POST\n", host, port);
-            return 0;
-        }
-        /* 2. Try GET with query string */
-        if (http_request(host, port, "GET", "hcb_config", qs, NULL, 0) == 0) {
-            fprintf(stderr, "[sched] setObjectConfig sent to %s:%d via GET\n", host, port);
-            return 0;
-        }
-    }
-    return -1;
-}
-
 static void seed_default_schedule(void) {
     schedule_count = 0;
     /* Standard weekly program: 07:00 Home (1), 23:00 Sleep (2) */
@@ -569,11 +556,15 @@ static size_t build_schedule_xml(char * out, size_t outsz) {
     size_t off = 0;
     int n = snprintf(out + off, outsz - off,
         "<device>"
+        "%s%s%s"
         "<package>happ_thermstat</package>"
         "<internalAddress>thermostatProgram</internalAddress>"
         "<type>program</type>"
         "<visibility>1</visibility>"
-        "<schedule>");
+        "<schedule>",
+        master_device_uuid[0] ? "<uuid>" : "",
+        master_device_uuid[0] ? master_device_uuid : "",
+        master_device_uuid[0] ? "</uuid>" : "");
     if (n < 0) return 0;
     off += (size_t)n;
 
@@ -667,6 +658,220 @@ static void update_file_config(const char * new_dev_xml) {
     }
 }
 
+/* Verify whether Master Toon reflects the expected schedule entries */
+static int verify_master_schedule(const char * host, int port, int expected_count) {
+    static char vbody[64 * 1024];
+    const char * qs = "action=getObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram";
+    if (http_request(host, port, "GET", "hcb_config", qs, vbody, sizeof(vbody)) != 0) {
+        return 0;
+    }
+    int count = 0;
+    const char * p = vbody;
+    while ((p = strstr(p, "<entry")) != NULL) {
+        count++;
+        p += 6;
+    }
+    if (count == 0) {
+        p = vbody;
+        while ((p = strstr(p, "\"entry\"")) != NULL) {
+            count++;
+            p += 7;
+        }
+    }
+    fprintf(stderr, "[sched] verify %s:%d returned %d entries (expected %d)\n", host, port, count, expected_count);
+    return (count == expected_count);
+}
+
+/* Fallback: Direct BoxTalk to host:1337 if port is open */
+static int boxtalk_remote_set_object_config(const char * host, const char * config_xml) {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return -1;
+    struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    struct addrinfo hints, *res = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, "1337", &hints, &res) != 0 || !res) {
+        close(s);
+        return -1;
+    }
+
+    if (connect(s, res->ai_addr, res->ai_addrlen) != 0) {
+        freeaddrinfo(res);
+        close(s);
+        return -1;
+    }
+    freeaddrinfo(res);
+
+    char dest_uuid[128] = "qb-000000000000-0000000000:hcb_config";
+    if (master_device_uuid[0]) {
+        const char * colon = strchr(master_device_uuid, ':');
+        if (colon) {
+            size_t blen = colon - master_device_uuid;
+            snprintf(dest_uuid, sizeof(dest_uuid), "%.*s:hcb_config", (int)blen, master_device_uuid);
+        } else {
+            snprintf(dest_uuid, sizeof(dest_uuid), "%s:hcb_config", master_device_uuid);
+        }
+    }
+
+    size_t len = strlen(config_xml) + 1024;
+    char * req = (char *)malloc(len);
+    if (!req) { close(s); return -1; }
+
+    int n = snprintf(req, len,
+        "<action class=\"invoke\" uuid=\"qb-slave:toonui\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:ConfigProvider\" requestid=\"%d-soc\">"
+        "<u:SetObjectConfig xmlns:u=\"urn:hcb-hae-com:service:ConfigProvider:1\">"
+        "<Config>%s</Config>"
+        "</u:SetObjectConfig></action>",
+        dest_uuid, (int)getpid(), config_xml);
+
+    int rc = -1;
+    if (n > 0 && send(s, req, n + 1, 0) == n + 1) {
+        char reply[2048];
+        ssize_t k = recv(s, reply, sizeof(reply) - 1, 0);
+        if (k > 0) {
+            reply[k] = '\0';
+            fprintf(stderr, "[sched] remote BoxTalk port 1337 reply: %.200s\n", reply);
+            rc = 0;
+        }
+    }
+    free(req);
+    close(s);
+    return rc;
+}
+
+/* Update schedule on target host (trying port 80 first, then port 10080; XML then JSON; POST then GET) */
+static int http_hcb_set_config(const char * host, int explicit_port, const char * xml_str, const char * json_str) {
+    int ports[2];
+    int nports = 0;
+    if (explicit_port > 0) {
+        ports[nports++] = explicit_port;
+    } else {
+        ports[nports++] = 80;
+        ports[nports++] = 10080;
+    }
+
+    size_t xlen = strlen(xml_str);
+    char * enc_xml = (char *)malloc(xlen * 3 + 1);
+    if (!enc_xml) return -1;
+    url_encode(xml_str, xlen, enc_xml);
+
+    size_t jlen = json_str ? strlen(json_str) : 0;
+    char * enc_json = jlen ? (char *)malloc(jlen * 3 + 1) : NULL;
+    if (enc_json) url_encode(json_str, jlen, enc_json);
+
+    size_t qsz = (xlen * 3) + 1024;
+    char * qs = (char *)malloc(qsz);
+    if (!qs) {
+        free(enc_xml);
+        if (enc_json) free(enc_json);
+        return -1;
+    }
+
+    char resp[4096];
+
+    for (int p = 0; p < nports; p++) {
+        int port = ports[p];
+
+        /* Attempt 1: POST /hcb_config with config=<XML> */
+        snprintf(qs, qsz,
+            "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
+            enc_xml);
+        resp[0] = '\0';
+        if (http_request(host, port, "POST", "hcb_config", qs, resp, sizeof(resp)) == 0) {
+            fprintf(stderr, "[sched] POST %s:%d (config=XML) resp: %.150s\n", host, port, resp);
+            if (!strstr(resp, "error") && !strstr(resp, "Error") && !strstr(resp, "fault")) {
+                if (verify_master_schedule(host, port, schedule_count)) {
+                    free(enc_xml); if (enc_json) free(enc_json); free(qs);
+                    return 0;
+                }
+            }
+        }
+
+        /* Attempt 2: POST /hcb_config with Config=<XML> (capital C) */
+        snprintf(qs, qsz,
+            "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&Config=%s",
+            enc_xml);
+        resp[0] = '\0';
+        if (http_request(host, port, "POST", "hcb_config", qs, resp, sizeof(resp)) == 0) {
+            fprintf(stderr, "[sched] POST %s:%d (Config=XML) resp: %.150s\n", host, port, resp);
+            if (!strstr(resp, "error") && !strstr(resp, "Error") && !strstr(resp, "fault")) {
+                if (verify_master_schedule(host, port, schedule_count)) {
+                    free(enc_xml); if (enc_json) free(enc_json); free(qs);
+                    return 0;
+                }
+            }
+        }
+
+        /* Attempt 3: POST /hcb_config with bare config=<XML> */
+        snprintf(qs, qsz, "action=setObjectConfig&config=%s", enc_xml);
+        resp[0] = '\0';
+        if (http_request(host, port, "POST", "hcb_config", qs, resp, sizeof(resp)) == 0) {
+            fprintf(stderr, "[sched] POST %s:%d (bare config=XML) resp: %.150s\n", host, port, resp);
+            if (!strstr(resp, "error") && !strstr(resp, "Error") && !strstr(resp, "fault")) {
+                if (verify_master_schedule(host, port, schedule_count)) {
+                    free(enc_xml); if (enc_json) free(enc_json); free(qs);
+                    return 0;
+                }
+            }
+        }
+
+        /* Attempt 4: GET /hcb_config with config=<XML> (if < 6500 bytes) */
+        if (strlen(enc_xml) < 6500) {
+            snprintf(qs, qsz,
+                "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
+                enc_xml);
+            resp[0] = '\0';
+            if (http_request(host, port, "GET", "hcb_config", qs, resp, sizeof(resp)) == 0) {
+                fprintf(stderr, "[sched] GET %s:%d (config=XML) resp: %.150s\n", host, port, resp);
+                if (!strstr(resp, "error") && !strstr(resp, "Error") && !strstr(resp, "fault")) {
+                    if (verify_master_schedule(host, port, schedule_count)) {
+                        free(enc_xml); if (enc_json) free(enc_json); free(qs);
+                        return 0;
+                    }
+                }
+            }
+        }
+
+        /* Attempt 5: POST /hcb_config with config=<JSON> */
+        if (enc_json) {
+            snprintf(qs, qsz,
+                "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
+                enc_json);
+            resp[0] = '\0';
+            if (http_request(host, port, "POST", "hcb_config", qs, resp, sizeof(resp)) == 0) {
+                fprintf(stderr, "[sched] POST %s:%d (config=JSON) resp: %.150s\n", host, port, resp);
+                if (!strstr(resp, "error") && !strstr(resp, "Error") && !strstr(resp, "fault")) {
+                    if (verify_master_schedule(host, port, schedule_count)) {
+                        free(enc_xml); if (enc_json) free(enc_json); free(qs);
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Attempt 6: Direct BoxTalk on port 1337 */
+    fprintf(stderr, "[sched] HTTP endpoints did not update schedule, trying BoxTalk port 1337 on %s...\n", host);
+    if (boxtalk_remote_set_object_config(host, xml_str) == 0) {
+        if (verify_master_schedule(host, 80, schedule_count) ||
+            verify_master_schedule(host, 10080, schedule_count)) {
+            fprintf(stderr, "[sched] schedule verified updated via BoxTalk port 1337!\n");
+            free(enc_xml); if (enc_json) free(enc_json); free(qs);
+            return 0;
+        }
+    }
+
+    free(enc_xml);
+    if (enc_json) free(enc_json);
+    free(qs);
+    return -1;
+}
+
 int schedule_save(void) {
     if (schedule_count <= 0) return -1;
 
@@ -681,18 +886,14 @@ int schedule_save(void) {
         schedule_entries[i].end_min  = schedule_entries[nxt].start_min;
     }
 
-    /* Build JSON payload for hcb_config setObjectConfig endpoint */
+    /* Build XML payload */
+    static char xml[32 * 1024];
+    size_t xn = build_schedule_xml(xml, sizeof(xml));
+    if (xn == 0) return -1;
+
+    /* Build JSON payload as fallback */
     static char json[16 * 1024];
-    size_t jn = build_json(json, sizeof(json));
-    if (jn == 0) return -1;
-
-    static char encoded[48 * 1024];
-    url_encode(json, jn, encoded);
-
-    static char qs[52 * 1024];
-    snprintf(qs, sizeof(qs),
-        "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
-        encoded);
+    build_json(json, sizeof(json));
 
     /* If in slave/client mode: update Master Toon only, do NOT alter slave's local files or BoxTalk */
     if (settings.client_mode && settings.master_host[0]) {
@@ -700,7 +901,7 @@ int schedule_save(void) {
         int explicit_port = 0;
         parse_host_port(settings.master_host, 0, host, sizeof(host), &explicit_port);
 
-        int rc = http_hcb_set_config(host, explicit_port, qs);
+        int rc = http_hcb_set_config(host, explicit_port, xml, json);
         if (rc == 0) {
             fprintf(stderr, "[sched] successfully updated schedule on Master Toon (%s)\n", host);
             return 0;
@@ -711,19 +912,14 @@ int schedule_save(void) {
     }
 
     /* Master / standalone mode: */
-    /* Build XML payload */
-    static char xml[32 * 1024];
-    size_t xn = build_schedule_xml(xml, sizeof(xml));
-    if (xn > 0) {
-        /* 1. Send via BoxTalk to hcb_config (ConfigProvider:SetObjectConfig) - Primary Toon QML method */
-        boxtalk_set_object_config(xml);
+    /* 1. Send via BoxTalk to hcb_config (ConfigProvider:SetObjectConfig) - Primary Toon QML method */
+    boxtalk_set_object_config(xml);
 
-        /* 2. Send via HTTP to hcb_config */
-        http_hcb_set_config("127.0.0.1", 10080, qs);
+    /* 2. Send via HTTP to local hcb_config */
+    http_hcb_set_config("127.0.0.1", 10080, xml, json);
 
-        /* 3. Also update config file on disk for fallback persistence */
-        update_file_config(xml);
-    }
+    /* 3. Also update config file on disk for fallback persistence */
+    update_file_config(xml);
 
     return 0;
 }
