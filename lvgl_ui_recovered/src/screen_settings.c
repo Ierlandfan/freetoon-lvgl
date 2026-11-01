@@ -398,7 +398,10 @@ static void modal_close(lv_event_t * e) {
     settings_save();                  /* persist whatever the modal changed */
 }
 
+static void clean_finish(void);
+
 void screen_settings_close_modals(void) {
+    clean_finish();
     while (cur_modal) {
         modal_close(NULL);
     }
@@ -3790,48 +3793,71 @@ static void open_otbridge_modal(lv_event_t * e) {
 static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 
 /* --------- Clean-screen overlay: 30 s timer that ignores all touch -------
- * Loads a full-black screen with a single centred countdown so the user can
- * wipe the glass without triggering buttons. The screen has zero event
- * handlers — taps reach the LVGL input layer and find nothing actionable.
- * Backlight stays at the current "active" level so the countdown stays
- * readable; the LCD is 99% black anyway, which reads as "off". On expiry
- * the screen pops itself back to settings. */
-static lv_obj_t *  g_clean_scr  = NULL;
-static lv_obj_t *  g_clean_lbl  = NULL;
-static lv_timer_t * g_clean_tmr = NULL;
+ * Places an opaque full-black overlay on lv_layer_sys() with a centered countdown
+ * so the user can wipe the glass without triggering buttons.
+ * Because it sits on lv_layer_sys(), it cleanly covers the entire display without
+ * modifying the screen stack (ui_stack), preventing race conditions with auto-dim
+ * or auto-home. Touches are absorbed by the clickable overlay.
+ * On expiry, the overlay is deleted, input devices are reset to clear any lingering
+ * touch release from wiping, and activity is marked so settings stays visible. */
+static lv_obj_t *  g_clean_overlay   = NULL;
+static lv_obj_t *  g_clean_lbl       = NULL;
+static lv_timer_t * g_clean_tmr      = NULL;
 static int         g_clean_remaining = 0;
 
 static void clean_finish(void) {
-    if (g_clean_tmr) { lv_timer_del(g_clean_tmr); g_clean_tmr = NULL; }
-    if (g_clean_scr) {
-        lv_obj_t * dead = g_clean_scr;
-        g_clean_scr = NULL; g_clean_lbl = NULL;
-        ui_pop();
-        lv_obj_del_async(dead);
+    if (g_clean_tmr) {
+        lv_timer_del(g_clean_tmr);
+        g_clean_tmr = NULL;
     }
+    if (g_clean_overlay) {
+        lv_obj_del(g_clean_overlay);
+        g_clean_overlay = NULL;
+        g_clean_lbl = NULL;
+    }
+    /* Invalidate/wait-release on indev so any trailing wipe touch does not click settings */
+    lv_indev_t * indev = lv_indev_get_next(NULL);
+    while (indev) {
+        lv_indev_wait_release(indev);
+        indev = lv_indev_get_next(indev);
+    }
+    ui_mark_activity();
 }
 
 static void clean_tick(lv_timer_t * t) {
     (void)t;
+    ui_mark_activity(); /* prevent auto-dim / auto-home from triggering during clean */
     g_clean_remaining--;
-    if (g_clean_remaining <= 0) { clean_finish(); return; }
+    if (g_clean_remaining <= 0) {
+        clean_finish();
+        return;
+    }
     if (g_clean_lbl) lv_label_set_text_fmt(g_clean_lbl, "%d", g_clean_remaining);
 }
 
 static void open_clean_modal(lv_event_t * e) {
     (void)e;
+    clean_finish(); /* safety cleanup */
+
     g_clean_remaining = 30;
-    g_clean_scr = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(g_clean_scr, lv_color_hex(0x000000), 0);
-    lv_obj_clear_flag(g_clean_scr, LV_OBJ_FLAG_SCROLLABLE);
-    /* No event_cb anywhere on this screen → touches do nothing. */
-    g_clean_lbl = lv_label_create(g_clean_scr);
+    ui_mark_activity();
+
+    g_clean_overlay = lv_obj_create(lv_layer_sys());
+    lv_obj_remove_style_all(g_clean_overlay);
+    lv_obj_set_size(g_clean_overlay, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_pos(g_clean_overlay, 0, 0);
+    lv_obj_set_style_bg_color(g_clean_overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(g_clean_overlay, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(g_clean_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_clean_overlay, LV_OBJ_FLAG_CLICKABLE);
+
+    g_clean_lbl = lv_label_create(g_clean_overlay);
     lv_obj_set_style_text_color(g_clean_lbl, lv_color_hex(0xffffff), 0);
     LV_FONT_DECLARE(lv_font_montserrat_96_custom);
     lv_obj_set_style_text_font(g_clean_lbl, SF(96), 0);
     lv_label_set_text_fmt(g_clean_lbl, "%d", g_clean_remaining);
     lv_obj_center(g_clean_lbl);
-    ui_push(g_clean_scr);
+
     g_clean_tmr = lv_timer_create(clean_tick, 1000, NULL);
 }
 
