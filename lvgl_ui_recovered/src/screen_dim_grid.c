@@ -110,11 +110,11 @@ static lv_obj_t * en_sol_track, * en_sol_fill, * en_sol_lbl;
 static int   en_pwr_w = 0, en_gas_w = 0, en_sol_w = 0;   /* mini-bar track widths (px, set at create) */
 #define DIM_GRID_NSEG 12
 static lv_obj_t * en_pwr_segs[DIM_GRID_NSEG];
-static lv_obj_t * en_pwr_vlbl;
+static lv_obj_t * en_pwr_vlbl, * en_pwr_vunit;
 static lv_obj_t * en_gas_segs[DIM_GRID_NSEG];
-static lv_obj_t * en_gas_vlbl;
+static lv_obj_t * en_gas_vlbl, * en_gas_vunit;
 static lv_obj_t * en_sol_segs[DIM_GRID_NSEG];
-static lv_obj_t * en_sol_vlbl;
+static lv_obj_t * en_sol_vlbl, * en_sol_vunit;
 #define DIM_E_FULL_W    5000.0f     /* power at a full bar (fixed scale) */
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at a full bar (fixed scale) */
 
@@ -194,27 +194,43 @@ static void en_set_bar(lv_obj_t * fill, lv_obj_t * lbl,
 /* One vertical segmented bar (classic Toon style) inside the energy/gas block:
  * 12 stacked segment rectangles lighting up bottom->top (green -> yellow),
  * with a value label positioned underneath it. */
-static void en_make_vbar(lv_obj_t * parent, int bw, int bh, lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t ** lbl) {
+static void en_make_vbar(lv_obj_t * parent, int bw, int bh,
+                         lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t ** lbl, lv_obj_t ** unit_lbl) {
     if (!parent) return;
-    int sw = (DISP_HOR < 1000) ? (bw < 70 ? 22 : 26) : (bw < 90 ? 28 : 34);
-    int lbl_h = (DISP_VER < 600) ? 18 : 22;
-    int lbl_gap = (DISP_VER < 600) ? 2 : 4;
-    int avail_th = bh - lbl_h - lbl_gap;
+    int is_1col = (DISP_HOR < 1000) ? (bw < 70) : (bw < 90);
+    int sw = (DISP_HOR < 1000) ? (is_1col ? 22 : 26) : (is_1col ? 28 : 34);
+
+    int val_h, unit_h, unit_gap, lbl_gap, lbl_total_h;
+    if (is_1col) {
+        val_h = (DISP_VER < 600) ? 16 : 18;
+        unit_h = (DISP_VER < 600) ? 12 : 14;
+        unit_gap = 1;
+        lbl_gap = (DISP_VER < 600) ? 3 : 4;
+        lbl_total_h = val_h + unit_gap + unit_h;
+    } else {
+        val_h = (DISP_VER < 600) ? 18 : 22;
+        unit_h = 0;
+        unit_gap = 0;
+        lbl_gap = (DISP_VER < 600) ? 2 : 4;
+        lbl_total_h = val_h;
+    }
+
+    int avail_th = bh - lbl_total_h - lbl_gap;
 
     int sh = 2, gp = 1;
     if (avail_th >= 80) {
-        sh = (DISP_VER < 600) ? 5 : 6;
+        sh = (DISP_VER < 600) ? (is_1col ? 4 : 5) : (is_1col ? 5 : 6);
         gp = 2;
     } else if (avail_th >= 50) {
-        sh = (DISP_VER < 600) ? 3 : 4;
-        gp = (DISP_VER < 600) ? 1 : 2;
+        sh = (DISP_VER < 600) ? 3 : (is_1col ? 3 : 4);
+        gp = (DISP_VER < 600) ? 1 : (is_1col ? 1 : 2);
     } else {
         sh = 2;
         gp = 1;
     }
 
     int th = DIM_GRID_NSEG * sh + (DIM_GRID_NSEG - 1) * gp;
-    int total_h = th + lbl_gap + lbl_h;
+    int total_h = th + lbl_gap + lbl_total_h;
     int y0 = (bh > total_h) ? (bh - total_h) / 2 : 1;
     int x0 = (bw > sw) ? (bw - sw) / 2 : 4;
 
@@ -232,17 +248,32 @@ static void en_make_vbar(lv_obj_t * parent, int bw, int bh, lv_obj_t * segs[DIM_
 
     *lbl = lv_label_create(parent);
     lv_obj_set_style_text_color(*lbl, lv_color_hex(0xffffff), 0);
-    const lv_font_t * vfont = (bw < 70) ? &lv_font_montserrat_14 :
-                              ((DISP_VER < 600) ? &lv_font_montserrat_18 : &lv_font_montserrat_22);
+    const lv_font_t * vfont = is_1col ? ((DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18)
+                                      : ((DISP_VER < 600) ? &lv_font_montserrat_18 : &lv_font_montserrat_22);
     lv_obj_set_style_text_font(*lbl, vfont, 0);
     lv_obj_set_style_text_align(*lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(*lbl, bw > 0 ? bw : LV_SIZE_CONTENT);
     lv_label_set_text(*lbl, "");
     lv_obj_set_pos(*lbl, 0, y0 + th + lbl_gap);
+
+    if (unit_lbl) {
+        if (is_1col) {
+            *unit_lbl = lv_label_create(parent);
+            lv_obj_set_style_text_color(*unit_lbl, lv_color_hex(0xbbbbbb), 0);
+            const lv_font_t * ufont = (DISP_VER < 600) ? &lv_font_montserrat_12 : &lv_font_montserrat_14;
+            lv_obj_set_style_text_font(*unit_lbl, ufont, 0);
+            lv_obj_set_style_text_align(*unit_lbl, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_width(*unit_lbl, bw > 0 ? bw : LV_SIZE_CONTENT);
+            lv_label_set_text(*unit_lbl, "");
+            lv_obj_set_pos(*unit_lbl, 0, y0 + th + lbl_gap + val_h + unit_gap);
+        } else {
+            *unit_lbl = NULL;
+        }
+    }
 }
 
-static void en_set_vbar_color(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
-                              float ratio, const char * txt,
+static void en_set_vbar_color(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl, lv_obj_t * unit_lbl,
+                              float ratio, const char * val, const char * unit,
                               uint32_t col_low, uint32_t col_high) {
     if (ratio < 0) ratio = 0;
     if (ratio > 1) ratio = 1;
@@ -255,12 +286,19 @@ static void en_set_vbar_color(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
         uint32_t c = (fb < lit) ? (fb < 7 ? col_low : col_high) : 0x2A3540;
         lv_obj_set_style_bg_color(segs[i], lv_color_hex(c), 0);
     }
-    if (lbl) lv_label_set_text(lbl, txt);
+    if (unit_lbl) {
+        if (lbl) lv_label_set_text(lbl, val);
+        lv_label_set_text(unit_lbl, unit);
+    } else if (lbl) {
+        char comb[32];
+        snprintf(comb, sizeof comb, "%s %s", val, unit);
+        lv_label_set_text(lbl, comb);
+    }
 }
 
-static void en_set_vbar(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
-                        float ratio, const char * txt) {
-    en_set_vbar_color(segs, lbl, ratio, txt, 0x689F38, 0xCCCC33);
+static void en_set_vbar(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl, lv_obj_t * unit_lbl,
+                        float ratio, const char * val, const char * unit) {
+    en_set_vbar_color(segs, lbl, unit_lbl, ratio, val, unit, 0x689F38, 0xCCCC33);
 }
 
 static void on_wake_tap(lv_event_t * e) {
@@ -713,42 +751,70 @@ static void refresh_cb(lv_timer_t * t) {
         int   e_conn = energy_connected();
         float e = energy_power_w();
         if (e < 0) e = 0;                          /* export → empty */
-        char etxt[24];
-        if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
-        else           snprintf(etxt, sizeof etxt, "%.0f W", e);
 
         float g_today = energy_gas_today_m3();
         float gh = (g_today >= 0) ? g_today : energy_gas_hour_m3();
         int   g_conn = (gh >= 0);
         float g = gh; if (g < 0) g = 0;
-        char gtxt[24];
-        if (g_today >= 0) {
-            snprintf(gtxt, sizeof gtxt, "%.2f m3", g);
-        } else {
-            snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
-        }
 
         int   s_conn = energy_have_solar();
         float s = energy_solar_w();
         if (s < 0) s = 0;
-        char stxt[24];
-        if (s >= 1000) snprintf(stxt, sizeof stxt, "%.1f kW", s / 1000.0f);
-        else           snprintf(stxt, sizeof stxt, "%.0f W", s);
+
+        char epwr_val[16], epwr_unit[16];
+        char gas_val[16],  gas_unit[16];
+        char sol_val[16],  sol_unit[16];
+
+        if (e_conn) {
+            if (e >= 1000) {
+                snprintf(epwr_val, sizeof epwr_val, "%.1f", e / 1000.0f);
+                snprintf(epwr_unit, sizeof epwr_unit, "kW");
+            } else {
+                snprintf(epwr_val, sizeof epwr_val, "%.0f", e);
+                snprintf(epwr_unit, sizeof epwr_unit, "W");
+            }
+        } else {
+            snprintf(epwr_val, sizeof epwr_val, "--");
+            snprintf(epwr_unit, sizeof epwr_unit, "W");
+        }
+
+        if (g_conn) {
+            snprintf(gas_val, sizeof gas_val, "%.2f", g);
+            snprintf(gas_unit, sizeof gas_unit, (g_today >= 0) ? "m3" : "m3/h");
+        } else {
+            snprintf(gas_val, sizeof gas_val, "--");
+            snprintf(gas_unit, sizeof gas_unit, "m3");
+        }
+
+        if (s_conn) {
+            if (s >= 1000) {
+                snprintf(sol_val, sizeof sol_val, "%.1f", s / 1000.0f);
+                snprintf(sol_unit, sizeof sol_unit, "kW");
+            } else {
+                snprintf(sol_val, sizeof sol_val, "%.0f", s);
+                snprintf(sol_unit, sizeof sol_unit, "W");
+            }
+        } else {
+            snprintf(sol_val, sizeof sol_val, "--");
+            snprintf(sol_unit, sizeof sol_unit, "W");
+        }
 
         float er = e / DIM_E_FULL_W;
         float gr = (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H);
         float sr = s / DIM_E_FULL_W;
-        const char * edisp = e_conn ? etxt : tr("-- W", "-- W");
-        const char * gdisp = g_conn ? gtxt : tr("-- m3", "-- m3");
-        const char * sdisp = s_conn ? stxt : tr("-- W", "-- W");
+
+        char edisp[32], gdisp[32], sdisp[32];
+        snprintf(edisp, sizeof edisp, "%s %s", epwr_val, epwr_unit);
+        snprintf(gdisp, sizeof gdisp, "%s %s", gas_val,  gas_unit);
+        snprintf(sdisp, sizeof sdisp, "%s %s", sol_val,  sol_unit);
 
         en_set_bar(en_pwr_fill, en_pwr_lbl, en_pwr_w, er, edisp);
         en_set_bar(en_gas_fill, en_gas_lbl, en_gas_w, gr, gdisp);
         en_set_bar(en_sol_fill, en_sol_lbl, en_sol_w, sr, sdisp);
 
-        en_set_vbar(en_pwr_segs, en_pwr_vlbl, er, edisp);
-        en_set_vbar(en_gas_segs, en_gas_vlbl, gr, gdisp);
-        en_set_vbar_color(en_sol_segs, en_sol_vlbl, sr, sdisp, 0xE5A93B, 0xFFD54F);
+        en_set_vbar(en_pwr_segs, en_pwr_vlbl, en_pwr_vunit, er, epwr_val, epwr_unit);
+        en_set_vbar(en_gas_segs, en_gas_vlbl, en_gas_vunit, gr, gas_val,  gas_unit);
+        en_set_vbar_color(en_sol_segs, en_sol_vlbl, en_sol_vunit, sr, sol_val, sol_unit, 0xE5A93B, 0xFFD54F);
 
         /* show_dim_bars off → hide blocks' contents.
          * dim_bars_vertical chooses horizontal mini-bars vs classic vertical segmented bars. */
@@ -787,6 +853,13 @@ static void refresh_cb(lv_timer_t * t) {
         if (en_sol_vlbl) {
             if (show && vert) lv_obj_clear_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
             else              lv_obj_add_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_t * en_vunits[] = { en_pwr_vunit, en_gas_vunit, en_sol_vunit };
+        for (unsigned i = 0; i < sizeof en_vunits / sizeof en_vunits[0]; i++) {
+            if (en_vunits[i]) {
+                if (show && vert) lv_obj_clear_flag(en_vunits[i], LV_OBJ_FLAG_HIDDEN);
+                else              lv_obj_add_flag(en_vunits[i], LV_OBJ_FLAG_HIDDEN);
+            }
         }
     }
 
@@ -1140,17 +1213,17 @@ lv_obj_t * screen_dim_grid_create(void) {
     int ebw = 0, ebh = 0; lv_obj_t * bx_e = dim_box(DB_ENERGY, &ebw, &ebh);
     en_pwr_w = ebw - 8;
     en_make_bar(bx_e, en_pwr_w, 6, 0xffffff, &en_pwr_track, &en_pwr_fill, &en_pwr_lbl);
-    en_make_vbar(bx_e, ebw, ebh, en_pwr_segs, &en_pwr_vlbl);
+    en_make_vbar(bx_e, ebw, ebh, en_pwr_segs, &en_pwr_vlbl, &en_pwr_vunit);
 
     int gbw = 0, gbh = 0; lv_obj_t * bx_g = dim_box(DB_GAS, &gbw, &gbh);
     en_gas_w = gbw - 8;
     en_make_bar(bx_g, en_gas_w, 6, 0xffffff, &en_gas_track, &en_gas_fill, &en_gas_lbl);
-    en_make_vbar(bx_g, gbw, gbh, en_gas_segs, &en_gas_vlbl);
+    en_make_vbar(bx_g, gbw, gbh, en_gas_segs, &en_gas_vlbl, &en_gas_vunit);
 
     int sbw_sol = 0, sbh_sol = 0; lv_obj_t * bx_sol = dim_box(DB_SOLAR, &sbw_sol, &sbh_sol);
     en_sol_w = sbw_sol - 8;
     en_make_bar(bx_sol, en_sol_w, 6, 0xffcc00, &en_sol_track, &en_sol_fill, &en_sol_lbl);
-    en_make_vbar(bx_sol, sbw_sol, sbh_sol, en_sol_segs, &en_sol_vlbl);
+    en_make_vbar(bx_sol, sbw_sol, sbh_sol, en_sol_segs, &en_sol_vlbl, &en_sol_vunit);
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
     int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);
