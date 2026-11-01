@@ -781,8 +781,8 @@ int boxtalk_zwave_basic_set(const char * uuid, int state) {
 
 /* Rename a device. name must be pre-sanitised (no XML metacharacters). */
 int boxtalk_zwave_set_name(const char * uuid, const char * name) {
-    char inner[256];
-    snprintf(inner, sizeof inner, "<uuid>%s</uuid><deviceName>%s</deviceName>", uuid, name);
+    char inner[320];
+    snprintf(inner, sizeof inner, "<uuid>%s</uuid><deviceName>%s</deviceName><name>%s</name>", uuid, name, name);
     return zwave_action("SetDeviceName", inner, "zwn");
 }
 

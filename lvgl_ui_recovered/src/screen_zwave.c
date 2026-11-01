@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define COL_BG       THEME_BG
 #define COL_CARD     THEME_CARD_BG
@@ -51,6 +52,7 @@ static lv_obj_t * bar_actions   = NULL;
 static lv_obj_t * btn_inc_lbl   = NULL;   /* "+ Add device" / "Stop" */
 static lv_obj_t * btn_exc_lbl   = NULL;
 static lv_timer_t * refresh_timer = NULL;
+static void build_rows(void);
 
 static zw_dev_t g_dev[MAX_ZW_DEV];
 static int      g_dev_count = 0;
@@ -58,6 +60,95 @@ static int      g_inc_active = 0;
 static int      g_exc_active = 0;
 static char     g_status[192] = "";
 static int      g_poll_ticks = 0;
+
+/* ===================================================================== */
+/* Persistent custom device name overrides                                */
+/* ===================================================================== */
+static const char * zwave_names_dir(void) {
+    const char * d = getenv("TOONUI_DATA_DIR");
+    if (d && *d) return d;
+    if (access("/mnt/data", W_OK) == 0) return "/mnt/data";
+    return ".";
+}
+
+static int zwave_get_custom_name(const char * uuid, char * out, size_t outsz) {
+    if (!uuid || !uuid[0] || !out || outsz == 0) return 0;
+    out[0] = 0;
+    char path[256];
+    snprintf(path, sizeof path, "%s/toonui_zwave_names.cfg", zwave_names_dir());
+    FILE * f = fopen(path, "r");
+    if (!f) return 0;
+    char line[160];
+    int found = 0;
+    while (fgets(line, sizeof line, f)) {
+        char * eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq = 0;
+        char * val = eq + 1;
+        size_t vl = strlen(val);
+        while (vl > 0 && (val[vl - 1] == '\r' || val[vl - 1] == '\n')) val[--vl] = 0;
+        if (strcmp(line, uuid) == 0) {
+            snprintf(out, outsz, "%s", val);
+            found = 1;
+            break;
+        }
+    }
+    fclose(f);
+    return found;
+}
+
+static void zwave_set_custom_name(const char * uuid, const char * name) {
+    if (!uuid || !uuid[0]) return;
+    char path[256], tmppath[280];
+    const char * dir = zwave_names_dir();
+    snprintf(path, sizeof path, "%s/toonui_zwave_names.cfg", dir);
+    snprintf(tmppath, sizeof tmppath, "%s/toonui_zwave_names.cfg.tmp", dir);
+
+    typedef struct { char u[64]; char n[64]; } entry_t;
+    entry_t entries[MAX_ZW_DEV + 4];
+    int count = 0;
+    int updated = 0;
+
+    FILE * f = fopen(path, "r");
+    if (f) {
+        char line[160];
+        while (fgets(line, sizeof line, f) && count < MAX_ZW_DEV) {
+            char * eq = strchr(line, '=');
+            if (!eq) continue;
+            *eq = 0;
+            char * val = eq + 1;
+            size_t vl = strlen(val);
+            while (vl > 0 && (val[vl - 1] == '\r' || val[vl - 1] == '\n')) val[--vl] = 0;
+            if (strcmp(line, uuid) == 0) {
+                if (name && name[0]) {
+                    snprintf(entries[count].u, sizeof entries[count].u, "%.63s", uuid);
+                    snprintf(entries[count].n, sizeof entries[count].n, "%.63s", name);
+                    count++;
+                }
+                updated = 1;
+            } else {
+                snprintf(entries[count].u, sizeof entries[count].u, "%.63s", line);
+                snprintf(entries[count].n, sizeof entries[count].n, "%.63s", val);
+                count++;
+            }
+        }
+        fclose(f);
+    }
+
+    if (!updated && name && name[0] && count < MAX_ZW_DEV) {
+        snprintf(entries[count].u, sizeof entries[count].u, "%.63s", uuid);
+        snprintf(entries[count].n, sizeof entries[count].n, "%.63s", name);
+        count++;
+    }
+
+    FILE * out = fopen(tmppath, "w");
+    if (!out) return;
+    for (int i = 0; i < count; i++) {
+        fprintf(out, "%s=%s\n", entries[i].u, entries[i].n);
+    }
+    fclose(out);
+    rename(tmppath, path);
+}
 
 /* ===================================================================== */
 /* XML helpers                                                           */
@@ -100,8 +191,18 @@ static void parse_devices(void) {
         zw_dev_t * d = &g_dev[g_dev_count];
         memset(d, 0, sizeof *d);
         xml_elem(d0, d1, "uuid", d->uuid, sizeof d->uuid);
-        xml_elem(d0, d1, "name", d->name, sizeof d->name);
+        if (!xml_elem(d0, d1, "name", d->name, sizeof d->name) || !d->name[0]) {
+            if (!xml_elem(d0, d1, "deviceName", d->name, sizeof d->name) || !d->name[0]) {
+                xml_elem(d0, d1, "devicename", d->name, sizeof d->name);
+            }
+        }
         xml_elem(d0, d1, "type", d->type, sizeof d->type);
+
+        /* Apply custom name override if user renamed this device */
+        char custom[64] = "";
+        if (d->uuid[0] && zwave_get_custom_name(d->uuid, custom, sizeof custom) && custom[0]) {
+            snprintf(d->name, sizeof d->name, "%s", custom);
+        }
 
         char tmp[64];
         if (xml_elem(d0, d1, "nodeId", tmp, sizeof tmp) && tmp[0])
@@ -161,8 +262,19 @@ static void on_rename_save(lv_event_t * e) {
     }
     clean[o] = 0;
     boxtalk_zwave_set_name(g_rename_uuid, clean);
+    zwave_set_custom_name(g_rename_uuid, clean);
+
+    /* Update in-memory list and redraw immediately so the new name appears right away */
+    for (int i = 0; i < g_dev_count; i++) {
+        if (strcmp(g_dev[i].uuid, g_rename_uuid) == 0) {
+            snprintf(g_dev[i].name, sizeof g_dev[i].name, "%s", clean);
+            break;
+        }
+    }
+    build_rows();
+
     snprintf(g_status, sizeof g_status, tr("Hernoemd naar %s", "Renamed to %s"), clean);
-    g_poll_ticks = 0;
+    g_poll_ticks = 3;
     rename_close();
 }
 
@@ -206,7 +318,7 @@ static void on_row_rename(lv_event_t * e) {
 
     g_rename_ta = lv_textarea_create(card);
     lv_textarea_set_one_line(g_rename_ta, true);
-    lv_textarea_set_text(g_rename_ta, d->name);
+    lv_textarea_set_text(g_rename_ta, d->name[0] ? d->name : d->type);
     lv_obj_set_size(g_rename_ta, SX(600), SY(46));
     lv_obj_align(g_rename_ta, LV_ALIGN_TOP_MID, 0, SY(40));
     lv_obj_set_style_text_font(g_rename_ta, SF(20), 0);
