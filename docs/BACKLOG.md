@@ -109,11 +109,30 @@
   - **Z-Wave Rename Keyboard Fix**:
     - Decoupled the virtual keyboard from the rename card in `screen_zwave.c`, placing the card at the top and the full keyboard at the bottom so the device name input field is never obstructed during typing.
 
+### 10. Release 0.9.81: Solar Integration, Vertical 1-Col Bars, Master Schedule Sync & Appliances Cleanup (Implemented)
+- **Status**: Completed in Release 0.9.81.
+- **Implemented Features**:
+  - **Solar Return Metrics Tab in Energy Statistics Screen (`screen_stats.c`)**:
+    - Added dedicated *Zon* (Solar) tab alongside Elektriciteit, Gas, Water en CV bar.
+    - Queries DSMR smart meter return registers (`elec_flow_prod`, `elec_quantity_nt_prod`, `elec_quantity_lt_prod`) with automatic summation of normal- and low-tariffs.
+    - Built-in automatic fallback to `solar_flow` and `solar_quantity` for dedicated Toon Zon solar inverters.
+    - Gracefully handles absent or empty solar RRD archives without errors or crashes.
+  - **Dim Block Zon (`DB_SOLAR`) & 1-Column Vertical Bars**:
+    - Added dedicated *Zon* block to custom dim layout grid (`screen_dim_grid.c`, `layout.c`, `layout.h`, `screen_dim_layout_editor.c`).
+    - Allowed minimum width of 1 unit (`min_w = 1`) for energy, gas, and solar blocks when vertical bar mode (`dim_bars_vertical`) is enabled.
+    - When 1-column wide, the value and measurement unit (e.g. `m³`, `W`) are stacked onto two rows with adjusted chart height so labels never truncate or clip outside tile bounds.
+  - **Master Toon Heating Schedule Synchronization (`screen_schedule.c`)**:
+    - Fixed schedule editing from a Client Toon to reliably update the Master Toon via XML payload (`updateThermostatSettings` and `setThermostatSettings` on `happ_thermstat`), ensuring persistence across master restarts.
+  - **Obsolete Apparaten & NILM UI Removal**:
+    - Removed redundant *Apparaten* tile from Instellingen (`screen_settings.c`).
+    - Removed *Apparaten >* button from Energy Statistics (`screen_stats.c`).
+    - Removed obsolete step-change timeline (`screen_energy_timeline.c`) and custom appliance naming screen (`screen_appliances.c`), freeing memory and simplifying UI.
+
 ---
 
 ## Open / Backlog
 
-### 10. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
+### 11. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
 - **Status**: Open / Investigation needed.
 - **Description**:
   - After pressing the physical doorbell, the Toon correctly opens the doorbell popup via WebSocket trigger, but displays *"Doorbell: snapshot unavailable"*.
