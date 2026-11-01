@@ -93,11 +93,11 @@ static void refresh_cb(lv_timer_t * t) {
     lv_label_set_text(lbl_date, dt);
 
     if (toon_state.connected) {
-        lv_label_set_text_fmt(lbl_conn, tr("BoxTalk OK  msg=%d", "BoxTalk OK  msg=%d"), toon_state.msg_count);
-        lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0x66cc88), 0);
+        lv_obj_add_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
         lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
+        lv_obj_clear_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
     }
 
     if (toon_state.indoor_temp > 0)
@@ -267,12 +267,15 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_style_text_font(sched_lbl, SF(22), 0);
     lv_obj_center(sched_lbl);
 
-    /* Connection indicator just under the Schedule button */
+    /* Connection indicator just under the Schedule button (hidden during normal operation) */
     lbl_conn = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_text_font(lbl_conn, SF(18), 0);
     lv_obj_align(lbl_conn, LV_ALIGN_TOP_RIGHT, -20, 95);
     lv_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
+    if (toon_state.connected) {
+        lv_obj_add_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* Big indoor temp */
     lbl_temp = lv_label_create(scr_root);

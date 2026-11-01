@@ -158,9 +158,9 @@
   - When vertical segmented usage bars (`dim_bars_vertical`) are selected on the dim screen, position the reading / unit text underneath the bar rather than beside it to optimize horizontal space.
 
 ### 17. Calendar Tile Layout & Background Consistency Across Tile Slots
-- **Status**: Open / Backlog.
+- **Status**: Implemented.
 - **Description**:
-  - If the Agenda/Calendar function is assigned to a different slot (such as the ventilation tile), the background color and layout differ from the dedicated Agenda tile. Standardize them so all calendar representations use the preferred native Agenda tile style.
+  - If the Agenda/Calendar function is assigned to a different slot (such as the ventilation or family tile), the background color and layout differ from the dedicated Agenda tile. Standardize them so all calendar representations use the preferred native Agenda tile style.
 
 ### 18. Temporary Setpoint Override Alignment Across Dim, Tile, and Full Thermostat Screen
 - **Status**: Implemented.
@@ -169,7 +169,7 @@
   - Align behavior so that a setpoint change is treated as a temporary override in Program mode (holding the new setpoint until the next scheduled program switch), consistently reflected across all screens.
 
 ### 19. Big Thermostat Screen: BoxTalk Debug Banner Cleanup
-- **Status**: Open / Backlog.
+- **Status**: Implemented.
 - **Description**:
   - The big thermostat screen currently displays `"BoxTalk OK msg=xxx"`.
   - Hide this debug status during normal operation, only surfacing an alert if communication fails (or routing connectivity warnings to the Inbox).
