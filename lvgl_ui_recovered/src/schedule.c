@@ -19,9 +19,31 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <errno.h>
 
 schedule_entry_t schedule_entries[SCHEDULE_MAX];
 int              schedule_count = 0;
+
+static void parse_host_port(const char * src, int default_port, char * host_out, size_t host_sz, int * port_out) {
+    if (!src || !src[0]) {
+        snprintf(host_out, host_sz, "127.0.0.1");
+        *port_out = default_port;
+        return;
+    }
+    const char * colon = strrchr(src, ':');
+    if (colon) {
+        size_t hlen = colon - src;
+        if (hlen >= host_sz) hlen = host_sz - 1;
+        memcpy(host_out, src, hlen);
+        host_out[hlen] = '\0';
+        *port_out = atoi(colon + 1);
+        if (*port_out <= 0) *port_out = default_port;
+    } else {
+        snprintf(host_out, host_sz, "%s", src);
+        *port_out = default_port;
+    }
+}
 
 unsigned schedule_state_color(int state) {
     switch (state) {
@@ -211,45 +233,162 @@ static int parse_schedule_buffer(const char * buf) {
     return -1;
 }
 
-/* Low-level HTTP for hcb_config on port 10080 with 300ms socket timeout */
-static int http_get_body(const char* host_path, const char* qs, char* out, size_t outsz) {
-    int s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) return -1;
-    struct timeval tv = { .tv_sec = 0, .tv_usec = 300000 }; /* 300ms timeout */
+/* HTTP request helper for hcb_config (GET or POST) with timeout and HTTP status verification */
+static int http_request(const char * host, int port, const char * method, const char * path, const char * payload, char * out, size_t outsz) {
+    if (!host || !host[0]) return -1;
+
+    struct addrinfo hints, *res = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+
+    if (getaddrinfo(host, port_str, &hints, &res) != 0 || !res) {
+        return -1;
+    }
+
+    int s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (s < 0) {
+        freeaddrinfo(res);
+        return -1;
+    }
+
+    /* 2 second socket timeout for LAN reliability */
+    struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    struct sockaddr_in a = {0};
-    a.sin_family = AF_INET;
-    a.sin_port = htons(10080);
-    a.sin_addr.s_addr = htonl(0x7f000001);
-    if (connect(s, (struct sockaddr*)&a, sizeof(a)) != 0) {
+
+    if (connect(s, res->ai_addr, res->ai_addrlen) != 0) {
+        close(s);
+        freeaddrinfo(res);
+        return -1;
+    }
+    freeaddrinfo(res);
+
+    size_t payload_len = payload ? strlen(payload) : 0;
+    size_t req_cap = payload_len + 2048;
+    char * req = (char *)malloc(req_cap);
+    if (!req) {
         close(s);
         return -1;
     }
-    char req[1024];
-    int n = snprintf(req, sizeof(req),
-        "GET /%s?%s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        host_path, qs);
-    if (send(s, req, n, 0) != n) {
+
+    int n = 0;
+    if (strcmp(method, "POST") == 0) {
+        n = snprintf(req, req_cap,
+            "POST /%s HTTP/1.0\r\n"
+            "Host: %s:%d\r\n"
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+            "Content-Length: %zu\r\n"
+            "Connection: close\r\n\r\n"
+            "%s",
+            path, host, port, payload_len, payload ? payload : "");
+    } else {
+        if (payload_len > 0) {
+            n = snprintf(req, req_cap,
+                "GET /%s?%s HTTP/1.0\r\n"
+                "Host: %s:%d\r\n"
+                "Connection: close\r\n\r\n",
+                path, payload, host, port);
+        } else {
+            n = snprintf(req, req_cap,
+                "GET /%s HTTP/1.0\r\n"
+                "Host: %s:%d\r\n"
+                "Connection: close\r\n\r\n",
+                path, host, port);
+        }
+    }
+
+    if (n <= 0 || (size_t)n >= req_cap) {
+        free(req);
         close(s);
         return -1;
     }
-    char accum[32768];
+
+    size_t sent = 0;
+    while (sent < (size_t)n) {
+        ssize_t k = send(s, req + sent, (size_t)n - sent, 0);
+        if (k <= 0) {
+            free(req);
+            close(s);
+            return -1;
+        }
+        sent += (size_t)k;
+    }
+    free(req);
+
+    size_t accum_cap = 64 * 1024;
+    char * accum = (char *)malloc(accum_cap);
+    if (!accum) {
+        close(s);
+        return -1;
+    }
+
     size_t acclen = 0;
-    while (acclen < sizeof(accum) - 1) {
-        ssize_t k = recv(s, accum + acclen, sizeof(accum) - 1 - acclen, 0);
+    while (acclen < accum_cap - 1) {
+        ssize_t k = recv(s, accum + acclen, accum_cap - 1 - acclen, 0);
         if (k <= 0) break;
         acclen += (size_t)k;
     }
-    accum[acclen] = 0;
+    accum[acclen] = '\0';
     close(s);
-    const char* body = strstr(accum, "\r\n\r\n");
-    if (body) body += 4; else body = accum;
-    size_t blen = strlen(body);
-    if (blen >= outsz) blen = outsz - 1;
-    memcpy(out, body, blen);
-    out[blen] = 0;
+
+    if (acclen == 0) {
+        free(accum);
+        return -1;
+    }
+
+    /* Verify HTTP status code (2xx) */
+    if (strncmp(accum, "HTTP/1.", 7) == 0 && acclen > 12) {
+        int status = atoi(accum + 9);
+        if (status < 200 || status >= 300) {
+            free(accum);
+            return -1;
+        }
+    }
+
+    const char * body = strstr(accum, "\r\n\r\n");
+    if (body) body += 4;
+    else body = accum;
+
+    if (out && outsz > 0) {
+        size_t blen = strlen(body);
+        if (blen >= outsz) blen = outsz - 1;
+        memcpy(out, body, blen);
+        out[blen] = '\0';
+    }
+
+    free(accum);
     return 0;
+}
+
+/* Update schedule on target host (trying port 80 first, then port 10080; POST then GET) */
+static int http_hcb_set_config(const char * host, int explicit_port, const char * qs) {
+    int ports[2];
+    int nports = 0;
+    if (explicit_port > 0) {
+        ports[nports++] = explicit_port;
+    } else {
+        ports[nports++] = 80;
+        ports[nports++] = 10080;
+    }
+
+    for (int p = 0; p < nports; p++) {
+        int port = ports[p];
+        /* 1. Try POST with form data */
+        if (http_request(host, port, "POST", "hcb_config", qs, NULL, 0) == 0) {
+            fprintf(stderr, "[sched] setObjectConfig sent to %s:%d via POST\n", host, port);
+            return 0;
+        }
+        /* 2. Try GET with query string */
+        if (http_request(host, port, "GET", "hcb_config", qs, NULL, 0) == 0) {
+            fprintf(stderr, "[sched] setObjectConfig sent to %s:%d via GET\n", host, port);
+            return 0;
+        }
+    }
+    return -1;
 }
 
 static void seed_default_schedule(void) {
@@ -311,6 +450,41 @@ static int read_file_config(void) {
 }
 
 int schedule_load(void) {
+    /* 0. If in slave/client mode, fetch directly from Master Toon (prefer port 80, fallback to 10080) */
+    if (settings.client_mode && settings.master_host[0]) {
+        char host[128];
+        int explicit_port = 0;
+        parse_host_port(settings.master_host, 0, host, sizeof(host), &explicit_port);
+
+        static char body[64 * 1024];
+        const char * qs = "action=getObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram";
+
+        int rc = -1;
+        if (explicit_port > 0) {
+            rc = http_request(host, explicit_port, "GET", "hcb_config", qs, body, sizeof(body));
+        } else {
+            /* Try port 80 first (via lighttpd proxy on master) */
+            rc = http_request(host, 80, "GET", "hcb_config", qs, body, sizeof(body));
+            if (rc != 0) {
+                /* Fallback to port 10080 */
+                rc = http_request(host, 10080, "GET", "hcb_config", qs, body, sizeof(body));
+            }
+        }
+
+        if (rc == 0 && parse_schedule_buffer(body) == 0) {
+            fprintf(stderr, "[sched] loaded %d entries from Master Toon (%s)\n", schedule_count, host);
+            return 0;
+        }
+
+        fprintf(stderr, "[sched] failed to load schedule from Master Toon (%s)\n", host);
+        if (schedule_count > 0) {
+            /* Retain current in-memory schedule if master is temporarily unreachable */
+            return 0;
+        }
+        seed_default_schedule();
+        return 0;
+    }
+
     /* 1. Try BoxTalk response buffer if ready */
     if (config_response_ready && config_response_buf[0]) {
         if (parse_schedule_buffer(config_response_buf) == 0) {
@@ -319,11 +493,11 @@ int schedule_load(void) {
         }
     }
 
-    /* 2. Try HTTP getObjectConfig from hcb_config (port 10080) */
-    static char body[32 * 1024];
-    if (http_get_body("hcb_config",
-        "action=getObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram",
-        body, sizeof(body)) == 0) {
+    /* 2. Try HTTP getObjectConfig from local hcb_config (port 10080 or 80) */
+    static char body[64 * 1024];
+    const char * qs = "action=getObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram";
+    if (http_request("127.0.0.1", 10080, "GET", "hcb_config", qs, body, sizeof(body)) == 0 ||
+        http_request("127.0.0.1", 80,    "GET", "hcb_config", qs, body, sizeof(body)) == 0) {
         if (parse_schedule_buffer(body) == 0) {
             fprintf(stderr, "[sched] loaded %d entries via HTTP hcb_config\n", schedule_count);
             return 0;
@@ -507,6 +681,36 @@ int schedule_save(void) {
         schedule_entries[i].end_min  = schedule_entries[nxt].start_min;
     }
 
+    /* Build JSON payload for hcb_config setObjectConfig endpoint */
+    static char json[16 * 1024];
+    size_t jn = build_json(json, sizeof(json));
+    if (jn == 0) return -1;
+
+    static char encoded[48 * 1024];
+    url_encode(json, jn, encoded);
+
+    static char qs[52 * 1024];
+    snprintf(qs, sizeof(qs),
+        "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
+        encoded);
+
+    /* If in slave/client mode: update Master Toon only, do NOT alter slave's local files or BoxTalk */
+    if (settings.client_mode && settings.master_host[0]) {
+        char host[128];
+        int explicit_port = 0;
+        parse_host_port(settings.master_host, 0, host, sizeof(host), &explicit_port);
+
+        int rc = http_hcb_set_config(host, explicit_port, qs);
+        if (rc == 0) {
+            fprintf(stderr, "[sched] successfully updated schedule on Master Toon (%s)\n", host);
+            return 0;
+        } else {
+            fprintf(stderr, "[sched] failed to update schedule on Master Toon (%s)\n", host);
+            return -1;
+        }
+    }
+
+    /* Master / standalone mode: */
     /* Build XML payload */
     static char xml[32 * 1024];
     size_t xn = build_schedule_xml(xml, sizeof(xml));
@@ -514,21 +718,8 @@ int schedule_save(void) {
         /* 1. Send via BoxTalk to hcb_config (ConfigProvider:SetObjectConfig) - Primary Toon QML method */
         boxtalk_set_object_config(xml);
 
-        /* 2. Send via HTTP to hcb_config on port 10080 */
-        static char json[16 * 1024];
-        size_t jn = build_json(json, sizeof(json));
-        if (jn > 0) {
-            static char encoded[48 * 1024];
-            url_encode(json, jn, encoded);
-
-            static char qs[52 * 1024];
-            snprintf(qs, sizeof(qs),
-                "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
-                encoded);
-
-            static char body[1024];
-            http_get_body("hcb_config", qs, body, sizeof(body));
-        }
+        /* 2. Send via HTTP to hcb_config */
+        http_hcb_set_config("127.0.0.1", 10080, qs);
 
         /* 3. Also update config file on disk for fallback persistence */
         update_file_config(xml);

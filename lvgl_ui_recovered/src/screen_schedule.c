@@ -587,7 +587,11 @@ lv_obj_t * screen_schedule_create(void) {
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, (DISP_VER < 550) ? SF(24) : SF(28), 0);
-    lv_label_set_text(title, tr("Programma", "Schedule"));
+    if (settings.client_mode && settings.master_host[0]) {
+        lv_label_set_text(title, tr("Programma (Master)", "Schedule (Master)"));
+    } else {
+        lv_label_set_text(title, tr("Programma", "Schedule"));
+    }
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(30), (DISP_VER < 550) ? 14 : SY(18));
 
     /* Day chips — precisely aligned over their corresponding timeline column */
