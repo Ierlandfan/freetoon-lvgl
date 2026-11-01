@@ -24,32 +24,6 @@ typedef struct {
 
 extern meter_state_t meter_state;
 
-/* Ring buffer of recent step-change events that did not match any known
- * signature (neither built-in nor custom).  Written from the BoxTalk
- * thread, read from the LVGL thread — volatile fields are enough. */
-#define NILM_UNKNOWN_MAX 20
-typedef struct {
-    float          delta_w;    /* absolute watt step */
-    int            direction;  /* +1 on, -1 off */
-    volatile time_t ts;        /* epoch of the event, 0 = empty slot */
-} nilm_unknown_t;
-
-extern nilm_unknown_t nilm_unknowns[NILM_UNKNOWN_MAX];
-extern volatile int   nilm_unknown_count; /* total events seen (not capped) */
-
-/* Full event log — every NILM event (named + unknown), newest at highest index.
- * Written from BoxTalk thread, read from LVGL thread. */
-#define NILM_LOG_MAX 200
-typedef struct {
-    char   device[40];   /* display name, e.g. "Fridge", "~144 W" */
-    int    direction;    /* +1 on, -1 off */
-    float  delta_w;
-    time_t ts;
-} nilm_event_t;
-
-extern nilm_event_t   nilm_log[NILM_LOG_MAX];
-extern volatile int   nilm_log_count;    /* total ever written (not capped) */
-
 int  meteradapter_start(void);
 /* Called from the BoxTalk notify handler when an ElectricityFlowMeter
  * CurrentElectricityFlow value arrives. */

@@ -91,9 +91,6 @@ static stats_series_t  series2;   /* for elec second tariff */
 
 static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 
-static void open_timeline_async(void *u) { (void)u; ui_push(screen_energy_timeline_create()); }
-static void on_devices_btn(lv_event_t *e) { (void)e; lv_async_call(open_timeline_async, NULL); }
-
 static void reload_and_render(void);
 
 /* Final bar values + labels, produced by render_chart's bucketing step.
@@ -781,20 +778,6 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, tr("Statistieken", "Statistics"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(24), SY(18));
-
-    /* Devices (timeline) button — next to close button */
-    lv_obj_t * dev_btn = lv_btn_create(scr_root);
-    lv_obj_set_size(dev_btn, SX(160), x_h);
-    lv_obj_align(dev_btn, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(12), SY(12));
-    lv_obj_set_style_bg_color(dev_btn, lv_color_hex(THEME_BTN_ACCENT), 0);
-    lv_obj_set_style_radius(dev_btn, 10, 0);
-    lv_obj_set_style_border_width(dev_btn, 0, 0);
-    lv_obj_add_event_cb(dev_btn, on_devices_btn, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * dbl = lv_label_create(dev_btn);
-    lv_label_set_text(dbl, tr("Apparaten " LV_SYMBOL_RIGHT, "Devices " LV_SYMBOL_RIGHT));
-    lv_obj_set_style_text_color(dbl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(dbl, SF(17), 0);
-    lv_obj_center(dbl);
 
     /* Metric tabs row (5 metrics: Electricity, Solar, Gas, Water, CV bar) */
     for (int i = 0; i < N_METRIC; i++) {
