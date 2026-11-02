@@ -24,6 +24,7 @@
 #include "meteradapter.h"
 #include "ventilation.h"
 #include "efanlamp.h"
+#include "anim_overlay.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -554,6 +555,7 @@ int main(int argc, char ** argv) {
             dd.flush_cb = x11_flush;
             id.read_cb  = x11_indev_read;
             ui_init();
+            anim_overlay_init();
             lv_refr_now(NULL);
             XFlush(g_x_display);
             fprintf(stderr, "[sim] Interactive GUI active in window (%dx%d)... Click with mouse; press ESC or close window to exit.\n", DISP_HOR, DISP_VER);

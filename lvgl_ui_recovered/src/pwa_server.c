@@ -33,6 +33,7 @@
 #include "ventilation.h"
 #include "inbox.h"
 #include "calendar.h"
+#include "anim_overlay.h"
 #include "domoticz.h"
 #include "news.h"
 #include "tile_slots.h"
@@ -1407,6 +1408,64 @@ static int handle_update_post(int fd) {
     return send_status(fd, 200, "OK", "{\"ok\":1}");
 }
 
+/* GET /api/animation[?effect=name[&duration=s]|stop=1] */
+static int handle_animation_get(int fd, const char * path) {
+    const char * q = strchr(path, '?');
+    if (q) {
+        q++;
+        if (strstr(q, "stop=1") || strstr(q, "action=stop")) {
+            anim_overlay_stop();
+            return send_status(fd, 200, "OK", "{\"ok\":true,\"action\":\"stop\"}");
+        }
+        const char * ef = strstr(q, "effect=");
+        if (ef) {
+            ef += 7;
+            char eff_name[32] = "";
+            int i = 0;
+            while (ef[i] && ef[i] != '&' && i < (int)sizeof(eff_name) - 1) {
+                eff_name[i] = ef[i];
+                i++;
+            }
+            eff_name[i] = 0;
+            int dur = 25;
+            const char * du = strstr(q, "duration=");
+            if (du) dur = atoi(du + 9);
+            if (dur <= 0) dur = 25;
+            anim_overlay_trigger_by_name(eff_name, dur);
+            char resp[128];
+            snprintf(resp, sizeof resp, "{\"ok\":true,\"effect\":\"%s\",\"duration\":%d}", eff_name, dur);
+            return send_status(fd, 200, "OK", resp);
+        }
+    }
+    char resp[128];
+    snprintf(resp, sizeof resp, "{\"ok\":true,\"active\":%d,\"effect\":\"%s\"}",
+             anim_overlay_is_active(), anim_effect_name(anim_overlay_get_current()));
+    return send_status(fd, 200, "OK", resp);
+}
+
+/* POST /api/animation — body: {"effect":"balloons","duration":25} or {"action":"stop"} */
+static int handle_animation_post(int fd, const char * body) {
+    if (!body) return send_status(fd, 400, "Bad Request", "{\"err\":\"missing body\"}");
+    char act[32] = "", eff[32] = "";
+    int dur = 25;
+    extract_str(body, "action", act, sizeof act);
+    extract_str(body, "effect", eff, sizeof eff);
+    extract_int(body, "duration", &dur);
+    if (dur <= 0) dur = 25;
+
+    if (!strcmp(act, "stop") || !strcmp(eff, "stop")) {
+        anim_overlay_stop();
+        return send_status(fd, 200, "OK", "{\"ok\":true,\"action\":\"stop\"}");
+    }
+    if (eff[0]) {
+        anim_overlay_trigger_by_name(eff, dur);
+        char resp[128];
+        snprintf(resp, sizeof resp, "{\"ok\":true,\"effect\":\"%s\",\"duration\":%d}", eff, dur);
+        return send_status(fd, 200, "OK", resp);
+    }
+    return send_status(fd, 400, "Bad Request", "{\"err\":\"missing effect or action\"}");
+}
+
 
 /* ============================================================
  *  PWA login: cookie-session auth
@@ -1947,6 +2006,7 @@ static int dispatch(int fd, char * req) {
             return handle_tile_proxy(fd, q ? q + 1 : "");
         }
         if (!strcmp(path, "/api/packages"))      return handle_packages_get(fd);
+        if (!strncmp(path, "/api/animation", 14)) return handle_animation_get(fd, path);
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);
         if (!strcmp(path, "/api/settings"))      return handle_settings_get(fd);
         if (!strcmp(path, "/api/update/status")) return handle_update_status(fd);
@@ -1960,6 +2020,7 @@ static int dispatch(int fd, char * req) {
 
         /* ---- Legacy / PWA endpoints ---- */
         if (!strcmp(path, "/api/setpoint")) return handle_setpoint(fd, body);
+        if (!strcmp(path, "/api/animation")) return handle_animation_post(fd, body);
         if (!strcmp(path, "/api/program"))  return handle_program(fd, body);
         if (!strcmp(path, "/api/schedule")) return handle_schedule_post(fd, body);
         if (!strcmp(path, "/api/curtain"))  return handle_curtain(fd, body);

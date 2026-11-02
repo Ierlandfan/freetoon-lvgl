@@ -273,6 +273,13 @@ typedef struct {
     char calendar_ics_url[1024];  /* one or more ICS URLs, newline-separated */
     int  calendar_notify_enabled;    /* 0/1 — pop a notification before a timed event starts */
     int  calendar_notify_lead_min;   /* minutes before the start to notify (default 15) */
+
+    /* Animation Overlay Engine (Oepi-Loepi style animations) */
+    int  anim_enabled;               /* 1 = animation engine enabled (default 1) */
+    int  anim_birthday_enabled;      /* 1 = celebrate birthdays from Agenda with balloons (default 1) */
+    int  anim_seasonal_enabled;      /* 1 = auto seasonal triggers: Sint, New Year, snow (default 1) */
+    int  anim_dim_enabled;           /* 1 = allow animations to remain visible in dim mode (default 0) */
+    int  anim_duration_sec;          /* animation display duration in seconds (default 25) */
     int  home_theme;                 /* 0 = freetoon dark dashboard, 1 = stock light tile-carousel */
     int  home_light_mode;            /* 0 = dark tiles (default), 1 = light tiles for freetoon dashboard */
     char stock_tiles[200];           /* stock-theme carousel layout: comma-sep tile keys per slot */

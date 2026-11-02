@@ -31,6 +31,7 @@
 #include "wastecollection.h"
 #include "update_check.h"
 #include "update_modal.h"
+#include "anim_overlay.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2391,6 +2392,121 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_t * ol = lv_label_create(openb); lv_label_set_text(ol, tr("Agenda openen", "Open calendar")); lv_obj_center(ol);
 }
 
+/* ===================== Animation Overlay Settings ===================== */
+static lv_obj_t * sw_anim_en = NULL;
+static lv_obj_t * sw_anim_bday = NULL;
+static lv_obj_t * sw_anim_seas = NULL;
+static lv_obj_t * sw_anim_dim = NULL;
+static lv_obj_t * lbl_anim_status = NULL;
+
+static void on_anim_enabled_change(lv_event_t * e) {
+    lv_obj_t * sw = lv_event_get_target(e);
+    settings.anim_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    if (!settings.anim_enabled) anim_overlay_stop();
+    settings_save();
+}
+
+static void on_anim_bday_change(lv_event_t * e) {
+    lv_obj_t * sw = lv_event_get_target(e);
+    settings.anim_birthday_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    settings_save();
+}
+
+static void on_anim_seas_change(lv_event_t * e) {
+    lv_obj_t * sw = lv_event_get_target(e);
+    settings.anim_seasonal_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    settings_save();
+}
+
+static void on_anim_dim_change(lv_event_t * e) {
+    lv_obj_t * sw = lv_event_get_target(e);
+    settings.anim_dim_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    settings_save();
+}
+
+static void on_anim_test_click(lv_event_t * e) {
+    anim_effect_t eff = (anim_effect_t)(intptr_t)lv_event_get_user_data(e);
+    if (eff == ANIM_EFFECT_NONE) {
+        anim_overlay_stop();
+        if (lbl_anim_status) lv_label_set_text(lbl_anim_status, tr("Animatie gestopt", "Animation stopped"));
+    } else {
+        anim_overlay_trigger(eff, 25);
+        if (lbl_anim_status) {
+            lv_label_set_text_fmt(lbl_anim_status, "%s: %s (25 s)",
+                                  tr("Test actief", "Test active"), anim_effect_title(eff));
+        }
+    }
+}
+
+static void open_anim_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open(tr("Animaties & Effecten", "Animations & Effects"), 560);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
+    int y = 70;
+
+    lv_obj_t * r = panel_row(p, y, tr("Animaties inschakelen", "Enable animations"), NULL);
+    sw_anim_en = row_switch(r, settings.anim_enabled, on_anim_enabled_change);
+    y += 86;
+
+    r = panel_row(p, y, tr("Verjaardagen vieren (Agenda)", "Celebrate birthdays (Calendar)"), NULL);
+    sw_anim_bday = row_switch(r, settings.anim_birthday_enabled, on_anim_bday_change);
+    y += 86;
+
+    r = panel_row(p, y, tr("Seizoenseffecten (Sint, Vuurwerk, Sneeuw)", "Seasonal effects (Sint, Fireworks, Snow)"), NULL);
+    sw_anim_seas = row_switch(r, settings.anim_seasonal_enabled, on_anim_seas_change);
+    y += 86;
+
+    r = panel_row(p, y, tr("Zichtbaar in dimstand", "Visible on dim screen"), NULL);
+    sw_anim_dim = row_switch(r, settings.anim_dim_enabled, on_anim_dim_change);
+    y += 86;
+
+    /* Effect test row */
+    lv_obj_t * l_test = lv_label_create(p);
+    lv_obj_set_style_text_color(l_test, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(l_test, SF(18), 0);
+    lv_label_set_text(l_test, tr("Effect testen:", "Test effect:"));
+    lv_obj_align(l_test, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    y += 26;
+
+    /* Grid of test buttons */
+    struct { anim_effect_t eff; const char * label; uint32_t bg; } btns[] = {
+        { ANIM_EFFECT_BALLOONS,  tr("Ballonnen", "Balloons"),  0xd32f2f },
+        { ANIM_EFFECT_CONFETTI,  tr("Confetti", "Confetti"),   0x7b1fa2 },
+        { ANIM_EFFECT_SNOW,      tr("Sneeuw", "Snow"),         0x1976d2 },
+        { ANIM_EFFECT_FIREWORKS, tr("Vuurwerk", "Fireworks"),  0xf57c00 },
+        { ANIM_EFFECT_LEAVES,    tr("Herfst", "Autumn"),       0x5d4037 },
+        { ANIM_EFFECT_HEARTS,    tr("Hartjes", "Hearts"),      0xc2185b },
+        { ANIM_EFFECT_NONE,      tr("Stop", "Stop"),           0x455a64 }
+    };
+    int n_btns = (int)(sizeof(btns) / sizeof(btns[0]));
+
+    int btn_w = SX(112), btn_h = SY(42), gap = SX(8);
+    for (int i = 0; i < n_btns; i++) {
+        lv_obj_t * b = lv_btn_create(p);
+        lv_obj_set_size(b, btn_w, btn_h);
+        int bx = SX(4) + (i % 4) * (btn_w + gap);
+        int by = SY(y) + (i / 4) * (btn_h + SY(8));
+        lv_obj_align(b, LV_ALIGN_TOP_LEFT, bx, by);
+        lv_obj_set_style_bg_color(b, lv_color_hex(btns[i].bg), 0);
+        lv_obj_set_style_radius(b, 8, 0);
+        lv_obj_add_event_cb(b, on_anim_test_click, LV_EVENT_CLICKED, (void *)(intptr_t)btns[i].eff);
+        lv_obj_t * bl = lv_label_create(b);
+        lv_obj_set_style_text_font(bl, SF(15), 0);
+        lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+        lv_label_set_text(bl, btns[i].label);
+        lv_obj_center(bl);
+    }
+    y += 105;
+
+    lbl_anim_status = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_anim_status, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_anim_status, SF(15), 0);
+    lv_label_set_text(lbl_anim_status, "");
+    lv_obj_align(lbl_anim_status, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+}
+
 static void open_news_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Nieuwslezer", "Newsreader"), 760);
@@ -4656,6 +4772,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("ophaalmeldingen", "pickup alerts"), open_waste_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Agenda", "Calendar"),
               tr("HA + iCal-afspraken", "HA + iCal events"), open_calendar_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_IMAGE, tr("Animaties", "Animations"),
+              tr("effecten & feest", "effects & party"), open_anim_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, tr("Auto-wisselen", "Auto-rotate"),
               tr("tegel wisselen", "cycle tile"), open_rotate_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, tr("Clientmodus", "Client mode"),

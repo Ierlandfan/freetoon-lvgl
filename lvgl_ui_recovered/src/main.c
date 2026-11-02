@@ -23,6 +23,7 @@
 #include "doorbell.h"
 #include "video.h"
 #include "ui_cmd.h"
+#include "anim_overlay.h"
 #include "healthcheck.h"
 #include "pwa_server.h"
 #include "packages.h"
@@ -230,6 +231,9 @@ int main(int argc, char** argv) {
     /* Doorbell snapshot overlay — watches ha_state.doorbell_seq and shows the
      * camera snapshot fullscreen over any screen. No-op unless configured. */
     doorbell_ui_init();
+
+    /* Animation overlay engine (balloons, snow, confetti, fireworks) */
+    anim_overlay_init();
 
     fprintf(stderr, "[main] entering LVGL loop\n");
     uint32_t last_idle_check = 0;

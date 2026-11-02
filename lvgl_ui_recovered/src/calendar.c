@@ -16,6 +16,7 @@
 #define _GNU_SOURCE
 #include "calendar.h"
 #include "settings.h"
+#include "anim_overlay.h"
 #include "http.h"
 #include "homeassistant.h"
 #include "notify.h"
@@ -692,6 +693,33 @@ static void iso_at(char * out, size_t n, int days_from_now) {
     strftime(out, n, "%Y-%m-%dT00:00:00Z", &tm);
 }
 
+static void calendar_check_birthday(const char * today) {
+    if (!settings.anim_enabled || !settings.anim_birthday_enabled) return;
+    static char s_last_bday_date[12] = "";
+    if (strcmp(s_last_bday_date, today) == 0) return; /* already triggered today */
+
+    for (int i = 0; i < calendar_state.count; i++) {
+        calendar_event_t * ev = &calendar_state.ev[i];
+        if (strcmp(ev->date, today) != 0) continue;
+
+        char lower[128];
+        snprintf(lower, sizeof lower, "%s", ev->summary);
+        for (char * p = lower; *p; p++) *p = (char)tolower((unsigned char)*p);
+
+        if (strstr(lower, "jarig") ||
+            strstr(lower, "verjaardag") ||
+            strstr(lower, "birthday") ||
+            strstr(lower, "bday") ||
+            strstr(lower, "gefeliciteerd") ||
+            strstr(lower, "feest")) {
+            snprintf(s_last_bday_date, sizeof s_last_bday_date, "%s", today);
+            printf("[calendar] Verjaardag/feest vandaag ontdekt ('%s') -> ballonnen starten!\n", ev->summary);
+            anim_overlay_trigger(ANIM_EFFECT_BALLOONS, settings.anim_duration_sec > 0 ? settings.anim_duration_sec : 25);
+            break;
+        }
+    }
+}
+
 void calendar_refresh_now(void) {
     if (!settings.calendar_enabled) { calendar_state.count = 0; calendar_state.connected = 0; return; }
     /* Heap, not BSS — the iCal scratch is multi-MB now (full feeds). Allocated
@@ -746,6 +774,7 @@ void calendar_refresh_now(void) {
         for (int i = 0; i < n; i++) calendar_state.ev[i] = tmp[i];
         calendar_state.count = n;
         calendar_state.connected = 1;
+        calendar_check_birthday(today);
     } else {
         if (calendar_state.count == 0)
             calendar_state.connected = 0;

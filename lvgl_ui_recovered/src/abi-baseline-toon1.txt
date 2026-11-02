@@ -23,6 +23,7 @@ close@GLIBC_2.4
 closedir@GLIBC_2.4
 connect@GLIBC_2.4
 cos@GLIBC_2.4
+cosf@GLIBC_2.4
 dlclose@GLIBC_2.4
 dlerror@GLIBC_2.4
 dlopen@GLIBC_2.4
@@ -100,6 +101,8 @@ setpgid@GLIBC_2.4
 setsockopt@GLIBC_2.4
 setvbuf@GLIBC_2.4
 sin@GLIBC_2.4
+sincosf@GLIBC_2.4
+sinf@GLIBC_2.4
 sleep@GLIBC_2.4
 snprintf@GLIBC_2.4
 socket@GLIBC_2.4

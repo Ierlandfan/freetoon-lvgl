@@ -102,6 +102,11 @@ settings_t settings = {
     .calendar_enabled    = 0,
     .calendar_notify_enabled  = 0,
     .calendar_notify_lead_min = 15,
+    .anim_enabled             = 1,
+    .anim_birthday_enabled    = 1,
+    .anim_seasonal_enabled    = 1,
+    .anim_dim_enabled         = 0,
+    .anim_duration_sec        = 25,
     .home_theme               = 0,
     .home_light_mode          = 0,
     .stock_tiles              = "",
@@ -344,6 +349,11 @@ void settings_load(void) {
         else if (strcmp(k, "calendar_enabled")   == 0) settings.calendar_enabled = iv;
         else if (strcmp(k, "calendar_notify_enabled")  == 0) settings.calendar_notify_enabled = iv;
         else if (strcmp(k, "calendar_notify_lead_min") == 0) settings.calendar_notify_lead_min = iv;
+        else if (strcmp(k, "anim_enabled")          == 0) settings.anim_enabled = iv;
+        else if (strcmp(k, "anim_birthday_enabled") == 0) settings.anim_birthday_enabled = iv;
+        else if (strcmp(k, "anim_seasonal_enabled") == 0) settings.anim_seasonal_enabled = iv;
+        else if (strcmp(k, "anim_dim_enabled")      == 0) settings.anim_dim_enabled = iv;
+        else if (strcmp(k, "anim_duration_sec")     == 0) settings.anim_duration_sec = iv;
         else if (strcmp(k, "home_theme")         == 0) settings.home_theme = iv;
         else if (strcmp(k, "home_light_mode")    == 0) settings.home_light_mode = iv;
         else if (strcmp(k, "stock_tiles")        == 0) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", v);
@@ -906,6 +916,11 @@ void settings_save(void) {
     }
     fprintf(f, "calendar_enabled=%d\n", settings.calendar_enabled);
     fprintf(f, "calendar_notify_enabled=%d\n", settings.calendar_notify_enabled);
+    fprintf(f, "anim_enabled=%d\n", settings.anim_enabled);
+    fprintf(f, "anim_birthday_enabled=%d\n", settings.anim_birthday_enabled);
+    fprintf(f, "anim_seasonal_enabled=%d\n", settings.anim_seasonal_enabled);
+    fprintf(f, "anim_dim_enabled=%d\n", settings.anim_dim_enabled);
+    fprintf(f, "anim_duration_sec=%d\n", settings.anim_duration_sec);
     fprintf(f, "home_theme=%d\n", settings.home_theme);
     fprintf(f, "home_light_mode=%d\n", settings.home_light_mode);
     if (settings.stock_tiles[0]) fprintf(f, "stock_tiles=%s\n", settings.stock_tiles);

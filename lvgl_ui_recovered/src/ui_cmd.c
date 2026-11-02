@@ -16,6 +16,7 @@ void ui_cmd_start(void) {}
 #else
 
 #include "video.h"
+#include "anim_overlay.h"
 #include "lvgl/lvgl.h"
 
 #include <stdio.h>
@@ -103,6 +104,12 @@ static void * listener(void * unused)
         } else if (!strcmp(buf, "hide")) {
             __sync_or_and_fetch(&s_pending, CMD_HIDE);
             printf("[ui_cmd] -> hide\n"); fflush(stdout);
+        } else if (!strncmp(buf, "anim ", 5)) {
+            anim_overlay_trigger_by_name(buf + 5, 25);
+            printf("[ui_cmd] -> anim %s\n", buf + 5); fflush(stdout);
+        } else if (!strcmp(buf, "anim_stop") || !strcmp(buf, "anim stop")) {
+            anim_overlay_stop();
+            printf("[ui_cmd] -> anim stop\n"); fflush(stdout);
         } else {
             fprintf(stderr, "[ui_cmd] unknown command: '%s'\n", buf);
         }
