@@ -228,17 +228,18 @@
   - Click-transparent overlay where touches pass straight through to whatever screen, modal, or tile is underneath (`LV_OBJ_FLAG_CLICKABLE` cleared).
   - Lightweight, high-performance particle engine with zero heap allocations during the tick loop (24-particle object pool, ~1-2 ms per frame on Toon 1 ARM9).
   - Supported animation effects:
-    - **Ballonnen** (`balloons`): Realistic teardrop balloons with tapered neck, flared tied knot, dangling wavy ribbon string, and 3D specular curved gloss highlight (`icon_anim_balloon.h`), floating upwards with natural sine sway.
+    - **Ballonnen** (`balloons`): Realistic teardrop balloons with tapered neck, flared tied knot, dangling wavy ribbon string, and 3D specular curved gloss highlight (`icon_anim_balloon.h`, restored 54x84 full size), floating upwards with natural sine sway. Particle count balanced by 1/3 reduction (16 in burst mode, 8 in continuous 24h mode).
     - **Confetti** (`confetti`): Festive colored strips fluttering downwards with a 3D tumble flip effect.
     - **Sneeuw** (`snow`): Soft winter flakes drifting downwards with gentle sine-wave swaying.
     - **Vuurwerk** (`fireworks`): Bright particle bursts radiating outward, decelerating with gravity and fading out.
-    - **Herfstbladeren** (`leaves`): Warm amber, gold, and russet leaves tumbling down in the autumn breeze.
-    - **Hartjes** (`hearts`): Dedicated anti-aliased alpha-8bit heart icon descriptor (`icon_anim_heart.h`) with runtime recoloring across ruby/crimson tones (replacing missing font glyphs).
+    - **Herfstbladeren** (`leaves`): Brede meervoudig gelobde eiken-/esdoornblad asset (`icon_anim_leaf.h`, 64x64 native resolutie, ~52x55px body) met herfstpalet, 100% frontaal zichtbaar bladoppervlak (nooit edge-on of uit het vlak kantelend) met een strikte aerodynamische wiebeling begrensd op maximaal ±35° (ruim binnen de ±45° eis) rond het draaipunt (32, 32).
+    - **Hartjes** (`hearts`): Rijk gevulde 64x64 Valentijnshart asset (`icon_anim_heart.h`, ~55x50px body), 100% frontaal zichtbaar zonder rotatie omklap, met een subtiele zweeftilt begrensd op maximaal ±22° (ruim binnen ±45°), gecentreerd draaipunt (32, 32) en herkleurd in levendige robijn- en rozetinten.
+    - **LVGL 8 Software Transform Renderer Fix**: Opgelost dat LVGL 8 in `lv_draw_sw_transform.c` en `lv_draw_img.c` getransformeerde (geroteerde of ingezoomde) `LV_IMG_CF_ALPHA_8BIT` alpha maskers niet tekende (afgekapt naar 0 pixels door ontbrekende case in de software transform pipeline). Volledige alpha-masker transformatie met recoloring en anti-aliasing direct in het LVGL tekencircuit geïmplementeerd.
   - Multi-source triggers:
     1. **Agenda app (verjaardagen)**: When calendar events refresh in `calendar.c`, any event matching birthday terms (*"jarig"*, *"verjaardag"*, *"birthday"*, *"bday"*, *"gefeliciteerd"*, *"feest"*) automatically launches continuous 24h celebratory balloons throughout the birthday. Animations pause/hide during screen dimming to preserve zero CPU overhead and quiet sleep, resuming immediately upon wake.
     2. **Seizoensauto-triggers**: Built-in date checker for Sinterklaas (5 dec), Kerst/Winter (sneeuw), Oud & Nieuw (vuurwerk op 31 dec 18:00 - 1 jan 06:00), en Valentijnsdag (hartjes op 14 feb).
     3. **Remote API & Socket triggers**: Callable via HTTP `POST /api/animation` (of `GET /api/animation?effect=balloons`), en via het `ui_cmd` socket (`anim <effect>`, `anim stop`).
-    4. **Instellingen modal**: Nieuwe tegel *"Animaties"* in *Instellingen* met toggles voor verjaardagen, seizoenen, dimstand, en directe test-knoppen om elk effect live te bekijken.
+    4. **Instellingen modal**: Nieuwe tegel *"Animaties"* in *Instellingen* met toggles voor verjaardagen, seizoenen, dimstand, en directe handmatige startknoppen. Handmatig gestarte animaties lopen tot het einde van de dag (automatische middernacht-stop) of tot de 'Stop'-knop wordt ingedrukt.
 
 
 

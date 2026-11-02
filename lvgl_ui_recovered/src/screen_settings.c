@@ -2430,10 +2430,11 @@ static void on_anim_test_click(lv_event_t * e) {
         anim_overlay_stop();
         if (lbl_anim_status) lv_label_set_text(lbl_anim_status, tr("Animatie gestopt", "Animation stopped"));
     } else {
-        anim_overlay_trigger(eff, 25);
+        anim_overlay_trigger(eff, 0); /* 0 = continuous until end of the day */
         if (lbl_anim_status) {
-            lv_label_set_text_fmt(lbl_anim_status, "%s: %s (25 s)",
-                                  tr("Test actief", "Test active"), anim_effect_title(eff));
+            lv_label_set_text_fmt(lbl_anim_status, "%s: %s (%s)",
+                                  tr("Actief", "Active"), anim_effect_title(eff),
+                                  tr("tot einde van de dag", "until end of day"));
         }
     }
 }
@@ -2466,7 +2467,7 @@ static void open_anim_modal(lv_event_t * e) {
     lv_obj_t * l_test = lv_label_create(p);
     lv_obj_set_style_text_color(l_test, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l_test, SF(18), 0);
-    lv_label_set_text(l_test, tr("Effect testen:", "Test effect:"));
+    lv_label_set_text(l_test, tr("Handmatig starten (loopt tot einde van de dag):", "Start manually (runs until end of day):"));
     lv_obj_align(l_test, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 26;
 

@@ -622,6 +622,18 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
+    if (!strcmp(mode, "anim")) {
+        const char * effect_name = (argc > 2) ? argv[2] : "leaves";
+        const char * out = (argc > 3) ? argv[3] : "/tmp/sim_anim.ppm";
+        ui_init();
+        anim_overlay_init();
+        anim_overlay_trigger_by_name(effect_name, 25);
+        pump(40);
+        dump_ppm(out);
+        fprintf(stderr, "[sim] anim %s -> %s\n", effect_name, out);
+        return 0;
+    }
+
     /* single named screen, optionally followed by "x,y" taps to drive it */
     const char * out = (argc > 2) ? argv[2] : "/tmp/sim.ppm";
     create_fn fn = screen_home_create;

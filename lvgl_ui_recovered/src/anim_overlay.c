@@ -5,6 +5,7 @@
 #include "i18n.h"
 #include "icon_anim_balloon.h"
 #include "icon_anim_heart.h"
+#include "icon_anim_leaf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +48,7 @@ static lv_timer_t * s_pending_timer = NULL;
 static lv_timer_t * s_seasonal_timer = NULL;
 static anim_effect_t s_current_effect = ANIM_EFFECT_NONE;
 static uint32_t s_stop_tick = 0;
+static int s_active_day = -1;
 static uint32_t s_tick_counter = 0;
 static particle_t s_particles[MAX_PARTICLES];
 static volatile int s_pending_effect = -1;
@@ -112,15 +114,14 @@ static float frand(float min, float max) {
 
 static void spawn_balloon(particle_t * p, int stagger) {
     p->active = 1;
-    int zoom_base = (256 * DISP_HOR) / DESIGN_HOR;
-    int zoom = zoom_base + (rand() % (zoom_base / 3 + 1)) - (zoom_base / 6);
-    if (zoom < 140) zoom = 140;
+    /* Full restored size: 54x84 native asset with gentle organic variation (+-8%) */
+    int zoom = 256 + (rand() % 41) - 20;
 
-    p->base_w = (40 * zoom) / 256;
-    p->base_h = (58 * zoom) / 256;
+    p->base_w = (54 * zoom) / 256;
+    p->base_h = (84 * zoom) / 256;
     p->color = PALETTE_BALLOONS[rand() % NUM_BALLOONS];
-    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(55));
-    p->amp = frand(SUNI(12), SUNI(28));
+    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(65));
+    p->amp = frand(SUNI(14), SUNI(30));
     p->freq = frand(0.030f, 0.055f);
     p->phase = frand(0, (float)(2 * M_PI));
     p->vy = -frand(1.8f, 3.2f);
@@ -128,10 +129,10 @@ static void spawn_balloon(particle_t * p, int stagger) {
 
     if (stagger) {
         /* Distribute across the screen height on initial trigger so screen is immediately festive */
-        p->y = frand(0, (float)(DISP_VER + 80));
+        p->y = frand(0, (float)(DISP_VER + 100));
     } else {
         /* Respawn below bottom */
-        p->y = (float)(DISP_VER + frand(10, 80));
+        p->y = (float)(DISP_VER + frand(10, 100));
     }
 
     lv_obj_clear_flag(p->img, LV_OBJ_FLAG_HIDDEN);
@@ -142,17 +143,18 @@ static void spawn_balloon(particle_t * p, int stagger) {
 
     /* Balloon image (teardrop dome, tapered neck, flared knot, wavy ribbon) */
     lv_img_set_src(p->img, &icon_anim_balloon);
-    lv_img_set_pivot(p->img, 0, 0);
+    lv_img_set_angle(p->img, 0);
+    lv_img_set_pivot(p->img, 27, 42);
     lv_img_set_zoom(p->img, zoom);
     lv_obj_set_style_img_recolor(p->img, lv_color_hex(p->color), 0);
     lv_obj_set_style_img_recolor_opa(p->img, 255, 0);
     lv_obj_set_pos(p->img, 0, 0);
 
     /* Specular gloss highlight (curved white reflection oval near top-left of dome) */
-    int gw = (7 * zoom) / 256; if (gw < 3) gw = 3;
-    int gh = (10 * zoom) / 256; if (gh < 4) gh = 4;
-    int gx = (10 * zoom) / 256;
-    int gy = (7 * zoom) / 256;
+    int gw = (12 * zoom) / 256; if (gw < 4) gw = 4;
+    int gh = (18 * zoom) / 256; if (gh < 6) gh = 6;
+    int gx = (13 * zoom) / 256;
+    int gy = (10 * zoom) / 256;
     lv_obj_set_size(p->gloss, gw, gh);
     lv_obj_set_pos(p->gloss, gx, gy);
     lv_obj_set_style_radius(p->gloss, LV_RADIUS_CIRCLE, 0);
@@ -238,62 +240,25 @@ static void spawn_snow(particle_t * p, int stagger) {
 
 static void spawn_leaf(particle_t * p, int stagger) {
     p->active = 1;
-    p->base_w = SUNI(16) + (rand() % SUNI(8));
-    p->base_h = (p->base_w * 7) / 5;
+    /* Full bold 64x64 autumn oak/maple leaf asset with gentle size variation */
+    int zoom = 256 + (rand() % 41) - 20;
+
+    p->base_w = (64 * zoom) / 256;
+    p->base_h = (64 * zoom) / 256;
     p->color = PALETTE_LEAVES[rand() % NUM_LEAVES];
-    p->base_x = frand(SUNI(20), DISP_HOR - SUNI(40));
-    p->amp = frand(SUNI(20), SUNI(40));
-    p->freq = frand(0.03f, 0.06f);
+    p->base_x = frand(SUNI(20), DISP_HOR - SUNI(70));
+    p->amp = frand(SUNI(20), SUNI(45));
+    p->freq = frand(0.025f, 0.055f);
     p->phase = frand(0, (float)(2 * M_PI));
-    p->tumble_angle = frand(0, (float)(2 * M_PI));
-    p->tumble_speed = frand(0.06f, 0.14f);
-    p->vy = frand(1.8f, 3.2f);
+    p->tumble_angle = frand(-0.35f, 0.35f);
+    p->tumble_speed = frand(0.05f, 0.12f);
+    p->vy = frand(1.6f, 3.0f);
     p->x = p->base_x;
 
     if (stagger) {
         p->y = frand(-40, (float)DISP_VER);
     } else {
-        p->y = -frand(15, 70);
-    }
-
-    lv_obj_clear_flag(p->body, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(p->img, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
-
-    lv_obj_set_size(p->body, p->base_w, p->base_h);
-    lv_obj_set_pos(p->body, 0, 0);
-    lv_obj_set_style_radius(p->body, SUNI(7), 0);
-    lv_obj_set_style_bg_color(p->body, lv_color_hex(p->color), 0);
-    lv_obj_set_style_bg_opa(p->body, LV_OPA_90, 0);
-    lv_obj_set_style_border_width(p->body, 0, 0);
-
-    lv_obj_set_size(p->cont, p->base_w + 4, p->base_h + 4);
-    lv_obj_clear_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void spawn_heart(particle_t * p, int stagger) {
-    p->active = 1;
-    int zoom_base = (256 * DISP_HOR) / DESIGN_HOR;
-    int zoom = zoom_base + (rand() % (zoom_base / 4 + 1)) - (zoom_base / 8);
-    if (zoom < 140) zoom = 140;
-
-    p->base_w = (36 * zoom) / 256;
-    p->base_h = (36 * zoom) / 256;
-    static const uint32_t HEART_COLORS[] = { 0xe11d48, 0xf43f5e, 0xff2d55, 0xec4899 };
-    p->color = HEART_COLORS[rand() % 4];
-    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(45));
-    p->amp = frand(SUNI(12), SUNI(24));
-    p->freq = frand(0.035f, 0.065f);
-    p->phase = frand(0, (float)(2 * M_PI));
-    p->vy = -frand(1.8f, 3.2f);
-    p->x = p->base_x;
-
-    if (stagger) {
-        p->y = frand(0, (float)(DISP_VER + 60));
-    } else {
-        p->y = (float)(DISP_VER + frand(10, 70));
+        p->y = -frand(20, 80);
     }
 
     lv_obj_clear_flag(p->img, LV_OBJ_FLAG_HIDDEN);
@@ -302,15 +267,57 @@ static void spawn_heart(particle_t * p, int stagger) {
     lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
 
-    /* Heart anti-aliased image descriptor */
-    lv_img_set_src(p->img, &icon_anim_heart);
-    lv_img_set_pivot(p->img, 0, 0);
+    /* Leaf image descriptor (broad full-face oak/maple leaf, 64x64 native) */
+    lv_img_set_src(p->img, &icon_anim_leaf);
+    lv_img_set_pivot(p->img, 32, 32);
+    lv_img_set_angle(p->img, 0);
     lv_img_set_zoom(p->img, zoom);
     lv_obj_set_style_img_recolor(p->img, lv_color_hex(p->color), 0);
     lv_obj_set_style_img_recolor_opa(p->img, 255, 0);
     lv_obj_set_pos(p->img, 0, 0);
 
-    lv_obj_set_size(p->cont, p->base_w + 4, p->base_h + 4);
+    lv_obj_set_size(p->cont, p->base_w + 12, p->base_h + 12);
+    lv_obj_clear_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void spawn_heart(particle_t * p, int stagger) {
+    p->active = 1;
+    /* Bold 64x64 Valentine heart asset with gentle organic size variation */
+    int zoom = 256 + (rand() % 41) - 20;
+
+    p->base_w = (64 * zoom) / 256;
+    p->base_h = (64 * zoom) / 256;
+    static const uint32_t HEART_COLORS[] = { 0xe11d48, 0xf43f5e, 0xff2d55, 0xec4899 };
+    p->color = HEART_COLORS[rand() % 4];
+    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(60));
+    p->amp = frand(SUNI(12), SUNI(28));
+    p->freq = frand(0.035f, 0.065f);
+    p->phase = frand(0, (float)(2 * M_PI));
+    p->vy = -frand(1.8f, 3.2f);
+    p->x = p->base_x;
+
+    if (stagger) {
+        p->y = frand(0, (float)(DISP_VER + 60));
+    } else {
+        p->y = (float)(DISP_VER + frand(10, 80));
+    }
+
+    lv_obj_clear_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
+
+    /* Heart anti-aliased image descriptor (64x64 native) */
+    lv_img_set_src(p->img, &icon_anim_heart);
+    lv_img_set_pivot(p->img, 32, 32);
+    lv_img_set_angle(p->img, 0);
+    lv_img_set_zoom(p->img, zoom);
+    lv_obj_set_style_img_recolor(p->img, lv_color_hex(p->color), 0);
+    lv_obj_set_style_img_recolor_opa(p->img, 255, 0);
+    lv_obj_set_pos(p->img, 0, 0);
+
+    lv_obj_set_size(p->cont, p->base_w + 10, p->base_h + 10);
     lv_obj_clear_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -365,9 +372,21 @@ static void anim_timer_tick(lv_timer_t * timer) {
     if (s_current_effect == ANIM_EFFECT_NONE) return;
 
     uint32_t now = lv_tick_get();
-    if (s_stop_tick > 0 && now >= s_stop_tick) {
-        anim_overlay_stop();
-        return;
+    if (s_stop_tick > 0) {
+        if (now >= s_stop_tick) {
+            anim_overlay_stop();
+            return;
+        }
+    } else {
+        /* Continuous mode: check every ~3.5s (100 ticks) if day rolled over past midnight */
+        if (s_tick_counter % 100 == 0 && s_active_day >= 0) {
+            time_t now_sec = time(NULL);
+            struct tm tm_now;
+            if (localtime_r(&now_sec, &tm_now) && tm_now.tm_yday != s_active_day) {
+                anim_overlay_stop();
+                return;
+            }
+        }
     }
 
     /* Respect dim setting: if dimmed and user hasn't opted into dim animations, hide overlay */
@@ -434,12 +453,14 @@ static void anim_timer_tick(lv_timer_t * timer) {
             particle_t * p = &s_particles[i];
             if (!p->active) continue;
             p->y += p->vy;
-            p->x = p->base_x + p->amp * sinf(p->phase + (float)s_tick_counter * p->freq);
+            float sway = sinf(p->phase + (float)s_tick_counter * p->freq);
+            p->x = p->base_x + p->amp * sway;
 
-            p->tumble_angle += p->tumble_speed;
-            int cur_w = (int)(fabsf(cosf(p->tumble_angle)) * (float)p->base_w);
-            if (cur_w < 4) cur_w = 4;
-            lv_obj_set_width(p->body, cur_w);
+            /* Gentle aerodynamic rocking angle strictly max +-45 degrees from front view */
+            int angle_tenth_deg = (int)(sway * 350.0f); /* -35.0 to +35.0 deg, strictly max 45 deg */
+            if (angle_tenth_deg > 450) angle_tenth_deg = 450;
+            if (angle_tenth_deg < -450) angle_tenth_deg = -450;
+            lv_img_set_angle(p->img, angle_tenth_deg);
 
             if (p->y > DISP_VER + SUNI(20)) {
                 spawn_leaf(p, 0);
@@ -452,7 +473,14 @@ static void anim_timer_tick(lv_timer_t * timer) {
             particle_t * p = &s_particles[i];
             if (!p->active) continue;
             p->y += p->vy;
-            p->x = p->base_x + p->amp * sinf(p->phase + (float)s_tick_counter * p->freq);
+            float sway = sinf(p->phase + (float)s_tick_counter * p->freq);
+            p->x = p->base_x + p->amp * sway;
+
+            /* Gentle floating tilt strictly max +-25 degrees from front view */
+            int angle_tenth_deg = (int)(sway * 220.0f); /* -22.0 to +22.0 deg, strictly max 45 deg */
+            if (angle_tenth_deg > 450) angle_tenth_deg = 450;
+            if (angle_tenth_deg < -450) angle_tenth_deg = -450;
+            lv_img_set_angle(p->img, angle_tenth_deg);
 
             if (p->y < -SUNI(50)) {
                 spawn_heart(p, 0);
@@ -582,8 +610,26 @@ static void anim_overlay_apply_trigger(anim_effect_t effect, int duration_sec) {
     }
     s_tick_counter = 0;
 
-    /* In continuous 24h mode, use a comfortable particle count (12) so the screen stays legible */
-    int active_limit = (s_stop_tick == 0 && effect == ANIM_EFFECT_BALLOONS) ? 12 : MAX_PARTICLES;
+    time_t now_sec = time(NULL);
+    struct tm tm_now;
+    if (localtime_r(&now_sec, &tm_now)) {
+        s_active_day = tm_now.tm_yday;
+    } else {
+        s_active_day = -1;
+    }
+
+    /* Particle count limits:
+     * - Balloons: reduced by a third (16 for test burst, 8 for continuous 24h mode)
+     * - Continuous mode for other effects: moderate counts so screen stays clear
+     * - Short burst mode: MAX_PARTICLES (24) */
+    int active_limit = MAX_PARTICLES;
+    if (effect == ANIM_EFFECT_BALLOONS) {
+        active_limit = (s_stop_tick == 0) ? 8 : 16;
+    } else if (s_stop_tick == 0) {
+        if (effect == ANIM_EFFECT_HEARTS) active_limit = 12;
+        else if (effect == ANIM_EFFECT_LEAVES) active_limit = 12;
+        else if (effect == ANIM_EFFECT_SNOW || effect == ANIM_EFFECT_CONFETTI) active_limit = 14;
+    }
 
     /* Initialize particles for chosen effect */
     for (int i = 0; i < active_limit; i++) {
