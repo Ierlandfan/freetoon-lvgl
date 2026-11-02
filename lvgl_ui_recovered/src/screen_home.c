@@ -1484,8 +1484,8 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
             title_to_show = tr("Agenda", "Calendar");
         } else if (b && !strcmp(b, "local:waste")) {
             title_to_show = tr("Afval", "Waste");
-        } else if (b && m && m->tile_title[0]) {
-            title_to_show = m->tile_title;
+        } else if (b && m && (m->tile_title[0] || m->id[0])) {
+            title_to_show = tile_slots_integration_title(m);
         } else {
             /* Default titles */
             switch (slot) {
@@ -1622,7 +1622,7 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
 static void render_meta_into(const integration_meta_t * m,
                              lv_obj_t * title, lv_obj_t * main, lv_obj_t * sub) {
     if (!m) return;
-    if (title) lv_label_set_text(title, m->tile_title[0] ? m->tile_title : m->name);
+    if (title) lv_label_set_text(title, tile_slots_integration_title(m));
     if (main) {
         const char * v = (const char *)m->latest_value;
         size_t vlen = v ? strlen(v) : 0;
@@ -2008,8 +2008,7 @@ static void refresh_cb(lv_timer_t * t) {
         }
         const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_P1_0 + i);
         if (m) {
-            if (p1_title[i]) lv_label_set_text(p1_title[i],
-                                 m->tile_title[0] ? m->tile_title : m->name);
+            if (p1_title[i]) lv_label_set_text(p1_title[i], tile_slots_integration_title(m));
             render_tile_slot(TILE_SLOT_P1_0 + i, p1_main[i], p1_sub[i]);
         } else {
             if (p1_title[i]) lv_label_set_text(p1_title[i], "");

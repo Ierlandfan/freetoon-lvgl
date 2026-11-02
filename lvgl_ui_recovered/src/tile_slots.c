@@ -200,6 +200,15 @@ const integration_meta_t * tile_slots_integration_by_id(const char * id) {
     return NULL;
 }
 
+const char * tile_slots_integration_title(const integration_meta_t * m) {
+    if (!m) return "";
+    const char * t = m->tile_title[0] ? m->tile_title : (m->name[0] ? m->name : m->id);
+    if (!strcasecmp(t, "weather") || !strcasecmp(m->id, "weather")) {
+        return tr("Weer", "Weather");
+    }
+    return t;
+}
+
 /* Built-in local integrations selectable for the auto-rotate tile. */
 static const struct { const char * id; const char * label; } g_locals[] = {
     { "local:energy", "Energie" },

@@ -268,10 +268,8 @@ static void render_slot(slot_t * s) {
             title_txt = tr("Afval", "Waste");
         } else if (!strcmp(k, "local:water")) {
             title_txt = tr("Water (P1)", "Water (P1)");
-        } else if (meta && meta->tile_title[0]) {
-            title_txt = meta->tile_title;
-        } else if (meta && meta->name[0]) {
-            title_txt = meta->name;
+        } else if (meta && (meta->tile_title[0] || meta->name[0] || meta->id[0])) {
+            title_txt = tile_slots_integration_title(meta);
         } else {
             title_txt = k;
         }
@@ -827,7 +825,7 @@ static void open_picker(int slot) {
         lv_obj_set_style_shadow_width(b, 0, 0);
         lv_obj_set_style_radius(b, SX(4), 0);
         lv_obj_add_event_cb(b, on_picker_pick_integ, LV_EVENT_CLICKED, (void *)meta->id);
-        const char * lbl_txt = meta->tile_title[0] ? meta->tile_title : meta->name;
+        const char * lbl_txt = tile_slots_integration_title(meta);
         lv_obj_t * l = mklabel(b, lbl_txt, OSR(16), C_TITLE);
         lv_obj_center(l);
     }

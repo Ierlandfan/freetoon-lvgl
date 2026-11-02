@@ -109,6 +109,9 @@ const integration_meta_t * tile_slots_integration_at(int i);
 /* Look up an integration by id. Returns NULL if not installed. */
 const integration_meta_t * tile_slots_integration_by_id(const char * id);
 
+/* Localized display title for an integration (e.g. "Weer" for "Weather" in Dutch). */
+const char * tile_slots_integration_title(const integration_meta_t * m);
+
 /* Built-in ("local") integrations the auto-rotate tile can also cycle. These
  * aren't marketplace daemons — toonui renders them from its own live state
  * (energy/water/vent/family/air). The picker lists the enabled ones; their ids

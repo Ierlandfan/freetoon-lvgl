@@ -1880,7 +1880,7 @@ static void open_rotate_modal(lv_event_t * e) {
     int ni = tile_slots_integration_count();
     for (int i = 0; i < ni; i++) {
         const integration_meta_t * im = tile_slots_integration_at(i);
-        if (im) rotate_add_cb(sc, im->id, im->name[0] ? im->name : im->id, &cy);
+        if (im) rotate_add_cb(sc, im->id, tile_slots_integration_title(im), &cy);
     }
 
     if (rotate_cb_count == 0) {
@@ -3016,8 +3016,7 @@ static void build_slot_options(int slot, char * out, size_t cap) {
     int total = tile_slots_integration_count();
     for (int i = 0; i < total && n + INTEG_NAME_MAX + 2 < cap; i++) {
         const integration_meta_t * m = tile_slots_integration_at(i);
-        n += snprintf(out + n, cap - n, "\n%s",
-                      m->tile_title[0] ? m->tile_title : m->id);
+        n += snprintf(out + n, cap - n, "\n%s", tile_slots_integration_title(m));
     }
 }
 
