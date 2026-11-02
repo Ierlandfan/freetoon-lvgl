@@ -134,5 +134,6 @@ uname@GLIBC_2.4
 unlink@GLIBC_2.4
 usleep@GLIBC_2.4
 vfprintf@GLIBC_2.4
+vsnprintf@GLIBC_2.4
 waitpid@GLIBC_2.4
 write@GLIBC_2.4
