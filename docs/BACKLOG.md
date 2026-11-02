@@ -221,5 +221,25 @@
   - The big thermostat screen currently displays `"BoxTalk OK msg=xxx"`.
   - Hide this debug status during normal operation, only surfacing an alert if communication fails (or routing connectivity warnings to the Inbox).
 
+### 22. Animation Overlay Engine (Oepi-Loepi QML Animation App Port)
+- **Status**: Implemented.
+- **Description**:
+  - Full native LVGL animation overlay engine (`anim_overlay.c` / `anim_overlay.h`) running on `lv_layer_sys()`, inspired by the rooted Toon Animation app by Oepi-Loepi.
+  - Click-transparent overlay where touches pass straight through to whatever screen, modal, or tile is underneath (`LV_OBJ_FLAG_CLICKABLE` cleared).
+  - Lightweight, high-performance particle engine with zero heap allocations during the tick loop (24-particle object pool, ~1-2 ms per frame on Toon 1 ARM9).
+  - Supported animation effects:
+    - **Ballonnen** (`balloons`): Colorful oval balloons with strings floating upwards with gentle natural sway.
+    - **Confetti** (`confetti`): Festive colored strips fluttering downwards with a 3D tumble flip effect.
+    - **Sneeuw** (`snow`): Soft winter flakes drifting downwards with gentle sine-wave swaying.
+    - **Vuurwerk** (`fireworks`): Bright particle bursts radiating outward, decelerating with gravity and fading out.
+    - **Herfstbladeren** (`leaves`): Warm amber, gold, and russet leaves tumbling down in the autumn breeze.
+    - **Hartjes** (`hearts`): Floating hearts drifting upwards.
+  - Multi-source triggers:
+    1. **Agenda app (verjaardagen)**: When calendar events refresh in `calendar.c`, any event matching birthday terms (*"jarig"*, *"verjaardag"*, *"birthday"*, *"bday"*, *"gefeliciteerd"*, *"feest"*) automatically launches celebratory balloons.
+    2. **Seizoensauto-triggers**: Built-in date checker for Sinterklaas (5 dec), Kerst/Winter (sneeuw), Oud & Nieuw (vuurwerk op 31 dec 18:00 - 1 jan 06:00), en Valentijnsdag (hartjes op 14 feb).
+    3. **Remote API & Socket triggers**: Callable via HTTP `POST /api/animation` (of `GET /api/animation?effect=balloons`), en via het `ui_cmd` socket (`anim <effect>`, `anim stop`).
+    4. **Instellingen modal**: Nieuwe tegel *"Animaties"* in *Instellingen* met toggles voor verjaardagen, seizoenen, dimstand, en directe test-knoppen om elk effect live te bekijken.
+
+
 
 
