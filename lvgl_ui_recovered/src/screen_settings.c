@@ -3660,7 +3660,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_align(lbl_host, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_host = lv_textarea_create(p); ta_make_numeric(ta_otgw_host);
     lv_obj_set_size(ta_otgw_host, SX(380), SY(44));
-    lv_obj_align(ta_otgw_host, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_align(ta_otgw_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_otgw_host, true);
     lv_textarea_set_text(ta_otgw_host, settings.otgw_host);
     y += 60;
@@ -3669,11 +3669,11 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * lbl_user = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_user, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_user, SF(22), 0);
-    lv_label_set_text(lbl_user, tr("OTGW-gebruiker (opt):", "OTGW user (opt):"));
+    lv_label_set_text(lbl_user, tr("Gebruiker (opt):", "User (opt):"));
     lv_obj_align(lbl_user, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_user = lv_textarea_create(p);
     lv_obj_set_size(ta_otgw_user, SX(380), SY(44));
-    lv_obj_align(ta_otgw_user, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_align(ta_otgw_user, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_otgw_user, true);
     lv_textarea_set_text(ta_otgw_user, settings.otgw_user);
     y += 60;
@@ -3681,11 +3681,11 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * lbl_pass = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_pass, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_pass, SF(22), 0);
-    lv_label_set_text(lbl_pass, tr("OTGW-wachtwoord (opt):", "OTGW pass (opt):"));
+    lv_label_set_text(lbl_pass, tr("Wachtwoord (opt):", "Password (opt):"));
     lv_obj_align(lbl_pass, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_otgw_pass = lv_textarea_create(p);
     lv_obj_set_size(ta_otgw_pass, SX(380), SY(44));
-    lv_obj_align(ta_otgw_pass, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_align(ta_otgw_pass, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
     lv_textarea_set_one_line(ta_otgw_pass, true);
     lv_textarea_set_password_mode(ta_otgw_pass, true);
     lv_textarea_set_text(ta_otgw_pass, settings.otgw_pass);

@@ -153,6 +153,7 @@
     - Fixed Home Assistant entity picker list overlapping the top close button (`screen_ha_settings.c`).
     - Fixed button overlap on Z-Wave rename device modal (`screen_zwave.c`).
     - Fixed field row overlap on Domoticz settings modal (Host row overlapping the *"Domoticz inschakelen"* row, `screen_settings.c`).
+    - Fixed input field overlap with labels on OT Bridge settings modal (Gebruiker en Wachtwoord fields overlapping label text, `screen_settings.c`).
 
 ---
 
