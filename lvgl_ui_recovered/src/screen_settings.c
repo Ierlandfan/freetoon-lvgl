@@ -2167,8 +2167,8 @@ static void cal_feeds_rebuild(void) {
 
         lv_obj_t * btn = lv_list_add_btn(cal_feeds_list, NULL, u);
         lv_obj_set_style_text_font(btn, SF(15), 0);
-        lv_obj_set_style_text_color(btn, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x1a2940), 0);
+        lv_obj_set_style_text_color(btn, lv_color_hex(THEME_TEXT_HI), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_CARD_BG), 0);
         lv_obj_set_style_pad_left(btn, SX(12), 0);
         lv_obj_set_style_pad_right(btn, SX(56), 0);
 
@@ -2185,12 +2185,12 @@ static void cal_feeds_rebuild(void) {
         lv_label_set_text(tl, LV_SYMBOL_TRASH);
         lv_obj_center(tl);
 
-        /* Ensure child label text color is white */
+        /* Ensure child label text color */
         uint32_t cnt = lv_obj_get_child_cnt(btn);
         for (uint32_t c = 0; c < cnt; c++) {
             lv_obj_t * ch = lv_obj_get_child(btn, c);
             if (ch != tr_btn) {
-                lv_obj_set_style_text_color(ch, lv_color_hex(0xffffff), 0);
+                lv_obj_set_style_text_color(ch, lv_color_hex(THEME_TEXT_HI), 0);
                 lv_obj_set_style_text_font(ch, SF(15), 0);
             }
         }
@@ -2198,8 +2198,9 @@ static void cal_feeds_rebuild(void) {
     }
     if (i == 0) {
         lv_obj_t * txt = lv_list_add_text(cal_feeds_list, tr("(geen kalenders - voeg er een toe)", "(no calendars - add one)"));
-        lv_obj_set_style_text_color(txt, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(txt, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(txt, SF(15), 0);
+        lv_obj_set_style_bg_opa(txt, LV_OPA_TRANSP, 0);
     }
 }
 
@@ -2295,16 +2296,16 @@ static void open_calendar_modal(lv_event_t * e) {
 
     lv_obj_t * r = panel_row(p, y, tr("Agenda inschakelen", "Enable calendar"), NULL);
     sw_cal = row_switch(r, settings.calendar_enabled, on_cal_enabled_change);
-    y += 76;
+    y += 86;
 
     lv_obj_t * l1 = lv_label_create(p);
     lv_obj_set_style_text_color(l1, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l1, SF(18), 0);
     lv_label_set_text(l1, tr("Home Assistant agenda-entiteit (optioneel):", "Home Assistant calendar entity (optional):"));
-    lv_obj_align(l1, LV_ALIGN_TOP_LEFT, SX(4), y); y += 26;
+    lv_obj_align(l1, LV_ALIGN_TOP_LEFT, SX(4), SY(y)); y += 26;
     ta_cal_ha = lv_textarea_create(p);
     lv_obj_set_size(ta_cal_ha, SX(470), SY(44));
-    lv_obj_align(ta_cal_ha, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(ta_cal_ha, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_textarea_set_one_line(ta_cal_ha, true);
     lv_textarea_set_placeholder_text(ta_cal_ha, "calendar.gezin");
     lv_textarea_set_text(ta_cal_ha, settings.calendar_ha_entity);
@@ -2315,56 +2316,59 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(l2, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l2, SF(18), 0);
     lv_label_set_text(l2, tr("iCal (.ics) kalenders:", "iCal (.ics) calendars:"));
-    lv_obj_align(l2, LV_ALIGN_TOP_LEFT, SX(4), y); y += 26;
+    lv_obj_align(l2, LV_ALIGN_TOP_LEFT, SX(4), SY(y)); y += 26;
 
     cal_feeds_list = lv_list_create(p);
     lv_obj_set_size(cal_feeds_list, SX(740), SY(130));
-    lv_obj_align(cal_feeds_list, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(cal_feeds_list, lv_color_hex(0x0e1a2a), 0);
+    lv_obj_align(cal_feeds_list, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    lv_obj_set_style_bg_color(cal_feeds_list, lv_color_hex(THEME_ROW_BG), 0);
+    lv_obj_set_style_border_color(cal_feeds_list, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(cal_feeds_list, 1, 0);
+    lv_obj_set_style_radius(cal_feeds_list, 10, 0);
     cal_feeds_rebuild();
-    y += 138;
+    y += 140;
 
     ta_cal_ics = lv_textarea_create(p);
     lv_obj_set_size(ta_cal_ics, SX(450), SY(44));
-    lv_obj_align(ta_cal_ics, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(ta_cal_ics, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_textarea_set_one_line(ta_cal_ics, true);
     lv_textarea_set_placeholder_text(ta_cal_ics, "https://... .ics");
 
     lv_obj_t * addb = lv_btn_create(p);
     lv_obj_set_size(addb, SX(120), SY(44));
-    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(464), y);
+    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(464), SY(y));
     lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(addb, on_cal_add_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, tr("Toevoegen", "Add")); lv_obj_center(al);
 
     lv_obj_t * impb = lv_btn_create(p);
     lv_obj_set_size(impb, SX(150), SY(44));
-    lv_obj_align(impb, LV_ALIGN_TOP_LEFT, SX(594), y);
+    lv_obj_align(impb, LV_ALIGN_TOP_LEFT, SX(594), SY(y));
     lv_obj_set_style_bg_color(impb, lv_color_hex(0x224466), 0);
     lv_obj_add_event_cb(impb, on_cal_import_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * il = lv_label_create(impb); lv_label_set_text(il, tr("Toon import", "Toon import")); lv_obj_center(il);
-    y += 50;
+    y += 52;
 
     lbl_cal_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_cal_status, lv_color_hex(0x9fc4e6), 0);
     lv_obj_set_style_text_font(lbl_cal_status, SF(16), 0);
     lv_label_set_text(lbl_cal_status, "");
-    lv_obj_align(lbl_cal_status, LV_ALIGN_TOP_LEFT, SX(4), y);
-    y += 26;
+    lv_obj_align(lbl_cal_status, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    y += 28;
 
     /* Notifications */
     lv_obj_t * rn = panel_row(p, y, tr("Meldingen", "Notifications"), NULL);
     sw_cal_notify = row_switch(rn, settings.calendar_notify_enabled, on_cal_notify_change);
-    y += 76;
+    y += 86;
 
     lv_obj_t * l3 = lv_label_create(p);
     lv_obj_set_style_text_color(l3, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l3, SF(18), 0);
     lv_label_set_text(l3, tr("Minuten van tevoren:", "Minutes before:"));
-    lv_obj_align(l3, LV_ALIGN_TOP_LEFT, SX(4), y + SY(8));
+    lv_obj_align(l3, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 8));
     ta_cal_lead = lv_textarea_create(p);
     lv_obj_set_size(ta_cal_lead, SX(120), SY(44));
-    lv_obj_align(ta_cal_lead, LV_ALIGN_TOP_LEFT, SX(300), y);
+    lv_obj_align(ta_cal_lead, LV_ALIGN_TOP_LEFT, SX(300), SY(y));
     lv_textarea_set_one_line(ta_cal_lead, true);
     lv_textarea_set_accepted_chars(ta_cal_lead, "0123456789");
     lv_textarea_set_max_length(ta_cal_lead, 4);
@@ -2374,14 +2378,14 @@ static void open_calendar_modal(lv_event_t * e) {
 
     lv_obj_t * saveb = lv_btn_create(p);
     lv_obj_set_size(saveb, SX(150), SY(46));
-    lv_obj_align(saveb, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(saveb, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(saveb, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(saveb, on_cal_save_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(saveb); lv_label_set_text(sl, tr("Opslaan", "Save")); lv_obj_center(sl);
 
     lv_obj_t * openb = lv_btn_create(p);
     lv_obj_set_size(openb, SX(180), SY(46));
-    lv_obj_align(openb, LV_ALIGN_TOP_LEFT, SX(170), y);
+    lv_obj_align(openb, LV_ALIGN_TOP_LEFT, SX(170), SY(y));
     lv_obj_set_style_bg_color(openb, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(openb, on_cal_open_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * ol = lv_label_create(openb); lv_label_set_text(ol, tr("Agenda openen", "Open calendar")); lv_obj_center(ol);
