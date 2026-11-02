@@ -3805,6 +3805,7 @@ static lv_timer_t * g_clean_tmr      = NULL;
 static int         g_clean_remaining = 0;
 
 static void clean_finish(void) {
+    if (!g_clean_overlay && !g_clean_tmr) return;
     if (g_clean_tmr) {
         lv_timer_del(g_clean_tmr);
         g_clean_tmr = NULL;
