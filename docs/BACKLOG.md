@@ -128,11 +128,36 @@
     - Removed *Apparaten >* button from Energy Statistics (`screen_stats.c`).
     - Removed obsolete step-change timeline (`screen_energy_timeline.c`) and custom appliance naming screen (`screen_appliances.c`), freeing memory and simplifying UI.
 
+### 11. Release 0.9.82: Auto-Dim Wake Fix, Screen Cleaning Fix, Tile Localization, HA/Z-Wave Modal Overlaps & Stats Euro Mode (Implemented)
+- **Status**: Completed in Release 0.9.82.
+- **Implemented Features & Fixes**:
+  - **Auto-Dim Spontaneous Wake Fix (`screen_settings.c`)**:
+    - Fixed an issue where the Toon would automatically wake from the dim standby screen every few minutes without user touch.
+    - When the auto-home timer expired while dimmed, `screen_settings_close_modals()` was called, invoking `clean_finish()`.
+    - `clean_finish()` previously marked user activity unconditionally (`ui_mark_activity()`), causing `ui_idle_tick()` to register pending wake and dismiss the dim screen.
+    - Added an active check guard in `clean_finish()` (`if (!g_clean_overlay && !g_clean_tmr) return;`) to ensure inactive screen-cleaning logic never emits false activity wakeups.
+  - **Screen Cleaning Stability on Toon 1 (`screen_settings.c`)**:
+    - Completely decoupled cleaning overlay cleanup from UI timer callbacks to prevent access to deallocated objects on Toon 1.
+  - **Energy Statistics: Euro Display Mode, Rates Editing & Gas Polish (`screen_stats.c`, `stats.c`, `settings.c`, `settings.h`, `client_link.c`)**:
+    - Added toggle between physical units (*Verbruik*: kWh, m³) and financial cost (*Euro*: €) across Energy statistics tabs (Elektriciteit, Gas).
+    - Added interactive modal dialogs on the left panel to configure electricity rate (€/kWh) and gas rate (€/m³).
+    - Persisted `rate_elec_kwh`, `rate_gas_m3`, and `stats_show_euro` in `toonui.cfg`.
+    - Extended LVGL Montserrat fonts with Euro (`€`) and superscript 3 (`³`) glyphs across all font sizes.
+    - Displayed gas flow in m³/h instead of l/h in *Gas - Nu*.
+    - Added hourly delta fallback in *Gas - Nu* for DSMR smart meters reporting NaN in 5-minute `gas_flow`.
+    - Fixed bar rounding in *Gas - Dagen* by enforcing higher Y-scale for small values.
+    - Defaulted stock Toon HTTP queries in client/slave mode to port 80.
+  - **Tile Localization (`tile_metadata.c`)**:
+    - Localized Weather integration tile title to Dutch *"Weer"* instead of English *"Weather"*.
+  - **Modal Layout & Component Overlap Fixes**:
+    - Fixed Home Assistant entity picker list overlapping the top close button (`screen_ha_settings.c`).
+    - Fixed button overlap on Z-Wave rename device modal (`screen_zwave.c`).
+
 ---
 
 ## Open / Backlog
 
-### 11. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
+### 12. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
 - **Status**: Open / Investigation needed.
 - **Description**:
   - After pressing the physical doorbell, the Toon correctly opens the doorbell popup via WebSocket trigger, but displays *"Doorbell: snapshot unavailable"*.
@@ -141,7 +166,7 @@
   - **HTTP Response Verification**: Check what `/usr/bin/curl` actually downloads from `http://<ha>:8123/api/camera_proxy/camera.doorbell` to `/tmp/doorbell.jpg` (HTTP status code, 401/404/500 JSON vs valid JPEG header `FF D8 FF`).
   - **Stream/Snapshot Wake-up Latency**: Determine if a short delay or wake-up call (or MJPEG stream via go2rtc/RTSP) is needed for battery-powered cameras.
 
-### 11. Settings Cleanup: Remove Redundant Options from 'Scherm'
+### 13. Settings Cleanup: Remove Redundant Options from 'Scherm'
 - **Status**: Implemented.
 - **Description**:
   - Clean up and streamline `Instellingen -> Scherm` (`screen_settings.c`) by removing obsolete/redundant configuration rows:
@@ -149,45 +174,45 @@
     2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
 
-### 12. Waste Tile on Dim Screen: Category Name Abbreviations
+### 14. Waste Tile on Dim Screen: Category Name Abbreviations
 - **Status**: Implemented (Dim Screen).
 - **Description**:
   - On the standby/dim screen waste tile (`DB_WASTE` in `screen_dim.c` / `screen_dim_grid.c` / `wastecollection.c`), shorten long category names for better fit and legibility:
     - *"GFT"* instead of *"Groente/Fruit/Tuinafval"*.
     - *"PMD"* instead of *"Plastic/Metaal/Drankpakken"*.
 
-### 13. Dim Screen Transition Over Detail / Modal Screens
+### 15. Dim Screen Transition Over Detail / Modal Screens
 - **Status**: Implemented.
 - **Description**:
   - When detail/settings modals (`lv_layer_top()`) are open, the dim screen now cleanly covers them by hiding the top layer while dimmed, and restoring it on wake (or closing it when auto-home expires). Doorbell alerts remain on `lv_layer_sys()` so they always appear over the dim screen with full brightness.
 
-### 14. Dim Screen Waste Tile: Dynamic Category Icon
+### 16. Dim Screen Waste Tile: Dynamic Category Icon
 - **Status**: Implemented (Dim Screen).
 - **Description**:
   - On the Dim screen, the next upcoming waste collection date now displays the category-specific waste icon (e.g. leaf for GFT, milk carton for PMD, newspaper for paper, bin for residual) rendered in crisp 80x80 white.
 
-### 15. Thermostat Home Tile: Preset Buttons Should Resume Program Mode from Manual
+### 17. Thermostat Home Tile: Preset Buttons Should Resume Program Mode from Manual
 - **Status**: Implemented.
 - **Description**:
   - When the thermostat is in Manual mode and the user taps one of the preset buttons (Comfort, Thuis, Slapen, Weg) on the homescreen tile, the thermostat should activate Program mode (`PROG_TEMPOVERRIDE` or `PROG_BASE`) with that preset, rather than staying in Manual mode.
 
-### 16. Vertical Meter Bars on Dim Screen: Value Text Below Bar
+### 18. Vertical Meter Bars on Dim Screen: Value Text Below Bar
 - **Status**: Implemented.
 - **Description**:
   - When vertical segmented usage bars (`dim_bars_vertical`) are selected on the dim screen, position the reading / unit text underneath the bar rather than beside it to optimize horizontal space.
 
-### 17. Calendar Tile Layout & Background Consistency Across Tile Slots
+### 19. Calendar Tile Layout & Background Consistency Across Tile Slots
 - **Status**: Implemented.
 - **Description**:
   - If the Agenda/Calendar function is assigned to a different slot (such as the ventilation or family tile), the background color and layout differ from the dedicated Agenda tile. Standardize them so all calendar representations use the preferred native Agenda tile style.
 
-### 18. Temporary Setpoint Override Alignment Across Dim, Tile, and Full Thermostat Screen
+### 20. Temporary Setpoint Override Alignment Across Dim, Tile, and Full Thermostat Screen
 - **Status**: Implemented.
 - **Description**:
   - When the thermostat is in Program mode and the user adjusts the setpoint temperature on the homescreen tile (+/-), the dim screen switches its label to "Handmatig" while the homescreen tile and big thermostat screen stay in Program mode.
   - Align behavior so that a setpoint change is treated as a temporary override in Program mode (holding the new setpoint until the next scheduled program switch), consistently reflected across all screens.
 
-### 19. Big Thermostat Screen: BoxTalk Debug Banner Cleanup
+### 21. Big Thermostat Screen: BoxTalk Debug Banner Cleanup
 - **Status**: Implemented.
 - **Description**:
   - The big thermostat screen currently displays `"BoxTalk OK msg=xxx"`.
