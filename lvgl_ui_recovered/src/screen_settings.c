@@ -1659,35 +1659,36 @@ static void on_domoticz_apply_click(lv_event_t * e) {
 static void open_domoticz(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("Domoticz", 540);
-    int y = SY(70);
+    int is_t1 = (DISP_VER < 600);
+    int y = is_t1 ? 60 : 70;
 
     lv_obj_t * r_en = panel_row(p, y, tr("Domoticz inschakelen", "Domoticz enabled"), NULL);
     row_switch(r_en, settings.enable_domoticz, on_domoticz_enabled_change);
-    y += SY(66);
+    y += is_t1 ? 72 : 88;
 
     lv_obj_t * lh = lv_label_create(p);
     lv_obj_set_style_text_color(lh, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
     lv_label_set_text(lh, tr("Host (ip:poort):", "Host (ip:port):"));
-    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y + SY(8));
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y + (is_t1 ? 2 : 4));
     ta_domoticz_host = lv_textarea_create(p); ta_make_numeric(ta_domoticz_host);
     lv_obj_set_size(ta_domoticz_host, SX(420), SY(44));
     lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, SX(260), y);
     lv_textarea_set_one_line(ta_domoticz_host, true);
     lv_textarea_set_text(ta_domoticz_host, settings.domoticz_host);
-    y += SY(56);
+    y += is_t1 ? 48 : 58;
 
     lv_obj_t * lu = lv_label_create(p);
     lv_obj_set_style_text_color(lu, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, tr("Gebruiker (opt):", "User (opt):"));
-    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y + SY(8));
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y + (is_t1 ? 2 : 4));
     ta_domoticz_user = lv_textarea_create(p);
     lv_obj_set_size(ta_domoticz_user, SX(420), SY(44));
     lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, SX(260), y);
     lv_textarea_set_one_line(ta_domoticz_user, true);
     lv_textarea_set_text(ta_domoticz_user, settings.domoticz_user);
-    y += SY(58);
+    y += is_t1 ? 52 : 62;
 
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(220), SY(48));
@@ -1702,7 +1703,7 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_view, on_domoticz_view_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, tr("Licht/zonwering", "View lights/blinds")); lv_obj_center(lv);
-    y += SY(56);
+    y += is_t1 ? 52 : 60;
 
     lbl_domoticz_result = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_domoticz_result, lv_color_hex(0xa8c4dc), 0);
