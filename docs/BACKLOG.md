@@ -228,14 +228,14 @@
   - Click-transparent overlay where touches pass straight through to whatever screen, modal, or tile is underneath (`LV_OBJ_FLAG_CLICKABLE` cleared).
   - Lightweight, high-performance particle engine with zero heap allocations during the tick loop (24-particle object pool, ~1-2 ms per frame on Toon 1 ARM9).
   - Supported animation effects:
-    - **Ballonnen** (`balloons`): Colorful oval balloons with strings floating upwards with gentle natural sway.
+    - **Ballonnen** (`balloons`): Realistic teardrop balloons with tapered neck, flared tied knot, dangling wavy ribbon string, and 3D specular curved gloss highlight (`icon_anim_balloon.h`), floating upwards with natural sine sway.
     - **Confetti** (`confetti`): Festive colored strips fluttering downwards with a 3D tumble flip effect.
     - **Sneeuw** (`snow`): Soft winter flakes drifting downwards with gentle sine-wave swaying.
     - **Vuurwerk** (`fireworks`): Bright particle bursts radiating outward, decelerating with gravity and fading out.
     - **Herfstbladeren** (`leaves`): Warm amber, gold, and russet leaves tumbling down in the autumn breeze.
-    - **Hartjes** (`hearts`): Floating hearts drifting upwards.
+    - **Hartjes** (`hearts`): Dedicated anti-aliased alpha-8bit heart icon descriptor (`icon_anim_heart.h`) with runtime recoloring across ruby/crimson tones (replacing missing font glyphs).
   - Multi-source triggers:
-    1. **Agenda app (verjaardagen)**: When calendar events refresh in `calendar.c`, any event matching birthday terms (*"jarig"*, *"verjaardag"*, *"birthday"*, *"bday"*, *"gefeliciteerd"*, *"feest"*) automatically launches celebratory balloons.
+    1. **Agenda app (verjaardagen)**: When calendar events refresh in `calendar.c`, any event matching birthday terms (*"jarig"*, *"verjaardag"*, *"birthday"*, *"bday"*, *"gefeliciteerd"*, *"feest"*) automatically launches continuous 24h celebratory balloons throughout the birthday. Animations pause/hide during screen dimming to preserve zero CPU overhead and quiet sleep, resuming immediately upon wake.
     2. **Seizoensauto-triggers**: Built-in date checker for Sinterklaas (5 dec), Kerst/Winter (sneeuw), Oud & Nieuw (vuurwerk op 31 dec 18:00 - 1 jan 06:00), en Valentijnsdag (hartjes op 14 feb).
     3. **Remote API & Socket triggers**: Callable via HTTP `POST /api/animation` (of `GET /api/animation?effect=balloons`), en via het `ui_cmd` socket (`anim <effect>`, `anim stop`).
     4. **Instellingen modal**: Nieuwe tegel *"Animaties"* in *Instellingen* met toggles voor verjaardagen, seizoenen, dimstand, en directe test-knoppen om elk effect live te bekijken.

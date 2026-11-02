@@ -3,6 +3,8 @@
 #include "display.h"
 #include "screens.h"
 #include "i18n.h"
+#include "icon_anim_balloon.h"
+#include "icon_anim_heart.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +23,8 @@ typedef struct {
     lv_obj_t * body;
     lv_obj_t * tail;
     lv_obj_t * lbl;
+    lv_obj_t * img;
+    lv_obj_t * gloss;
     float x, y;
     float base_x;
     float vx, vy;
@@ -108,48 +112,54 @@ static float frand(float min, float max) {
 
 static void spawn_balloon(particle_t * p, int stagger) {
     p->active = 1;
-    p->base_w = SUNI(34) + (rand() % SUNI(10));
-    p->base_h = (p->base_w * 13) / 10;
+    int zoom_base = (256 * DISP_HOR) / DESIGN_HOR;
+    int zoom = zoom_base + (rand() % (zoom_base / 3 + 1)) - (zoom_base / 6);
+    if (zoom < 140) zoom = 140;
+
+    p->base_w = (40 * zoom) / 256;
+    p->base_h = (58 * zoom) / 256;
     p->color = PALETTE_BALLOONS[rand() % NUM_BALLOONS];
-    p->base_x = frand(SUNI(20), DISP_HOR - SUNI(60));
-    p->amp = frand(SUNI(16), SUNI(32));
-    p->freq = frand(0.035f, 0.065f);
+    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(55));
+    p->amp = frand(SUNI(12), SUNI(28));
+    p->freq = frand(0.030f, 0.055f);
     p->phase = frand(0, (float)(2 * M_PI));
-    p->vy = -frand(2.0f, 3.8f);
+    p->vy = -frand(1.8f, 3.2f);
     p->x = p->base_x;
 
     if (stagger) {
         /* Distribute across the screen height on initial trigger so screen is immediately festive */
-        p->y = frand(0, (float)(DISP_VER + 100));
+        p->y = frand(0, (float)(DISP_VER + 80));
     } else {
         /* Respawn below bottom */
-        p->y = (float)(DISP_VER + frand(10, 100));
+        p->y = (float)(DISP_VER + frand(10, 80));
     }
 
-    lv_obj_clear_flag(p->body, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
 
-    /* Balloon oval body */
-    lv_obj_set_size(p->body, p->base_w, p->base_h);
-    lv_obj_set_pos(p->body, 0, 0);
-    lv_obj_set_style_radius(p->body, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(p->body, lv_color_hex(p->color), 0);
-    lv_obj_set_style_bg_opa(p->body, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(p->body, 1, 0);
-    lv_obj_set_style_border_color(p->body, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_border_opa(p->body, LV_OPA_40, 0);
+    /* Balloon image (teardrop dome, tapered neck, flared knot, wavy ribbon) */
+    lv_img_set_src(p->img, &icon_anim_balloon);
+    lv_img_set_pivot(p->img, 0, 0);
+    lv_img_set_zoom(p->img, zoom);
+    lv_obj_set_style_img_recolor(p->img, lv_color_hex(p->color), 0);
+    lv_obj_set_style_img_recolor_opa(p->img, 255, 0);
+    lv_obj_set_pos(p->img, 0, 0);
 
-    /* Balloon string hanging below */
-    int tail_h = SUNI(26);
-    lv_obj_set_size(p->tail, 2, tail_h);
-    lv_obj_set_pos(p->tail, p->base_w / 2 - 1, p->base_h);
-    lv_obj_set_style_bg_color(p->tail, lv_color_hex(0xdddddd), 0);
-    lv_obj_set_style_bg_opa(p->tail, LV_OPA_70, 0);
-    lv_obj_set_style_radius(p->tail, 0, 0);
-    lv_obj_set_style_border_width(p->tail, 0, 0);
+    /* Specular gloss highlight (curved white reflection oval near top-left of dome) */
+    int gw = (7 * zoom) / 256; if (gw < 3) gw = 3;
+    int gh = (10 * zoom) / 256; if (gh < 4) gh = 4;
+    int gx = (10 * zoom) / 256;
+    int gy = (7 * zoom) / 256;
+    lv_obj_set_size(p->gloss, gw, gh);
+    lv_obj_set_pos(p->gloss, gx, gy);
+    lv_obj_set_style_radius(p->gloss, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(p->gloss, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_bg_opa(p->gloss, LV_OPA_60, 0);
 
-    lv_obj_set_size(p->cont, p->base_w + 4, p->base_h + tail_h + 4);
+    lv_obj_set_size(p->cont, p->base_w + 4, p->base_h + 4);
     lv_obj_clear_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -176,6 +186,8 @@ static void spawn_confetti(particle_t * p, int stagger) {
     lv_obj_clear_flag(p->body, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_set_size(p->body, p->base_w, p->base_h);
     lv_obj_set_pos(p->body, 0, 0);
@@ -210,6 +222,8 @@ static void spawn_snow(particle_t * p, int stagger) {
     lv_obj_clear_flag(p->body, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_set_size(p->body, sz, sz);
     lv_obj_set_pos(p->body, 0, 0);
@@ -245,6 +259,8 @@ static void spawn_leaf(particle_t * p, int stagger) {
     lv_obj_clear_flag(p->body, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_set_size(p->body, p->base_w, p->base_h);
     lv_obj_set_pos(p->body, 0, 0);
@@ -259,33 +275,42 @@ static void spawn_leaf(particle_t * p, int stagger) {
 
 static void spawn_heart(particle_t * p, int stagger) {
     p->active = 1;
-    p->base_w = SUNI(26);
-    p->base_h = SUNI(26);
-    p->color = (rand() % 2 == 0) ? 0xe11d48 : 0xf43f5e;
-    p->base_x = frand(SUNI(20), DISP_HOR - SUNI(50));
-    p->amp = frand(SUNI(15), SUNI(30));
+    int zoom_base = (256 * DISP_HOR) / DESIGN_HOR;
+    int zoom = zoom_base + (rand() % (zoom_base / 4 + 1)) - (zoom_base / 8);
+    if (zoom < 140) zoom = 140;
+
+    p->base_w = (36 * zoom) / 256;
+    p->base_h = (36 * zoom) / 256;
+    static const uint32_t HEART_COLORS[] = { 0xe11d48, 0xf43f5e, 0xff2d55, 0xec4899 };
+    p->color = HEART_COLORS[rand() % 4];
+    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(45));
+    p->amp = frand(SUNI(12), SUNI(24));
     p->freq = frand(0.035f, 0.065f);
     p->phase = frand(0, (float)(2 * M_PI));
-    p->vy = -frand(2.0f, 3.6f);
+    p->vy = -frand(1.8f, 3.2f);
     p->x = p->base_x;
 
     if (stagger) {
-        p->y = frand(0, (float)(DISP_VER + 80));
+        p->y = frand(0, (float)(DISP_VER + 60));
     } else {
-        p->y = (float)(DISP_VER + frand(10, 90));
+        p->y = (float)(DISP_VER + frand(10, 70));
     }
 
+    lv_obj_clear_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->body, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
 
-    /* Heart character symbol */
-    lv_label_set_text(p->lbl, "♥");
-    lv_obj_set_style_text_color(p->lbl, lv_color_hex(p->color), 0);
-    lv_obj_set_style_text_font(p->lbl, SF(24), 0);
-    lv_obj_set_pos(p->lbl, 0, 0);
+    /* Heart anti-aliased image descriptor */
+    lv_img_set_src(p->img, &icon_anim_heart);
+    lv_img_set_pivot(p->img, 0, 0);
+    lv_img_set_zoom(p->img, zoom);
+    lv_obj_set_style_img_recolor(p->img, lv_color_hex(p->color), 0);
+    lv_obj_set_style_img_recolor_opa(p->img, 255, 0);
+    lv_obj_set_pos(p->img, 0, 0);
 
-    lv_obj_set_size(p->cont, p->base_w, p->base_h);
+    lv_obj_set_size(p->cont, p->base_w + 4, p->base_h + 4);
     lv_obj_clear_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -320,6 +345,8 @@ static void spawn_firework_burst(int group) {
         lv_obj_clear_flag(p->body, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
 
         lv_obj_set_size(p->body, sz, sz);
         lv_obj_set_pos(p->body, 0, 0);
@@ -503,6 +530,13 @@ void anim_overlay_init(void) {
         p->lbl = lv_label_create(p->cont);
         lv_obj_clear_flag(p->lbl, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
+        p->img = lv_img_create(p->cont);
+        lv_obj_clear_flag(p->img, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+        p->gloss = lv_obj_create(p->cont);
+        lv_obj_remove_style_all(p->gloss);
+        lv_obj_clear_flag(p->gloss, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
         lv_obj_add_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -540,17 +574,28 @@ static void anim_overlay_apply_trigger(anim_effect_t effect, int duration_sec) {
     if (!s_overlay) anim_overlay_init();
 
     s_current_effect = effect;
-    if (duration_sec <= 0) duration_sec = settings.anim_duration_sec > 0 ? settings.anim_duration_sec : 25;
-    s_stop_tick = lv_tick_get() + (uint32_t)duration_sec * 1000u;
+    if (duration_sec < 0) duration_sec = settings.anim_duration_sec > 0 ? settings.anim_duration_sec : 25;
+    if (duration_sec == 0) {
+        s_stop_tick = 0; /* Continuous mode: runs all day (24h) until stopped or date changes */
+    } else {
+        s_stop_tick = lv_tick_get() + (uint32_t)duration_sec * 1000u;
+    }
     s_tick_counter = 0;
 
+    /* In continuous 24h mode, use a comfortable particle count (12) so the screen stays legible */
+    int active_limit = (s_stop_tick == 0 && effect == ANIM_EFFECT_BALLOONS) ? 12 : MAX_PARTICLES;
+
     /* Initialize particles for chosen effect */
-    for (int i = 0; i < MAX_PARTICLES; i++) {
+    for (int i = 0; i < active_limit; i++) {
         if (effect == ANIM_EFFECT_BALLOONS)       spawn_balloon(&s_particles[i], 1);
         else if (effect == ANIM_EFFECT_CONFETTI)   spawn_confetti(&s_particles[i], 1);
         else if (effect == ANIM_EFFECT_SNOW)       spawn_snow(&s_particles[i], 1);
         else if (effect == ANIM_EFFECT_LEAVES)     spawn_leaf(&s_particles[i], 1);
         else if (effect == ANIM_EFFECT_HEARTS)     spawn_heart(&s_particles[i], 1);
+    }
+    for (int i = active_limit; i < MAX_PARTICLES; i++) {
+        s_particles[i].active = 0;
+        if (s_particles[i].cont) lv_obj_add_flag(s_particles[i].cont, LV_OBJ_FLAG_HIDDEN);
     }
 
     if (effect == ANIM_EFFECT_FIREWORKS) {

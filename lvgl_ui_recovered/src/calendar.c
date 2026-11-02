@@ -694,9 +694,17 @@ static void iso_at(char * out, size_t n, int days_from_now) {
 }
 
 static void calendar_check_birthday(const char * today) {
-    if (!settings.anim_enabled || !settings.anim_birthday_enabled) return;
+    if (!settings.anim_enabled || !settings.anim_birthday_enabled) {
+        if (anim_overlay_get_current() == ANIM_EFFECT_BALLOONS) {
+            anim_overlay_stop();
+        }
+        return;
+    }
     static char s_last_bday_date[12] = "";
-    if (strcmp(s_last_bday_date, today) == 0) return; /* already triggered today */
+    static int s_bday_active_today = 0;
+
+    int found_birthday = 0;
+    const char * found_summary = "";
 
     for (int i = 0; i < calendar_state.count; i++) {
         calendar_event_t * ev = &calendar_state.ev[i];
@@ -712,10 +720,27 @@ static void calendar_check_birthday(const char * today) {
             strstr(lower, "bday") ||
             strstr(lower, "gefeliciteerd") ||
             strstr(lower, "feest")) {
-            snprintf(s_last_bday_date, sizeof s_last_bday_date, "%s", today);
-            printf("[calendar] Verjaardag/feest vandaag ontdekt ('%s') -> ballonnen starten!\n", ev->summary);
-            anim_overlay_trigger(ANIM_EFFECT_BALLOONS, settings.anim_duration_sec > 0 ? settings.anim_duration_sec : 25);
+            found_birthday = 1;
+            found_summary = ev->summary;
             break;
+        }
+    }
+
+    if (found_birthday) {
+        if (!s_bday_active_today || strcmp(s_last_bday_date, today) != 0) {
+            snprintf(s_last_bday_date, sizeof s_last_bday_date, "%s", today);
+            s_bday_active_today = 1;
+            printf("[calendar] Verjaardag/feest vandaag ontdekt ('%s') -> 24h ballonnen actief!\n", found_summary);
+            anim_overlay_trigger(ANIM_EFFECT_BALLOONS, 0); /* 0 = continuous 24h mode */
+        }
+    } else {
+        if (s_bday_active_today) {
+            printf("[calendar] Verjaardag voorbij -> animatie gestopt\n");
+            s_bday_active_today = 0;
+            s_last_bday_date[0] = '\0';
+            if (anim_overlay_get_current() == ANIM_EFFECT_BALLOONS) {
+                anim_overlay_stop();
+            }
         }
     }
 }
