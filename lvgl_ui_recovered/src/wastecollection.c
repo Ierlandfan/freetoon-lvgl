@@ -356,6 +356,75 @@ int waste_next_n_windowed(int lead_days, waste_pickup_t * out, int max_n) {
     return filled;
 }
 
+int waste_dim_window_status(const char * date, int lead_days, int alert_hour) {
+    if (!date || !date[0]) return -1;
+    if (alert_hour < 0) alert_hour = 0;
+    if (alert_hour > 23) alert_hour = 23;
+
+    struct tm t_end = {0};
+    t_end.tm_year = atoi(date)     - 1900;
+    t_end.tm_mon  = atoi(date + 5) - 1;
+    t_end.tm_mday = atoi(date + 8);
+    t_end.tm_hour = alert_hour;
+    t_end.tm_min  = 0;
+    t_end.tm_sec  = 0;
+    t_end.tm_isdst = -1;
+    time_t end_time = mktime(&t_end);
+    if (end_time == (time_t)-1) return -1;
+
+    time_t now = time(NULL);
+    if (now >= end_time) return -1; /* expired */
+
+    if (lead_days <= 0) return 1; /* filter off: active until cutoff hour on pickup day */
+
+    struct tm t_start = t_end;
+    t_start.tm_mday -= lead_days;
+    t_start.tm_isdst = -1;
+    time_t start_time = mktime(&t_start);
+    if (start_time == (time_t)-1) return -1;
+
+    if (now >= start_time) return 1; /* within window */
+
+    return 0; /* too early */
+}
+
+int waste_get_dim_pickup(waste_pickup_t * out, int lead_days, int alert_hour) {
+    if (out) { out->date[0] = 0; out->labels[0] = 0; }
+    if (!out) return 0;
+
+    char best[16] = "9999-99-99";
+    int found = 0;
+
+    for (int i = 0; i < WASTE_TYPES; i++) {
+        const char * d = waste_state.items[i].date;
+        if (!d[0]) continue;
+        int st = waste_dim_window_status(d, lead_days, alert_hour);
+        if (st == -1) continue; /* past its cutoff hour */
+        if (strcmp(d, best) < 0) {
+            snprintf(best, sizeof best, "%s", d);
+            found = 1;
+        }
+    }
+
+    if (!found) return 0;
+
+    if (waste_dim_window_status(best, lead_days, alert_hour) != 1) {
+        return 0;
+    }
+
+    snprintf(out->date, sizeof out->date, "%s", best);
+    for (int i = 0; i < WASTE_TYPES; i++) {
+        if (strcmp(waste_state.items[i].date, best) == 0) {
+            if (out->labels[0]) {
+                strncat(out->labels, "+", sizeof out->labels - strlen(out->labels) - 1);
+            }
+            strncat(out->labels, waste_state.items[i].label,
+                    sizeof out->labels - strlen(out->labels) - 1);
+        }
+    }
+    return 1;
+}
+
 /* ---- generic ICS provider (prezero / cyclus / dar / cranendonck / katwijk /
  * any provider that exposes a downloadable .ics calendar). One parser handles
  * them all: walk VEVENTs, take DTSTART (date) + SUMMARY (waste type), and keep

@@ -41,6 +41,7 @@ settings_t settings = {
     .dim_bars_swap     = 0,
     .dim_bars_vertical = 0,
     .dim_waste_lead_days = 3,
+    .dim_waste_hour      = 18,
     .vnc_enabled       = 0,
     .vnc_pass          = "",
     .weather_location    = "De Bilt",
@@ -246,6 +247,7 @@ void settings_load(void) {
         else if (strcmp(k, "dim_bars_swap")     == 0) settings.dim_bars_swap     = iv;
         else if (strcmp(k, "dim_bars_vertical") == 0) settings.dim_bars_vertical = iv;
         else if (strcmp(k, "dim_waste_lead_days") == 0) settings.dim_waste_lead_days = iv;
+        else if (strcmp(k, "dim_waste_hour") == 0)      settings.dim_waste_hour = iv < 0 ? 0 : (iv > 23 ? 23 : iv);
         else if (strcmp(k, "waste_postcode")    == 0)
             snprintf(settings.waste_postcode, sizeof settings.waste_postcode, "%s", v);
         else if (strcmp(k, "waste_housenr")     == 0)
@@ -853,6 +855,7 @@ void settings_save(void) {
     fprintf(f, "dim_bars_swap=%d\n",     settings.dim_bars_swap);
     fprintf(f, "dim_bars_vertical=%d\n", settings.dim_bars_vertical);
     fprintf(f, "dim_waste_lead_days=%d\n", settings.dim_waste_lead_days);
+    fprintf(f, "dim_waste_hour=%d\n",      settings.dim_waste_hour);
     fprintf(f, "waste_postcode=%s\n",      settings.waste_postcode);
     fprintf(f, "waste_housenr=%s\n",       settings.waste_housenr);
     fprintf(f, "waste_provider=%d\n",      settings.waste_provider);

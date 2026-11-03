@@ -30,6 +30,7 @@ typedef struct {
     int dim_bars_vertical;    /* 0 = horizontal (default); 1 = vertical segmented (classic Toon style) */
     int dim_waste_lead_days;  /* 0..7 — only show if pickup is within this many days
                                  (0 disables; 1 = only on pickup day; 2 = day before + day of) */
+    int dim_waste_hour;       /* 0..23 — alert window start/end hour (default 18 = 18:00) */
     char waste_postcode[12];  /* e.g. "1671AD" — overrides the TSC waste config when set */
     char waste_housenr[8];    /* house number, e.g. "14" */
     int  waste_provider;      /* 0 = HVC (postcode), 1 = generic ICS calendar URL */

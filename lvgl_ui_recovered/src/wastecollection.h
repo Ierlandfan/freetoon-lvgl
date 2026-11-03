@@ -55,6 +55,20 @@ int waste_next_n_windowed(int lead_days, waste_pickup_t * out, int max_n);
 /* Whole days from today to an ISO "YYYY-MM-DD" date (negative if past). */
 long waste_days_until(const char * date);
 
+/* Checks if a waste pickup on `date` is currently within the active dim-screen display window:
+ * from (lead_days) days before pickup at `alert_hour`:00, until pickup day at `alert_hour`:00.
+ * If lead_days <= 0, filter is off (always active until pickup day at `alert_hour`:00).
+ * Returns:
+ *   1 = currently active (within window)
+ *   0 = upcoming, but not yet in window (too early)
+ *  -1 = expired (already past pickup day at `alert_hour`:00)
+ */
+int waste_dim_window_status(const char * date, int lead_days, int alert_hour);
+
+/* Finds the soonest non-expired pickup and, if it falls within the dim warning window,
+ * fills `out` with its date and "+"-joined labels and returns 1. Returns 0 if none active. */
+int waste_get_dim_pickup(waste_pickup_t * out, int lead_days, int alert_hour);
+
 /* Shorten waste category label for compact display (e.g. dim screen).
  * "Groente/Fruit/Tuinafval" -> "GFT"
  * "Plastic/Metaal/Drankpakken" -> "PMD"

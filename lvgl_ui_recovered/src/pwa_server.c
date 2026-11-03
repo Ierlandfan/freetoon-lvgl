@@ -1164,7 +1164,7 @@ static int handle_settings_get(int fd) {
         "\"auto_dim_enabled\":%d,\"auto_dim_seconds\":%d,"
         "\"active_brightness\":%d,\"dim_brightness\":%d,\"dim_sleep_away_black\":%d,\"auto_brightness\":%d,"
         "\"temp_offset_centi\":%d,\"show_dim_weather\":%d,"
-        "\"show_dim_waste\":%d,\"dim_waste_lead_days\":%d,"
+        "\"show_dim_waste\":%d,\"dim_waste_lead_days\":%d,\"dim_waste_hour\":%d,"
         "\"waste_postcode\":\"%s\",\"waste_housenr\":\"%s\","
         "\"waste_provider\":%d,\"waste_ics_url\":\"%s\","
         "\"waste_plugin\":\"%s\",\"waste_icsid\":\"%s\",\"waste_street\":\"%s\",\"waste_city\":\"%s\","
@@ -1193,7 +1193,7 @@ static int handle_settings_get(int fd) {
         settings.auto_dim_enabled, settings.auto_dim_seconds,
         settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black, settings.auto_brightness,
         settings.temp_offset_centi, settings.show_dim_weather,
-        settings.show_dim_waste, settings.dim_waste_lead_days,
+        settings.show_dim_waste, settings.dim_waste_lead_days, settings.dim_waste_hour,
         settings.waste_postcode, settings.waste_housenr,
         settings.waste_provider, settings.waste_ics_url,
         settings.waste_plugin, settings.waste_icsid, settings.waste_street, settings.waste_city,
@@ -1238,6 +1238,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "show_dim_weather", &iv))   settings.show_dim_weather = !!iv;
     if (extract_int(body, "show_dim_waste", &iv))     settings.show_dim_waste = !!iv;
     if (extract_int(body, "dim_waste_lead_days", &iv))settings.dim_waste_lead_days = iv < 0 ? 0 : (iv > 7 ? 7 : iv);
+    if (extract_int(body, "dim_waste_hour", &iv))     settings.dim_waste_hour = iv < 0 ? 0 : (iv > 23 ? 23 : iv);
     if (extract_str(body, "waste_postcode", sv, sizeof sv))
         snprintf(settings.waste_postcode, sizeof settings.waste_postcode, "%s", sv);
     if (extract_str(body, "waste_housenr", sv, sizeof sv))

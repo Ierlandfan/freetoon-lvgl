@@ -676,16 +676,10 @@ static void refresh_cb(lv_timer_t * t) {
     /* Waste: next upcoming pickup — simplified and persistent for symmetry. */
     if (waste_icon && lbl_waste) {
         if (settings.show_dim_waste && waste_state.connected) {
-            waste_pickup_t wp, dummy;
-            /* Honour the dim_waste_lead_days setting: only surface the next
-               pickup when it falls within the configured lead window (e.g.
-               "1 day before"). 0 = filter off → always show. Beyond the
-               window the whole cluster hides so the dim screen stays clean
-               (the tester set lead=1 but the icon was showing 10 days early
-               because this used to call waste_next_2_pickups unconditionally). */
-            int have_wp = waste_next_2_pickups(&wp, &dummy) >= 1;
-            int within  = have_wp && (settings.dim_waste_lead_days <= 0
-                          || waste_days_until(wp.date) <= settings.dim_waste_lead_days);
+            waste_pickup_t wp;
+            /* Honour dim_waste_lead_days and dim_waste_hour: alert window starts at
+               dim_waste_hour N days before pickup, and ends at dim_waste_hour on collection day. */
+            int within = waste_get_dim_pickup(&wp, settings.dim_waste_lead_days, settings.dim_waste_hour);
             if (within) {
                 char l_short[48];
                 waste_shorten_label(wp.labels, l_short, sizeof l_short);

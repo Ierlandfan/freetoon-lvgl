@@ -67,6 +67,7 @@ static lv_obj_t * sw_forecast_mode, * sw_weather_feel;
 static lv_obj_t * sw_dim_waste;
 static lv_obj_t * sw_dim_bars, * sw_dim_bars_swap;
 static lv_obj_t * sl_waste_lead, * lbl_waste_lead;
+static lv_obj_t * sl_waste_hour, * lbl_waste_hour;
 static lv_obj_t * sl_offset,   * lbl_offset_val;
 static lv_obj_t * sw_boiler;
 static lv_obj_t * lbl_boiler_mode;
@@ -176,6 +177,11 @@ static void on_waste_lead_change(lv_event_t * e) {
     if (v == 0)      lv_label_set_text(lbl_waste_lead, tr("uit", "off"));
     else if (v == 1) lv_label_set_text(lbl_waste_lead, tr("vanaf 1 dag vooraf", "from 1 day ahead"));
     else             lv_label_set_text_fmt(lbl_waste_lead, tr("vanaf %d dagen vooraf", "from %d days ahead"), v);
+}
+static void on_waste_hour_change(lv_event_t * e) {
+    int v = lv_slider_get_value(lv_event_get_target(e));
+    settings.dim_waste_hour = v;
+    if (lbl_waste_hour) lv_label_set_text_fmt(lbl_waste_hour, "%02d:00", v);
 }
 static void on_timeout_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
@@ -1149,6 +1155,11 @@ static void open_waste_modal(lv_event_t * e) {
     else if (settings.dim_waste_lead_days == 1) lv_label_set_text(lbl_waste_lead, tr("vanaf 1 dag vooraf", "from 1 day ahead"));
     else lv_label_set_text_fmt(lbl_waste_lead, tr("vanaf %d dagen vooraf", "from %d days ahead"), settings.dim_waste_lead_days);
     sl_waste_lead = row_slider(r, 0, 7, settings.dim_waste_lead_days, on_waste_lead_change);
+    y += 90;
+
+    r = panel_row(p, y, tr("Afval-waarschuwingstijd", "Waste alert time"), &lbl_waste_hour);
+    lv_label_set_text_fmt(lbl_waste_hour, "%02d:00", settings.dim_waste_hour);
+    sl_waste_hour = row_slider(r, 0, 23, settings.dim_waste_hour, on_waste_hour_change);
     y += 90;
 
     /* Provider dropdown — the ToonSoftwareCollective plugin list (same as the
