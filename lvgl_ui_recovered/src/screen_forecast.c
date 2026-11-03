@@ -393,12 +393,13 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_style_border_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xccdae8 : 0x1e2c3e), 0);
     lv_obj_set_style_border_width(fc_rain_chart, 1, 0);
     lv_obj_set_style_radius(fc_rain_chart, 8, 0);
-    lv_obj_set_style_pad_all(fc_rain_chart, 2, 0);
+    lv_obj_set_style_pad_ver(fc_rain_chart, 2, 0);
+    lv_obj_set_style_pad_hor(fc_rain_chart, 0, 0);
     lv_obj_clear_flag(fc_rain_chart, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
     lv_chart_set_type(fc_rain_chart, LV_CHART_TYPE_BAR);
     lv_chart_set_range(fc_rain_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
-    lv_chart_set_div_line_count(fc_rain_chart, 4, 0);
+    lv_chart_set_div_line_count(fc_rain_chart, 4, 4);
     lv_obj_set_style_line_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xccddee : 0x223344), LV_PART_MAIN);
     lv_obj_set_style_line_opa(fc_rain_chart, LV_OPA_50, LV_PART_MAIN);
     lv_obj_set_style_pad_column(fc_rain_chart, 1, LV_PART_MAIN);
