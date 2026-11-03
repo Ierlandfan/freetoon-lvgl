@@ -455,9 +455,8 @@ static void preset_apply(void * ctx) {
     int ps = toon_state.program_state;
     int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (boxtalk_temp_override_origin() >= 0);
     if (!on_program || ps == 0) {
-        /* If the thermostat is on manual, pressing any state button switches
-         * back to program mode and applies the correct scheduled program state */
-        boxtalk_resume_schedule();
+        /* When in manual mode, activate preset temperature and stay in manual mode */
+        boxtalk_set_manual_preset(s);
     } else {
         boxtalk_set_program(s);
     }
@@ -2232,10 +2231,9 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Preset row: selected preset in full colour with white border,
-     * unselected presets in dark background. All 4 buttons remain visible (CR3).
-     * Mirror the stock UI + screen_thermostat: highlight active preset even in
-     * Manual mode, and fall back to temp_override_origin if active_state < 0. */
+    /* Preset row: selected preset in full colour with white border when in program mode,
+     * or highlighted border only (without inner background color) when in manual mode.
+     * Unselected presets in dark background. All 4 buttons remain visible (CR3). */
     {
         static const uint32_t preset_cols[4] = {0xcc7733, 0x3377cc, 0x553388, 0x557788};
         int temp_origin = boxtalk_temp_override_origin();
@@ -2247,18 +2245,37 @@ static void refresh_cb(lv_timer_t * t) {
         } else {
             hi = -1;
         }
+        uint32_t border_col = settings.home_light_mode ? 0x1e2838 : 0xffffff;
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
             lv_obj_clear_flag(tile_btn_preset[i], LV_OBJ_FLAG_HIDDEN);
-            int sel = (on_program && i == hi);
-            lv_obj_set_style_border_width(tile_btn_preset[i], sel ? 2 : 0, 0);
-            lv_obj_set_style_bg_color(tile_btn_preset[i],
-                                      lv_color_hex(sel ? preset_cols[i] : (settings.home_light_mode ? 0xccddee : 0x243242)), 0);
-            lv_obj_set_style_opa(tile_btn_preset[i], LV_OPA_COVER, 0);
-            lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
-            if (bl) {
-                lv_obj_set_style_text_color(bl, lv_color_hex(sel ? 0xffffff : (settings.home_light_mode ? 0x223344 : 0x88aabb)), 0);
+            int is_active = (i == hi);
+            if (is_active) {
+                lv_obj_set_style_border_width(tile_btn_preset[i], 2, 0);
+                lv_obj_set_style_border_color(tile_btn_preset[i], lv_color_hex(border_col), 0);
+                if (on_program) {
+                    /* Program mode: solid preset background */
+                    lv_obj_set_style_bg_color(tile_btn_preset[i], lv_color_hex(preset_cols[i]), 0);
+                } else {
+                    /* Manual mode: highlighted border ONLY, no inner background color */
+                    lv_obj_set_style_bg_color(tile_btn_preset[i],
+                                              lv_color_hex(settings.home_light_mode ? 0xccddee : 0x243242), 0);
+                }
+                lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
+                if (bl) {
+                    lv_obj_set_style_text_color(bl, lv_color_hex(settings.home_light_mode ? 0x223344 : 0xffffff), 0);
+                }
+            } else {
+                /* Inactive button */
+                lv_obj_set_style_border_width(tile_btn_preset[i], 0, 0);
+                lv_obj_set_style_bg_color(tile_btn_preset[i],
+                                          lv_color_hex(settings.home_light_mode ? 0xccddee : 0x243242), 0);
+                lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
+                if (bl) {
+                    lv_obj_set_style_text_color(bl, lv_color_hex(settings.home_light_mode ? 0x223344 : 0x88aabb), 0);
+                }
             }
+            lv_obj_set_style_opa(tile_btn_preset[i], LV_OPA_COVER, 0);
         }
     }
 

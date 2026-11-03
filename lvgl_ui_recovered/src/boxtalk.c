@@ -1268,6 +1268,13 @@ int boxtalk_set_setpoint(float temp) {
     if (centi > 3000) centi = 3000;  /* 30°C cap  */
 #ifdef SIM
     toon_state.setpoint = centi / 100.0f;
+    if (toon_state.program_state == PROG_MANUAL) {
+        int match = -1;
+        for (int p = 0; p < 4; p++) {
+            if (sim_preset_temps[p] == centi) { match = p; break; }
+        }
+        toon_state.active_state = match;
+    }
     toon_state.msg_count++;
     extern void canonical_state_notify(uint32_t);
     canonical_state_notify(CSTATE_EVT_THERMOSTAT);
@@ -1361,11 +1368,7 @@ int boxtalk_set_state_value(int state, int centi) {
  * params does the preset's setpoint actually apply (Comfort 1950 / Home 1850 /
  * Sleep 1750 / Away 1600). The old code sent only `state=<presetIndex>`, which
  * jammed the preset into the mode field — so presets 2/3 silently no-op'd and
- * the setpoint never followed. */
-#define PROG_MANUAL        0   /* manual hold, no schedule */
-#define PROG_BASE          1   /* follow the weekly program */
-#define PROG_TEMPOVERRIDE  2   /* override to a preset until the next switch */
-#define PROG_LOCKEDBASE    8   /* override held indefinitely (2nd tap of preset) */
+ * the setpoint never followed. PROG_* are defined in boxtalk.h. */
 
 int boxtalk_set_program(int preset) {
     if (preset < 0 || preset > 3) return -1;   /* preset = comfort level 0..3 */
@@ -1459,6 +1462,51 @@ int boxtalk_set_manual(void) {
     if (rc == 0) {
         toon_state.program_state = PROG_MANUAL;   /* 0, optimistic */
         toon_state.active_state  = ts;            /* keep current preset active */
+    }
+    return rc;
+}
+
+int boxtalk_set_manual_preset(int preset) {
+    if (preset < 0 || preset > 3) return -1;
+#ifdef SIM
+    clear_temp_override();
+    toon_state.program_state = PROG_MANUAL;
+    toon_state.active_state  = preset;
+    toon_state.setpoint      = sim_preset_temps[preset] / 100.0f;
+    toon_state.msg_count++;
+    extern void canonical_state_notify(uint32_t);
+    canonical_state_notify(CSTATE_EVT_THERMOSTAT);
+    return 0;
+#endif
+#ifdef WASM_BUILD
+    extern void wasm_push_event(const char *, const char *);
+    char body[48];
+    snprintf(body, sizeof body, "{\"mode\":0,\"state\":%d}", preset);
+    wasm_push_event("/api/program", body);
+    toon_state.program_state = PROG_MANUAL;
+    toon_state.active_state  = preset;
+    return 0;
+#endif
+    if (settings.client_mode) {
+        int rc = client_link_manual_preset(preset);
+        if (rc == 0) {
+            clear_temp_override();
+            toon_state.program_state = PROG_MANUAL;
+            toon_state.active_state  = preset;
+        }
+        return rc;
+    }
+    clear_temp_override();
+    char q[80];
+    snprintf(q, sizeof(q),
+             "action=changeSchemeState&state=%d&temperatureState=%d", PROG_MANUAL, preset);
+    int rc = http_get_thermstat(q);
+    fprintf(stderr, "[bxt] set_manual_preset changeSchemeState state=0 ts=%d rc=%d\n", preset, rc);
+    if (rc == 0) {
+        toon_state.program_state = PROG_MANUAL;
+        toon_state.active_state  = preset;
+        int centi = boxtalk_get_state_value(preset);
+        if (centi > 0) toon_state.setpoint = centi / 100.0f;
     }
     return rc;
 }

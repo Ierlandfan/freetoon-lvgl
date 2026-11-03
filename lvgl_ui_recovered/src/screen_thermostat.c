@@ -64,9 +64,7 @@ static void program_tap_apply(void * ctx) {
         int ps = toon_state.program_state;
         int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (boxtalk_temp_override_origin() >= 0);
         if (!on_program || ps == 0) {
-            /* If thermostat is in manual mode, tapping any state button switches
-             * back to program mode and applies the scheduled program state */
-            boxtalk_resume_schedule();
+            boxtalk_set_manual_preset(s);
         } else {
             boxtalk_set_program(s);
         }

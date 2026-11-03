@@ -799,6 +799,23 @@ int client_link_program(int state) {
     return post_json("/api/program", b);
 }
 
+int client_link_manual_preset(int preset) {
+    if (preset < 0 || preset > 3) return -1;
+    if (g_is_stock_master) {
+        char url[512], buf[256];
+        get_stock_url(url, sizeof url, "happ_thermstat?action=changeSchemeState&state=0&temperatureState=%d", preset);
+        int rc = http_fetch_to(url, buf, sizeof buf, 3);
+        if (rc == 0) {
+            toon_state.program_state = 0;
+            toon_state.active_state  = preset;
+        }
+        return rc;
+    }
+    char b[48];
+    snprintf(b, sizeof b, "{\"mode\":0,\"state\":%d}", preset);
+    return post_json("/api/program", b);
+}
+
 int client_link_resume_schedule(void) {
     if (g_is_stock_master) {
         char url[512], buf[256];

@@ -38,6 +38,11 @@ typedef struct {
                                         0=Comfort 1=Home 2=Sleep 3=Away, -1=manual */
 } toon_state_t;
 
+#define PROG_MANUAL        0   /* manual hold, no schedule */
+#define PROG_BASE          1   /* follow the weekly program */
+#define PROG_TEMPOVERRIDE  2   /* override to a preset until the next switch */
+#define PROG_LOCKEDBASE    8   /* override held indefinitely (2nd tap of preset) */
+
 /* Human-readable label for the effective current mode (handles manual override). */
 const char* program_label(void);
 
@@ -82,6 +87,7 @@ void boxtalk_request_boiler_refresh(void);
    Pass -1 (or call boxtalk_set_manual) to force manual override. */
 int boxtalk_set_program(int state);
 int boxtalk_set_manual(void);
+int boxtalk_set_manual_preset(int preset);
 /* Resume schedule = pick the preset the schedule says is active right
  * now and call set_program(N). Used by the on-screen "Scheduled" toggle. */
 int boxtalk_resume_schedule(void);
