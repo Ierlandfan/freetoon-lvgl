@@ -230,16 +230,18 @@
   - Supported animation effects:
     - **Ballonnen** (`balloons`): Realistic teardrop balloons with tapered neck, flared tied knot, dangling wavy ribbon string, and 3D specular curved gloss highlight (`icon_anim_balloon.h`, restored 54x84 full size), floating upwards with natural sine sway. Particle count balanced by 1/3 reduction (16 in burst mode, 8 in continuous 24h mode).
     - **Confetti** (`confetti`): Festive colored strips fluttering downwards with a 3D tumble flip effect.
-    - **Sneeuw** (`snow`): Soft winter flakes drifting downwards with gentle sine-wave swaying.
+    - **Sneeuw** (`snow`): Realistische 6-puntige kristallijne sneeuwvlokken (`icon_anim_snowflake.h`, 64x64) met dendrieten, diamantvormige tips, centrale hexagoon en een langzame dwarrelende rotatie tijdens het vallen.
     - **Vuurwerk** (`fireworks`): Bright particle bursts radiating outward, decelerating with gravity and fading out.
-    - **Herfstbladeren** (`leaves`): Brede meervoudig gelobde eiken-/esdoornblad asset (`icon_anim_leaf.h`, 64x64 native resolutie, ~52x55px body) met herfstpalet, 100% frontaal zichtbaar bladoppervlak (nooit edge-on of uit het vlak kantelend) met een strikte aerodynamische wiebeling begrensd op maximaal ±35° (ruim binnen de ±45° eis) rond het draaipunt (32, 32).
+    - **Herfstbladeren** (`leaves`): Realistisch Canadees esdoornblad (sugar maple, Acer saccharum, `icon_anim_leaf.h`, 64x64) met 5 karakteristieke scherpe lobben, diepe U-vormige insnijdingen (sinuses), gekromde bladsteel en delicate handvormige nervenstructuur (palmate venation). Vliegt en dwarrelt met een natuurlijke aerodynamische wiebeling begrensd op maximaal ±35° (strikt binnen ±45°).
     - **Hartjes** (`hearts`): Rijk gevulde 64x64 Valentijnshart asset (`icon_anim_heart.h`, ~55x50px body), 100% frontaal zichtbaar zonder rotatie omklap, met een subtiele zweeftilt begrensd op maximaal ±22° (ruim binnen ±45°), gecentreerd draaipunt (32, 32) en herkleurd in levendige robijn- en rozetinten.
+    - **Sinterklaas** (`sint`): Feestelijke ingepakte pakjes met deksel, lint en strik (`icon_anim_present.h`, 64x64) vallend uit de lucht met een zachte slingerbeweging, geïnspireerd op de originele rooted Toon `Present.qml` animatie.
+    - **Kerst** (`christmas`): Een sfeervolle combinatie van dwarrelende 6-puntige kristallijne sneeuwvlokken en feestelijke kerstcadeaus.
     - **LVGL 8 Software Transform Renderer Fix**: Opgelost dat LVGL 8 in `lv_draw_sw_transform.c` en `lv_draw_img.c` getransformeerde (geroteerde of ingezoomde) `LV_IMG_CF_ALPHA_8BIT` alpha maskers niet tekende (afgekapt naar 0 pixels door ontbrekende case in de software transform pipeline). Volledige alpha-masker transformatie met recoloring en anti-aliasing direct in het LVGL tekencircuit geïmplementeerd.
   - Multi-source triggers:
     1. **Agenda app (verjaardagen)**: When calendar events refresh in `calendar.c`, any event matching birthday terms (*"jarig"*, *"verjaardag"*, *"birthday"*, *"bday"*, *"gefeliciteerd"*, *"feest"*) automatically launches continuous 24h celebratory balloons throughout the birthday. Animations pause/hide during screen dimming to preserve zero CPU overhead and quiet sleep, resuming immediately upon wake.
-    2. **Seizoensauto-triggers**: Built-in date checker for Sinterklaas (5 dec), Kerst/Winter (sneeuw), Oud & Nieuw (vuurwerk op 31 dec 18:00 - 1 jan 06:00), en Valentijnsdag (hartjes op 14 feb).
+    2. **Seizoensauto-triggers**: Built-in date checker for Sinterklaas (5 dec: `sint` cadeautjes), Kerst (24-26 dec: `christmas`), Winter (1-5 jan: `snow`), Oud & Nieuw (31 dec 18:00 - 1 jan 06:00: `fireworks`), en Valentijnsdag (14 feb: `hearts`).
     3. **Remote API & Socket triggers**: Callable via HTTP `POST /api/animation` (of `GET /api/animation?effect=balloons`), en via het `ui_cmd` socket (`anim <effect>`, `anim stop`).
-    4. **Instellingen modal**: Nieuwe tegel *"Animaties"* in *Instellingen* met toggles voor verjaardagen, seizoenen, dimstand, en directe handmatige startknoppen. Handmatig gestarte animaties lopen tot het einde van de dag (automatische middernacht-stop) of tot de 'Stop'-knop wordt ingedrukt.
+    4. **Instellingen modal**: Nieuwe tegel *"Animaties"* in *Instellingen* met toggles voor verjaardagen, seizoenen, dimstand, en directe handmatige startknoppen voor alle effecten (Ballonnen, Confetti, Sneeuw, Vuurwerk, Herfst, Hartjes, Sint, Kerst, Stop). Handmatig gestarte animaties lopen tot het einde van de dag (automatische middernacht-stop) of tot de 'Stop'-knop wordt ingedrukt.
 
 
 

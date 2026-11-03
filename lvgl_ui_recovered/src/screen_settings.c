@@ -2479,6 +2479,8 @@ static void open_anim_modal(lv_event_t * e) {
         { ANIM_EFFECT_FIREWORKS, tr("Vuurwerk", "Fireworks"),  0xf57c00 },
         { ANIM_EFFECT_LEAVES,    tr("Herfst", "Autumn"),       0x5d4037 },
         { ANIM_EFFECT_HEARTS,    tr("Hartjes", "Hearts"),      0xc2185b },
+        { ANIM_EFFECT_SINT,      tr("Sint", "Sint"),           0xb71c1c },
+        { ANIM_EFFECT_CHRISTMAS, tr("Kerst", "Christmas"),     0x1b5e20 },
         { ANIM_EFFECT_NONE,      tr("Stop", "Stop"),           0x455a64 }
     };
     int n_btns = (int)(sizeof(btns) / sizeof(btns[0]));
@@ -2499,7 +2501,8 @@ static void open_anim_modal(lv_event_t * e) {
         lv_label_set_text(bl, btns[i].label);
         lv_obj_center(bl);
     }
-    y += 105;
+    int rows = (n_btns + 3) / 4;
+    y += rows * (btn_h + SY(8)) + SY(10);
 
     lbl_anim_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_anim_status, lv_color_hex(THEME_TEXT_DIM), 0);

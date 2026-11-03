@@ -114,9 +114,40 @@ static period_t selected_period = PERIOD_NOW;
 static stats_series_t  series;
 static stats_series_t  series2;   /* for elec second tariff */
 
+/* Interactive tooltip balloon for bar values */
+static lv_obj_t   * s_tooltip_box = NULL;
+static lv_obj_t   * s_tooltip_lbl = NULL;
+static lv_timer_t * s_tooltip_timer = NULL;
+static int          s_tooltip_last_id = -1;
+
+static void hide_tooltip(void) {
+    if (s_tooltip_box && !lv_obj_has_flag(s_tooltip_box, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(s_tooltip_box, LV_OBJ_FLAG_HIDDEN);
+    }
+    s_tooltip_last_id = -1;
+}
+
+static void tooltip_timer_cb(lv_timer_t * t) {
+    (void)t;
+    hide_tooltip();
+}
+
+static void on_scr_delete(lv_event_t * e) {
+    (void)e;
+    if (s_tooltip_timer) {
+        lv_timer_del(s_tooltip_timer);
+        s_tooltip_timer = NULL;
+    }
+    s_tooltip_box = NULL;
+    s_tooltip_lbl = NULL;
+    s_tooltip_last_id = -1;
+    scr_root = NULL;
+}
+
 static void on_back(lv_event_t * e) {
     (void)e;
     close_rate_modal();
+    hide_tooltip();
     ui_pop();
 }
 
@@ -159,6 +190,140 @@ static void place_x_labels(void) {
         lv_obj_set_pos(g_xlbl[k], cx - SX(29), XLBL_Y);
         lv_obj_clear_flag(g_xlbl[k], LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
+    if (b < 0 || b >= g_bar_count || !scr_root || !chart) return;
+
+    const metric_t * m = &metrics[selected_metric];
+    int show_euro = settings.stats_show_euro && (selected_metric <= 2);
+    char buf[64];
+    double val = g_bar_val[b];
+
+    if (show_euro) {
+        if (selected_period == PERIOD_NOW) {
+            snprintf(buf, sizeof buf, "%s • € %.2f/u", g_bar_label[b], val);
+        } else {
+            snprintf(buf, sizeof buf, "%s • € %.2f", g_bar_label[b], val);
+        }
+    } else if (selected_period == PERIOD_NOW) {
+        if (strcmp(m->unit_flow, "W") == 0) {
+            snprintf(buf, sizeof buf, "%s • %.0f W", g_bar_label[b], val);
+        } else if (strcmp(m->unit_flow, "m3/h") == 0) {
+            snprintf(buf, sizeof buf, "%s • %.2f m³/h", g_bar_label[b], val);
+        } else if (strcmp(m->unit_flow, "l/min") == 0 || strcmp(m->unit_flow, "l/h") == 0) {
+            snprintf(buf, sizeof buf, "%s • %.0f l/min", g_bar_label[b], val);
+        } else {
+            snprintf(buf, sizeof buf, "%s • %.2f %s", g_bar_label[b], val, m->unit_flow);
+        }
+    } else {
+        if (strcmp(m->label, "CV bar") == 0) {
+            snprintf(buf, sizeof buf, "%s • %.2f bar", g_bar_label[b], val);
+        } else if (val < 10.0 && val > 0.0) {
+            snprintf(buf, sizeof buf, "%s • %.3f %s", g_bar_label[b], val, m->unit_cum);
+        } else if (val < 100.0) {
+            snprintf(buf, sizeof buf, "%s • %.2f %s", g_bar_label[b], val, m->unit_cum);
+        } else {
+            snprintf(buf, sizeof buf, "%s • %.1f %s", g_bar_label[b], val, m->unit_cum);
+        }
+    }
+
+    if (!s_tooltip_box) {
+        s_tooltip_box = lv_obj_create(scr_root);
+        lv_obj_remove_style_all(s_tooltip_box);
+        lv_obj_set_size(s_tooltip_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_color(s_tooltip_box, lv_color_hex(0x0e1a2a), 0);
+        lv_obj_set_style_bg_opa(s_tooltip_box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(s_tooltip_box, 2, 0);
+        lv_obj_set_style_radius(s_tooltip_box, 6, 0);
+        lv_obj_set_style_pad_hor(s_tooltip_box, SX(8), 0);
+        lv_obj_set_style_pad_ver(s_tooltip_box, SY(4), 0);
+        lv_obj_clear_flag(s_tooltip_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+        s_tooltip_lbl = lv_label_create(s_tooltip_box);
+        lv_obj_set_style_text_color(s_tooltip_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(s_tooltip_lbl, SF(15), 0);
+        lv_obj_center(s_tooltip_lbl);
+    }
+
+    lv_obj_set_style_border_color(s_tooltip_box, lv_color_hex(m->color), 0);
+    lv_label_set_text(s_tooltip_lbl, buf);
+    lv_obj_update_layout(s_tooltip_box);
+
+    lv_coord_t tip_w = lv_obj_get_width(s_tooltip_box);
+    lv_coord_t tip_h = lv_obj_get_height(s_tooltip_box);
+
+    lv_area_t coords;
+    lv_obj_get_coords(chart, &coords);
+
+    lv_coord_t tip_x = bar_screen_x - (tip_w / 2);
+    if (tip_x < coords.x1 + SX(4)) tip_x = coords.x1 + SX(4);
+    if (tip_x + tip_w > coords.x2 - SX(4)) tip_x = coords.x2 - SX(4) - tip_w;
+
+    lv_coord_t tip_y;
+    if (bar_screen_y < SY(285)) {
+        tip_y = bar_screen_y + SY(8); /* place slightly inside the tall bar */
+    } else {
+        tip_y = bar_screen_y - tip_h - SY(6); /* place right above the bar */
+    }
+
+    lv_obj_set_pos(s_tooltip_box, tip_x, tip_y);
+    lv_obj_clear_flag(s_tooltip_box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_tooltip_box);
+
+    s_tooltip_last_id = b;
+
+    /* Start / reset 5-second auto-hide timer */
+    if (!s_tooltip_timer) {
+        s_tooltip_timer = lv_timer_create(tooltip_timer_cb, 5000, NULL);
+        lv_timer_set_repeat_count(s_tooltip_timer, 1);
+    } else {
+        lv_timer_reset(s_tooltip_timer);
+        lv_timer_resume(s_tooltip_timer);
+    }
+}
+
+static void on_chart_click(lv_event_t * e) {
+    (void)e;
+    if (g_bar_count <= 0 || !chart || !cs) return;
+
+    lv_indev_t * indev = lv_indev_get_act();
+    if (!indev) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+
+    lv_area_t coords;
+    lv_obj_get_coords(chart, &coords);
+
+    /* Check if click was within chart horizontally */
+    if (p.x < coords.x1 - 10 || p.x > coords.x2 + 10) return;
+
+    /* Find the closest bar to the touch X coordinate */
+    int best_b = -1;
+    int best_dist = 999999;
+    lv_point_t best_pt = {0};
+
+    for (int b = 0; b < g_bar_count; b++) {
+        lv_point_t pt;
+        lv_chart_get_point_pos_by_id(chart, cs, (uint16_t)b, &pt);
+        int bar_screen_x = coords.x1 + pt.x;
+        int d = abs(p.x - bar_screen_x);
+        if (d < best_dist) {
+            best_dist = d;
+            best_b = b;
+            best_pt = pt;
+        }
+    }
+
+    if (best_b < 0) return;
+
+    /* If tapping the same bar that is currently open, toggle it off */
+    if (s_tooltip_last_id == best_b && s_tooltip_box && !lv_obj_has_flag(s_tooltip_box, LV_OBJ_FLAG_HIDDEN)) {
+        hide_tooltip();
+        return;
+    }
+
+    show_tooltip(best_b, coords.x1 + best_pt.x, coords.y1 + best_pt.y);
 }
 
 static void update_nav_range_label(long start_t, long end_t) {
@@ -851,6 +1016,7 @@ static void render_chart(void) {
 }
 
 static void reload_and_render(void) {
+    hide_tooltip();
     lv_chart_set_series_color(chart, cs, lv_color_hex(metrics[selected_metric].color));
     lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
     load_for_period();
@@ -1034,6 +1200,7 @@ lv_obj_t * screen_stats_create(void) {
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(scr_root, on_scr_delete, LV_EVENT_DELETE, NULL);
 
     /* Header */
     int x_w = (DISP_HOR < 1000) ? 68 : 74;
@@ -1241,6 +1408,8 @@ lv_obj_t * screen_stats_create(void) {
     cs = lv_chart_add_series(chart, lv_color_hex(metrics[0].color),
                              LV_CHART_AXIS_PRIMARY_Y);
     lv_obj_add_event_cb(chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    lv_obj_add_flag(chart, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(chart, on_chart_click, LV_EVENT_CLICKED, NULL);
 
     /* Manual X-axis label widgets under the chart. */
     for (int i = 0; i < XLBL_COUNT; i++) {

@@ -6,6 +6,8 @@
 #include "icon_anim_balloon.h"
 #include "icon_anim_heart.h"
 #include "icon_anim_leaf.h"
+#include "icon_anim_snowflake.h"
+#include "icon_anim_present.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,6 +108,17 @@ static const uint32_t PALETTE_FIREWORKS[] = {
 };
 #define NUM_FIREWORKS (sizeof(PALETTE_FIREWORKS)/sizeof(PALETTE_FIREWORKS[0]))
 
+static const uint32_t PALETTE_PRESENTS[] = {
+    0xd32f2f, /* Festive Sinterklaas Red */
+    0x1976d2, /* Royal Blue */
+    0x388e3c, /* Pine Green */
+    0x7b1fa2, /* Imperial Purple */
+    0xf57c00, /* Dutch Orange */
+    0xc2185b, /* Ruby Pink */
+    0xfbc02d  /* Festive Gold */
+};
+#define NUM_PRESENTS (sizeof(PALETTE_PRESENTS)/sizeof(PALETTE_PRESENTS[0]))
+
 /* Helper random float in range [min, max] */
 static float frand(float min, float max) {
     float r = (float)rand() / (float)RAND_MAX;
@@ -204,38 +217,88 @@ static void spawn_confetti(particle_t * p, int stagger) {
 
 static void spawn_snow(particle_t * p, int stagger) {
     p->active = 1;
-    int sz = SUNI(6) + (rand() % SUNI(9));
-    p->base_w = sz;
-    p->base_h = sz;
+    /* Crystalline 6-fold snowflake asset: 64x64 native with organic size variation */
+    int zoom = 140 + (rand() % 100); /* 140 to 240 (roughly 35px to 60px) */
+    p->base_w = (64 * zoom) / 256;
+    p->base_h = (64 * zoom) / 256;
     p->color = PALETTE_SNOW[rand() % NUM_SNOW];
-    p->base_x = frand(SUNI(10), DISP_HOR - SUNI(20));
-    p->amp = frand(SUNI(10), SUNI(24));
-    p->freq = frand(0.025f, 0.05f);
+    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(60));
+    p->amp = frand(SUNI(12), SUNI(30));
+    p->freq = frand(0.020f, 0.045f);
     p->phase = frand(0, (float)(2 * M_PI));
-    p->vy = frand(1.2f, 2.6f);
+    p->tumble_angle = frand(-0.35f, 0.35f);
+    p->tumble_speed = frand(0.02f, 0.06f);
+    p->vy = frand(1.2f, 2.4f);
     p->x = p->base_x;
 
     if (stagger) {
-        p->y = frand(-30, (float)DISP_VER);
+        p->y = frand(-40, (float)DISP_VER);
     } else {
-        p->y = -frand(10, 60);
+        p->y = -frand(20, 70);
     }
 
-    lv_obj_clear_flag(p->body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(p->img, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->body, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
 
-    lv_obj_set_size(p->body, sz, sz);
-    lv_obj_set_pos(p->body, 0, 0);
-    lv_obj_set_style_radius(p->body, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(p->body, lv_color_hex(p->color), 0);
-    lv_obj_set_style_bg_opa(p->body, (sz > SUNI(10)) ? LV_OPA_90 : LV_OPA_70, 0);
-    lv_obj_set_style_border_width(p->body, 0, 0);
+    lv_img_set_src(p->img, &icon_anim_snowflake);
+    lv_obj_set_style_img_recolor(p->img, lv_color_hex(p->color), 0);
+    lv_obj_set_style_img_recolor_opa(p->img, LV_OPA_COVER, 0);
+    lv_img_set_zoom(p->img, zoom);
+    lv_img_set_pivot(p->img, 32, 32);
+    lv_img_set_angle(p->img, 0);
 
-    lv_obj_set_size(p->cont, sz + 2, sz + 2);
+    lv_obj_set_size(p->cont, p->base_w + 10, p->base_h + 10);
     lv_obj_clear_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void spawn_present(particle_t * p, int stagger) {
+    p->active = 1;
+    /* Festive wrapped gift box asset: 64x64 native with organic size variation */
+    int zoom = 180 + (rand() % 80); /* 180 to 260 (~45px to 65px) */
+    p->base_w = (64 * zoom) / 256;
+    p->base_h = (64 * zoom) / 256;
+    p->color = PALETTE_PRESENTS[rand() % NUM_PRESENTS];
+    p->base_x = frand(SUNI(15), DISP_HOR - SUNI(70));
+    p->amp = frand(SUNI(15), SUNI(35));
+    p->freq = frand(0.025f, 0.050f);
+    p->phase = frand(0, (float)(2 * M_PI));
+    p->tumble_angle = frand(-0.25f, 0.25f);
+    p->tumble_speed = frand(0.04f, 0.09f);
+    p->vy = frand(1.6f, 2.8f);
+    p->x = p->base_x;
+
+    if (stagger) {
+        p->y = frand(-40, (float)DISP_VER);
+    } else {
+        p->y = -frand(20, 80);
+    }
+
+    lv_obj_clear_flag(p->img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->tail, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(p->gloss, LV_OBJ_FLAG_HIDDEN);
+
+    lv_img_set_src(p->img, &icon_anim_present);
+    lv_obj_set_style_img_recolor(p->img, lv_color_hex(p->color), 0);
+    lv_obj_set_style_img_recolor_opa(p->img, LV_OPA_COVER, 0);
+    lv_img_set_zoom(p->img, zoom);
+    lv_img_set_pivot(p->img, 32, 32);
+    lv_img_set_angle(p->img, 0);
+
+    lv_obj_set_size(p->cont, p->base_w + 12, p->base_h + 12);
+    lv_obj_clear_flag(p->cont, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void spawn_christmas(particle_t * p, int stagger) {
+    if ((rand() % 3) == 0) {
+        spawn_present(p, stagger);
+    } else {
+        spawn_snow(p, stagger);
+    }
 }
 
 static void spawn_leaf(particle_t * p, int stagger) {
@@ -440,10 +503,63 @@ static void anim_timer_tick(lv_timer_t * timer) {
             particle_t * p = &s_particles[i];
             if (!p->active) continue;
             p->y += p->vy;
-            p->x = p->base_x + p->amp * sinf(p->phase + (float)s_tick_counter * p->freq);
+            float sway = sinf(p->phase + (float)s_tick_counter * p->freq);
+            p->x = p->base_x + p->amp * sway;
+
+            /* Slow drifting spin for realistic hexagonal snowflake tumbling */
+            p->tumble_angle += p->tumble_speed;
+            int angle_tenth_deg = (int)(p->tumble_angle * (1800.0f / (float)M_PI));
+            while (angle_tenth_deg >= 3600) angle_tenth_deg -= 3600;
+            while (angle_tenth_deg < 0) angle_tenth_deg += 3600;
+            lv_img_set_angle(p->img, angle_tenth_deg);
 
             if (p->y > DISP_VER + SUNI(10)) {
                 spawn_snow(p, 0);
+            }
+            lv_obj_set_pos(p->cont, (lv_coord_t)p->x, (lv_coord_t)p->y);
+        }
+    }
+    else if (s_current_effect == ANIM_EFFECT_SINT) {
+        for (int i = 0; i < MAX_PARTICLES; i++) {
+            particle_t * p = &s_particles[i];
+            if (!p->active) continue;
+            p->y += p->vy;
+            float sway = sinf(p->phase + (float)s_tick_counter * p->freq);
+            p->x = p->base_x + p->amp * sway;
+
+            /* Gentle pendulum tilt for falling Sinterklaas packages */
+            int angle_tenth_deg = (int)(sway * 180.0f);
+            if (angle_tenth_deg > 300) angle_tenth_deg = 300;
+            if (angle_tenth_deg < -300) angle_tenth_deg = -300;
+            lv_img_set_angle(p->img, angle_tenth_deg);
+
+            if (p->y > DISP_VER + SUNI(20)) {
+                spawn_present(p, 0);
+            }
+            lv_obj_set_pos(p->cont, (lv_coord_t)p->x, (lv_coord_t)p->y);
+        }
+    }
+    else if (s_current_effect == ANIM_EFFECT_CHRISTMAS) {
+        for (int i = 0; i < MAX_PARTICLES; i++) {
+            particle_t * p = &s_particles[i];
+            if (!p->active) continue;
+            p->y += p->vy;
+            float sway = sinf(p->phase + (float)s_tick_counter * p->freq);
+            p->x = p->base_x + p->amp * sway;
+
+            if (lv_img_get_src(p->img) == &icon_anim_snowflake) {
+                p->tumble_angle += p->tumble_speed;
+                int angle_tenth_deg = (int)(p->tumble_angle * (1800.0f / (float)M_PI));
+                while (angle_tenth_deg >= 3600) angle_tenth_deg -= 3600;
+                while (angle_tenth_deg < 0) angle_tenth_deg += 3600;
+                lv_img_set_angle(p->img, angle_tenth_deg);
+            } else {
+                int angle_tenth_deg = (int)(sway * 160.0f);
+                lv_img_set_angle(p->img, angle_tenth_deg);
+            }
+
+            if (p->y > DISP_VER + SUNI(20)) {
+                spawn_christmas(p, 0);
             }
             lv_obj_set_pos(p->cont, (lv_coord_t)p->x, (lv_coord_t)p->y);
         }
@@ -625,6 +741,10 @@ static void anim_overlay_apply_trigger(anim_effect_t effect, int duration_sec) {
     int active_limit = MAX_PARTICLES;
     if (effect == ANIM_EFFECT_BALLOONS) {
         active_limit = (s_stop_tick == 0) ? 8 : 16;
+    } else if (effect == ANIM_EFFECT_SINT) {
+        active_limit = (s_stop_tick == 0) ? 10 : 16;
+    } else if (effect == ANIM_EFFECT_CHRISTMAS) {
+        active_limit = (s_stop_tick == 0) ? 14 : 20;
     } else if (s_stop_tick == 0) {
         if (effect == ANIM_EFFECT_HEARTS) active_limit = 12;
         else if (effect == ANIM_EFFECT_LEAVES) active_limit = 12;
@@ -633,11 +753,13 @@ static void anim_overlay_apply_trigger(anim_effect_t effect, int duration_sec) {
 
     /* Initialize particles for chosen effect */
     for (int i = 0; i < active_limit; i++) {
-        if (effect == ANIM_EFFECT_BALLOONS)       spawn_balloon(&s_particles[i], 1);
-        else if (effect == ANIM_EFFECT_CONFETTI)   spawn_confetti(&s_particles[i], 1);
-        else if (effect == ANIM_EFFECT_SNOW)       spawn_snow(&s_particles[i], 1);
-        else if (effect == ANIM_EFFECT_LEAVES)     spawn_leaf(&s_particles[i], 1);
-        else if (effect == ANIM_EFFECT_HEARTS)     spawn_heart(&s_particles[i], 1);
+        if (effect == ANIM_EFFECT_BALLOONS)        spawn_balloon(&s_particles[i], 1);
+        else if (effect == ANIM_EFFECT_CONFETTI)    spawn_confetti(&s_particles[i], 1);
+        else if (effect == ANIM_EFFECT_SNOW)        spawn_snow(&s_particles[i], 1);
+        else if (effect == ANIM_EFFECT_LEAVES)      spawn_leaf(&s_particles[i], 1);
+        else if (effect == ANIM_EFFECT_HEARTS)      spawn_heart(&s_particles[i], 1);
+        else if (effect == ANIM_EFFECT_SINT)        spawn_present(&s_particles[i], 1);
+        else if (effect == ANIM_EFFECT_CHRISTMAS)   spawn_christmas(&s_particles[i], 1);
     }
     for (int i = active_limit; i < MAX_PARTICLES; i++) {
         s_particles[i].active = 0;
@@ -698,6 +820,8 @@ const char * anim_effect_name(anim_effect_t effect) {
         case ANIM_EFFECT_FIREWORKS: return "fireworks";
         case ANIM_EFFECT_LEAVES:    return "leaves";
         case ANIM_EFFECT_HEARTS:    return "hearts";
+        case ANIM_EFFECT_SINT:      return "sint";
+        case ANIM_EFFECT_CHRISTMAS: return "christmas";
         default:                    return "none";
     }
 }
@@ -710,6 +834,8 @@ const char * anim_effect_title(anim_effect_t effect) {
         case ANIM_EFFECT_FIREWORKS: return tr("Vuurwerk", "Fireworks");
         case ANIM_EFFECT_LEAVES:    return tr("Herfstbladeren", "Autumn leaves");
         case ANIM_EFFECT_HEARTS:    return tr("Hartjes", "Hearts");
+        case ANIM_EFFECT_SINT:      return tr("Sinterklaas", "St. Nicholas");
+        case ANIM_EFFECT_CHRISTMAS: return tr("Kerst", "Christmas");
         default:                    return tr("Geen", "None");
     }
 }
@@ -728,6 +854,10 @@ anim_effect_t anim_effect_from_name(const char * name) {
         return ANIM_EFFECT_LEAVES;
     if (strcasecmp(name, "hearts") == 0 || strcasecmp(name, "heart") == 0 || strcasecmp(name, "hartjes") == 0)
         return ANIM_EFFECT_HEARTS;
+    if (strcasecmp(name, "sint") == 0 || strcasecmp(name, "sinterklaas") == 0 || strcasecmp(name, "present") == 0 || strcasecmp(name, "presents") == 0 || strcasecmp(name, "pakjes") == 0)
+        return ANIM_EFFECT_SINT;
+    if (strcasecmp(name, "christmas") == 0 || strcasecmp(name, "kerst") == 0 || strcasecmp(name, "santa") == 0 || strcasecmp(name, "xmas") == 0)
+        return ANIM_EFFECT_CHRISTMAS;
     return ANIM_EFFECT_NONE;
 }
 
@@ -750,18 +880,22 @@ void anim_overlay_check_seasonal(void) {
         s_last_seasonal_day = tm.tm_yday;
         anim_overlay_trigger(ANIM_EFFECT_FIREWORKS, 35);
     }
-    /* Sinterklaas: 5 december */
+    /* Sinterklaas: 5 december (pakjesanimatie) */
     else if (mon == 12 && mday == 5) {
         s_last_seasonal_day = tm.tm_yday;
-        anim_overlay_trigger(ANIM_EFFECT_BALLOONS, 30);
+        anim_overlay_trigger(ANIM_EFFECT_SINT, 35);
     }
-    /* Valentijnsdag: 14 februari */
+    /* Valentijnsdag: 14 februari (hartjes) */
     else if (mon == 2 && mday == 14) {
         s_last_seasonal_day = tm.tm_yday;
         anim_overlay_trigger(ANIM_EFFECT_HEARTS, 30);
     }
-    /* Kerst / Winterdagen: 24-26 december of 1-5 januari */
-    else if ((mon == 12 && mday >= 24 && mday <= 26) || (mon == 1 && mday >= 2 && mday <= 5)) {
+    /* Kerst / Winterdagen: 24-26 december (sneeuw & kerstpakjes) of 1-5 januari (sneeuw) */
+    else if (mon == 12 && mday >= 24 && mday <= 26) {
+        s_last_seasonal_day = tm.tm_yday;
+        anim_overlay_trigger(ANIM_EFFECT_CHRISTMAS, 35);
+    }
+    else if (mon == 1 && mday >= 2 && mday <= 5) {
         s_last_seasonal_day = tm.tm_yday;
         anim_overlay_trigger(ANIM_EFFECT_SNOW, 35);
     }
