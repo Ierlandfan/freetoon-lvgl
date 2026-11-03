@@ -243,6 +243,27 @@
     3. **Remote API & Socket triggers**: Callable via HTTP `POST /api/animation` (of `GET /api/animation?effect=balloons`), en via het `ui_cmd` socket (`anim <effect>`, `anim stop`).
     4. **Instellingen modal**: Nieuwe tegel *"Animaties"* in *Instellingen* met toggles voor verjaardagen, seizoenen, dimstand, en directe handmatige startknoppen voor alle effecten (Ballonnen, Confetti, Sneeuw, Vuurwerk, Herfst, Hartjes, Sint, Kerst, Stop). Handmatig gestarte animaties lopen tot het einde van de dag (automatische middernacht-stop) of tot de 'Stop'-knop wordt ingedrukt.
 
+### 23. Release 1.0.0: Animation Engine, Neerslag & Dim Polish, Thermostat Manual Presets, Stats Bar Tooltips & Afval Venster (Milestone Release)
+- **Status**: Completed in Release 1.0.0.
+- **Implemented Features & Highlights**:
+  - **Animation Overlay Engine (Oepi-Loepi QML Port)**:
+    - Native LVGL particle overlay engine running click-transparently on `lv_layer_sys()` with zero heap allocations during the tick loop.
+    - Complete suite of animations: 3D realistic Balloons, Confetti, Crystalline 6-point Snowflakes, Fireworks, realistic Sugar Maple Leaves with palmate veins, Valentine Hearts, Sinterklaas Presents, and Christmas Snow/Present blend.
+    - Built-in LVGL software transform engine fix for `LV_IMG_CF_ALPHA_8BIT` masks.
+    - 24-hour continuous birthday celebrations triggered by calendar events, seasonal auto-triggers, remote socket/HTTP endpoints, and interactive Instellingen modal.
+  - **Energy Statistics: Interactive Bar Popup (`screen_stats.c`)**:
+    - Tapping any bar in the day, week, month, or year charts opens a compact balloon popup displaying the exact consumption (kWh, m³) or cost (€) value.
+  - **Thermostat Preset Buttons in Manual Mode (`screen_home.c`)**:
+    - In Manual mode, tapping any of the 4 program preset buttons applies that state's temperature setpoint and marks the button with a highlighted border (without inner background), preserving Manual mode while showing the active preset state.
+  - **Neerslag Tile & Grid Polish (`screen_home.c`, `screen_dim_grid.c`, `screen_forecast.c`)**:
+    - Matched the dim screen Neerslag tile layout to the homescreen design (droplet icon, styled container, typography).
+    - Added subtle vertical division lines for the +1h and +2h marks across homescreen, dim screen, and full forecast charts.
+    - On the dim screen, when no rain is expected, the tile header and droplet icon are hidden and *"Geen neerslag verwacht"* is cleanly centered.
+  - **Waste Collection Alert Window & Configurable Time (`wastecollection.c`, `screen_settings.c`, `screen_dim.c`, `screen_dim_grid.c`, `pwa_server.c`)**:
+    - Added configurable *Afval-waarschuwingstijd* slider in Settings (default 18:00, range 00:00–23:00).
+    - Standby dim screen waste icon now appears starting at the configured hour (18:00) $N$ days before collection, and remains visible until 18:00 on collection day.
+
+
 
 
 
