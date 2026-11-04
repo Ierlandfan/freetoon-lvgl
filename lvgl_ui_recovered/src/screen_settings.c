@@ -1354,6 +1354,11 @@ static void open_presets_modal(lv_event_t * e) {
 static lv_obj_t * lbl_uimode_current;
 static lv_obj_t * sw_uimode_picker;
 static lv_obj_t * confirm_uimode = NULL;
+static lv_obj_t * b_uimode_no = NULL;
+static lv_obj_t * b_uimode_yes = NULL;
+static lv_obj_t * lbl_uimode_body = NULL;
+static lv_obj_t * sw_uimode_dbg = NULL;
+static lv_obj_t * lbl_uimode_dbg = NULL;
 
 static int read_ui_choice(void) {
     FILE * f = fopen(UI_CHOICE_PATH, "r");
@@ -1382,6 +1387,11 @@ static void on_uimode_picker(lv_event_t * e) {
 
 static void uimode_confirm_dismiss(void) {
     if (confirm_uimode) { lv_obj_del_async(confirm_uimode); confirm_uimode = NULL; }
+    b_uimode_no = NULL;
+    b_uimode_yes = NULL;
+    lbl_uimode_body = NULL;
+    sw_uimode_dbg = NULL;
+    lbl_uimode_dbg = NULL;
 }
 
 /* qt-gui debug logging: a marker file on the data partition (so it survives
@@ -1406,6 +1416,17 @@ static void on_qtgui_debug_toggle(lv_event_t * e) {
  * off) the launcher exec's /qmf/sbin/qt-gui. */
 static void on_uimode_confirm_yes(lv_event_t * e) {
     (void)e;
+    if (b_uimode_no)    lv_obj_add_flag(b_uimode_no, LV_OBJ_FLAG_HIDDEN);
+    if (b_uimode_yes)   lv_obj_add_flag(b_uimode_yes, LV_OBJ_FLAG_HIDDEN);
+    if (sw_uimode_dbg)  lv_obj_add_flag(sw_uimode_dbg, LV_OBJ_FLAG_HIDDEN);
+    if (lbl_uimode_dbg) lv_obj_add_flag(lbl_uimode_dbg, LV_OBJ_FLAG_HIDDEN);
+    if (lbl_uimode_body) {
+        lv_label_set_text(lbl_uimode_body, tr("Bezig met overschakelen naar qt-gui...\nEven geduld.",
+                                              "Switching to qt-gui...\nPlease wait."));
+        lv_obj_set_style_text_color(lbl_uimode_body, lv_color_hex(0xffcc66), 0);
+    }
+    lv_refr_now(NULL);
+
     qtlog_apply(g_qtgui_debug);          /* enable/disable stock-UI logging for this boot */
     write_ui_choice(1);
 
@@ -1465,60 +1486,60 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_label_set_text(dt, tr("Overschakelen naar standaard qt-gui?", "Switch to stock qt-gui?"));
     lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    lv_obj_t * body = lv_label_create(dlg);
-    lv_obj_set_style_text_font(body, SF(18), 0);
-    lv_obj_set_style_text_color(body, lv_color_hex(0xddddee), 0);
-    lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(body, SX(712));
-    lv_label_set_text(body,
-        tr("De freetoon-UI sluit af en de originele Eneco-UI neemt binnen "
-           "ongeveer een seconde over. Onze hulpbruggen (p1bridge, "
+    lbl_uimode_body = lv_label_create(dlg);
+    lv_obj_set_style_text_font(lbl_uimode_body, SF(18), 0);
+    lv_obj_set_style_text_color(lbl_uimode_body, lv_color_hex(0xddddee), 0);
+    lv_label_set_long_mode(lbl_uimode_body, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(lbl_uimode_body, SX(712));
+    lv_label_set_text(lbl_uimode_body,
+        tr("De freetoon-UI sluit af en de originele Eneco-UI neemt het "
+           "daarna over. Onze hulpbruggen (p1bridge, "
            "quby_bridge) gaan inactief zodat de standaard meteradapter / "
            "keteladapter de leiding houden. Om terug te komen, tik op de "
            "freetoon-knop in de bootkiezer (of houd rechtsboven 10 s "
            "ingedrukt tijdens het opstarten van qt-gui).",
            "The freetoon UI will exit and the original Eneco UI takes "
-           "over within about a second. Our companion bridges (p1bridge, "
+           "over afterwards. Our companion bridges (p1bridge, "
            "quby_bridge) go idle so stock meteradapter / keteladapter "
            "remain in charge. To come back, tap the freetoon button in "
            "the boot picker (or hold the touch top-right for 10 s during "
            "the qt-gui boot)."));
-    lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, SY(56));
+    lv_obj_align(lbl_uimode_body, LV_ALIGN_TOP_LEFT, 0, SY(56));
 
     /* Developer aid: capture stock qt-gui output to /var/log/qt for this boot.
      * Persists via /mnt/data/qtlog (read by ui_launcher.sh), so it isn't wiped
      * by a freetoon update. Off by default. */
     g_qtgui_debug = qtlog_enabled();
-    lv_obj_t * dbg_l = lv_label_create(dlg);
-    lv_obj_set_style_text_font(dbg_l, SF(18), 0);
-    lv_obj_set_style_text_color(dbg_l, lv_color_hex(0xffcc66), 0);
-    lv_label_set_text(dbg_l, tr("qt-gui debug-logging (/var/log/qt)",
-                                "qt-gui debug logging (/var/log/qt)"));
-    lv_obj_align(dbg_l, LV_ALIGN_BOTTOM_LEFT, 0, SY(-84));
-    lv_obj_t * dbg_sw = lv_switch_create(dlg);
-    lv_obj_set_size(dbg_sw, SX(84), SY(42));
-    lv_obj_align(dbg_sw, LV_ALIGN_BOTTOM_RIGHT, 0, SY(-80));
-    if (g_qtgui_debug) lv_obj_add_state(dbg_sw, LV_STATE_CHECKED);
-    lv_obj_add_event_cb(dbg_sw, on_qtgui_debug_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+    lbl_uimode_dbg = lv_label_create(dlg);
+    lv_obj_set_style_text_font(lbl_uimode_dbg, SF(18), 0);
+    lv_obj_set_style_text_color(lbl_uimode_dbg, lv_color_hex(0xffcc66), 0);
+    lv_label_set_text(lbl_uimode_dbg, tr("qt-gui debug-logging (/var/log/qt)",
+                                         "qt-gui debug logging (/var/log/qt)"));
+    lv_obj_align(lbl_uimode_dbg, LV_ALIGN_BOTTOM_LEFT, 0, SY(-84));
+    sw_uimode_dbg = lv_switch_create(dlg);
+    lv_obj_set_size(sw_uimode_dbg, SX(84), SY(42));
+    lv_obj_align(sw_uimode_dbg, LV_ALIGN_BOTTOM_RIGHT, 0, SY(-80));
+    if (g_qtgui_debug) lv_obj_add_state(sw_uimode_dbg, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(sw_uimode_dbg, on_qtgui_debug_toggle, LV_EVENT_VALUE_CHANGED, NULL);
 
-    lv_obj_t * b_no = lv_btn_create(dlg);
-    lv_obj_set_size(b_no, SX(220), SY(64));
-    lv_obj_align(b_no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(b_no, lv_color_hex(0x44556a), 0);
-    lv_obj_set_style_radius(b_no, 12, 0);
-    lv_obj_add_event_cb(b_no, on_uimode_confirm_no, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * b_no_l = lv_label_create(b_no);
+    b_uimode_no = lv_btn_create(dlg);
+    lv_obj_set_size(b_uimode_no, SX(220), SY(64));
+    lv_obj_align(b_uimode_no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(b_uimode_no, lv_color_hex(0x44556a), 0);
+    lv_obj_set_style_radius(b_uimode_no, 12, 0);
+    lv_obj_add_event_cb(b_uimode_no, on_uimode_confirm_no, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * b_no_l = lv_label_create(b_uimode_no);
     lv_label_set_text(b_no_l, tr("Annuleren", "Cancel"));
     lv_obj_set_style_text_font(b_no_l, SF(22), 0);
     lv_obj_center(b_no_l);
 
-    lv_obj_t * b_yes = lv_btn_create(dlg);
-    lv_obj_set_size(b_yes, SX(300), SY(64));
-    lv_obj_align(b_yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(b_yes, lv_color_hex(0xcc5544), 0);
-    lv_obj_set_style_radius(b_yes, 12, 0);
-    lv_obj_add_event_cb(b_yes, on_uimode_confirm_yes, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * b_yes_l = lv_label_create(b_yes);
+    b_uimode_yes = lv_btn_create(dlg);
+    lv_obj_set_size(b_uimode_yes, SX(300), SY(64));
+    lv_obj_align(b_uimode_yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(b_uimode_yes, lv_color_hex(0xcc5544), 0);
+    lv_obj_set_style_radius(b_uimode_yes, 12, 0);
+    lv_obj_add_event_cb(b_uimode_yes, on_uimode_confirm_yes, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * b_yes_l = lv_label_create(b_uimode_yes);
     lv_label_set_text(b_yes_l, tr("Naar qt-gui", "Switch to qt-gui"));
     lv_obj_set_style_text_font(b_yes_l, SF(22), 0);
     lv_obj_center(b_yes_l);
