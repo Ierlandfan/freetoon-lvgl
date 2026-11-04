@@ -267,3 +267,21 @@
 
 
 
+
+### 24. Release 1.0.1: Doorbell Timing & go2rtc Integration, Calendar Add & webcal Support, UI-Modus Polish
+- **Status**: Completed in Release 1.0.1.
+- **Implemented Features & Highlights**:
+  - **Deurbel Timing & go2rtc Integratie (`doorbell.c`, `homeassistant.c`)**:
+    - Direct scherm openen en ontwaken uit dimstand zodra het deurbelsignaal binnenkomt, zonder te blokkeren op een initieel beschikbaar snapshot.
+    - Achtergrond polling om de 800 ms zodat slapende camera's (zoals Eufy) die enkele seconden nodig hebben om te ontwaken naadloos getoond worden zodra de stream beschikbaar is.
+    - Automatische herkenning en conversie van go2rtc `stream.html?src=...` naar de rechtstreekse `/api/frame.jpeg?src=...` snapshot-endpoint.
+    - Dynamische canvas-creatie zodra het eerste frame binnenkomt, ter vervanging van de statische foutmelding.
+  - **Agenda Toevoegknop & webcal:// Ondersteuning (`screen_settings.c`, `calendar.c`)**:
+    - Duidelijke statusfeedback in het Agenda-instellingenvenster bij ontbrekende invoer.
+    - Ondersteuning voor `webcal://` URLs en domeinen zonder http/https-prefix (automatische rewrite naar `https://`).
+    - Vergroot touch-oppervlak (`ext_click_area`) op Toon 1 voor betrouwbare registratie op resistieve schermen.
+    - Toetsenbord "OK" (Enter) koppeling: direct toevoegen van de agenda bij afronden via het schermtoetsenbord.
+    - Automatisch inschakelen van de Agenda bij toevoegen van een feed.
+  - **UI-Modus Venster Polish (`screen_settings.c`)**:
+    - Tekst aangepast naar "... Eneco-UI neemt het daarna over."
+    - Actieknoppen ("Annuleren" en "Naar qt-gui") worden direct verborgen na het indrukken om duidelijke visuele feedback te geven dat de overgang naar qt-gui gestart is.
