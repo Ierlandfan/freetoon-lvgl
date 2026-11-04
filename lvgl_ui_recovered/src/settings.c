@@ -539,7 +539,7 @@ autodetect:
 
     if (settings.sonos_port <= 0 || settings.sonos_port == 5005) settings.sonos_port = 1400;
     /* Auto-seed Sonos from legacy QML app settings if present and not yet configured */
-    if (!settings.sonos_host[0]) {
+    if (!settings.sonos_host[0] && !settings.sonos_zone[0]) {
         FILE * sf = fopen("/mnt/data/tsc/sonos.userSettings.json", "r");
         if (sf) {
             char sbuf[2048];
