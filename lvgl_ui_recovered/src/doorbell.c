@@ -16,6 +16,7 @@
 #include "display.h"
 #include "lvgl/src/extra/libs/sjpg/tjpgd.h"
 #include "doorbell.h"
+#include "i18n.h"
 #include "homeassistant.h"
 #include "settings.h"
 #include "backlight.h"
@@ -28,7 +29,8 @@ static int          last_frame = 0;
 static lv_obj_t *   overlay = NULL;
 static lv_obj_t *   canvas = NULL;
 static lv_timer_t * dismiss_timer = NULL;
-static lv_color_t * cur_px = NULL;   /* buffer currently shown by the canvas */
+static lv_color_t * cur_px = NULL;
+static lv_obj_t *   err_label = NULL;   /* buffer currently shown by the canvas */
 
 /* ---- TJpgDec glue: decode DOORBELL_SNAP_PATH at a screen-fitting scale ---- */
 typedef struct { FILE * fp; lv_color_t * out; int ow; int oh; } jdev_t;
@@ -80,7 +82,7 @@ static lv_color_t * decode_snapshot(int * ow, int * oh) {
 static void close_overlay(void) {
     ha_state.doorbell_live = 0;        /* stop the poll-thread fast refresh */
     if (dismiss_timer) { lv_timer_del(dismiss_timer); dismiss_timer = NULL; }
-    if (overlay)       { lv_obj_del(overlay); overlay = NULL; canvas = NULL; }
+    if (overlay)       { lv_obj_del(overlay); overlay = NULL; canvas = NULL; err_label = NULL; }
     if (cur_px)        { lv_mem_free(cur_px); cur_px = NULL; }
     if (ui_is_dimmed()) {
         backlight_set(settings.dim_brightness);
@@ -92,10 +94,14 @@ static void on_dismiss(lv_timer_t * t) { (void)t; dismiss_timer = NULL; close_ov
 
 /* Swap in a freshly-decoded frame without rebuilding the overlay (no flicker). */
 static void update_frame(void) {
-    if (!canvas) return;
     int w, h;
     lv_color_t * px = decode_snapshot(&w, &h);
     if (!px) return;
+    if (!canvas && overlay) {
+        if (err_label) { lv_obj_del(err_label); err_label = NULL; }
+        canvas = lv_canvas_create(overlay);
+    }
+    if (!canvas) { lv_mem_free(px); return; }
     lv_canvas_set_buffer(canvas, px, w, h, LV_IMG_CF_TRUE_COLOR);
     lv_obj_center(canvas);
     if (cur_px) lv_mem_free(cur_px);
@@ -126,11 +132,11 @@ static void show_overlay(void) {
         lv_canvas_set_buffer(canvas, cur_px, w, h, LV_IMG_CF_TRUE_COLOR);
         lv_obj_center(canvas);
     } else {
-        lv_obj_t * err = lv_label_create(overlay);
-        lv_obj_set_style_text_color(err, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(err, SF(22), 0);
-        lv_label_set_text(err, "Doorbell: snapshot unavailable");
-        lv_obj_center(err);
+        err_label = lv_label_create(overlay);
+        lv_obj_set_style_text_color(err_label, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(err_label, SF(22), 0);
+        lv_label_set_text(err_label, tr("Bezig met verbinden met camera...", "Connecting to camera..."));
+        lv_obj_center(err_label);
     }
 
     lv_obj_t * lbl = lv_label_create(overlay);
@@ -140,7 +146,7 @@ static void show_overlay(void) {
     lv_obj_set_style_bg_opa(lbl, LV_OPA_50, 0);
     lv_obj_set_style_pad_all(lbl, 8, 0);
     lv_obj_set_style_radius(lbl, 8, 0);
-    lv_label_set_text(lbl, LV_SYMBOL_BELL "  Doorbell - tap to dismiss");
+    lv_label_set_text(lbl, tr(LV_SYMBOL_BELL "  Deurbel - tik om te sluiten", LV_SYMBOL_BELL "  Doorbell - tap to dismiss"));
     lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 12);
 
     /* Ask the poll thread to stream fresh frames while we're up. */

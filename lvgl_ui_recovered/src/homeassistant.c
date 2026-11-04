@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -801,16 +802,51 @@ static void poll_life360(void) {
 /* Fetch a fresh snapshot of the configured doorbell camera into
  * DOORBELL_SNAP_PATH (JPEG). Returns 0 on success. */
 static int fetch_doorbell_snapshot(void) {
+    if (settings.doorbell_stream_url[0]) {
+        char snap_url[350];
+        snprintf(snap_url, sizeof(snap_url), "%s", settings.doorbell_stream_url);
+        char * h = strstr(snap_url, "/stream.html?src=");
+        if (h) {
+            char rest[128];
+            snprintf(rest, sizeof(rest), "%s", h + 17);
+            snprintf(h, sizeof(snap_url) - (h - snap_url), "/api/frame.jpeg?src=%s", rest);
+        }
+        if (strstr(snap_url, "frame.jpeg") || strstr(snap_url, ".jpg") || strstr(snap_url, ".jpeg")) {
+            char cmd[512], tmp[160];
+            snprintf(tmp, sizeof(tmp), "%s.tmp", DOORBELL_SNAP_PATH);
+            snprintf(cmd, sizeof(cmd),
+                "/usr/bin/curl -s --max-time 4 --connect-timeout 2 -o '%s' '%s' 2>/dev/null",
+                tmp, snap_url);
+            int rc = system(cmd);
+            if (rc == 0) {
+                struct stat st;
+                if (stat(tmp, &st) == 0 && st.st_size > 100) {
+                    rename(tmp, DOORBELL_SNAP_PATH);
+                    return 0;
+                }
+                unlink(tmp);
+            }
+        }
+    }
     if (!g_token[0] || !settings.doorbell_camera[0]) return -1;
-    char cmd[1024], hp[192];
+    char cmd[1024], hp[192], tmp[160];
+    snprintf(tmp, sizeof(tmp), "%s.tmp", DOORBELL_SNAP_PATH);
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s %s--max-time 8 --connect-timeout 3 "
+        "/usr/bin/curl -s %s--max-time 4 --connect-timeout 2 "
         "-H 'Authorization: Bearer %s' "
         "-o '%s' '%s://%s/api/camera_proxy/%s' 2>/dev/null",
-        ha_tls_opt(), g_token, DOORBELL_SNAP_PATH,
+        ha_tls_opt(), g_token, tmp,
         ha_scheme(), ha_hostport(hp, sizeof hp), settings.doorbell_camera);
     int rc = system(cmd);
-    return rc == 0 ? 0 : -1;
+    if (rc == 0) {
+        struct stat st;
+        if (stat(tmp, &st) == 0 && st.st_size > 100) {
+            rename(tmp, DOORBELL_SNAP_PATH);
+            return 0;
+        }
+        unlink(tmp);
+    }
+    return -1;
 }
 
 /* Stream an MJPEG (multipart/x-mixed-replace) feed while the overlay is up,
@@ -890,8 +926,11 @@ static void apply_doorbell(const char * body) {
     if (!on) { armed = 1; return; }
     if (!armed) return;           /* was already on — ignore */
     armed = 0;                    /* re-arm only after it returns to off */
+    /* Signal the UI immediately so the doorbell overlay appears right away */
+    ha_state.doorbell_seq++;
+    /* Also attempt to fetch initial snapshot if camera is already awake */
     if (fetch_doorbell_snapshot() == 0)
-        ha_state.doorbell_seq++;  /* signal the UI */
+        ha_state.doorbell_frame++;
 }
 
 static void poll_doorbell(void) {
@@ -1198,10 +1237,21 @@ static void * doorbell_thread(void * arg) {
     (void)arg;
     while (1) {
         if (ha_state.doorbell_live) {
-            if (settings.doorbell_stream_url[0]) stream_doorbell_mjpeg();
-            else { if (fetch_doorbell_snapshot() == 0) ha_state.doorbell_frame++; sleep(1); }
+            int streamed = 0;
+            if (settings.doorbell_stream_url[0] &&
+                (strstr(settings.doorbell_stream_url, "stream.mjpeg") ||
+                 strstr(settings.doorbell_stream_url, ".mjpeg"))) {
+                stream_doorbell_mjpeg();
+                streamed = 1;
+            }
+            if (!streamed) {
+                if (fetch_doorbell_snapshot() == 0) {
+                    ha_state.doorbell_frame++;
+                }
+                usleep(800 * 1000);
+            }
         } else {
-            sleep(1);
+            usleep(100 * 1000);
         }
     }
     return NULL;
