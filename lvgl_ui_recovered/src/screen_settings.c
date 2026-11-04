@@ -2240,7 +2240,11 @@ static void cal_feeds_rebuild(void) {
 static void on_cal_add_click(lv_event_t * e) {
     (void)e;
     const char * raw = ta_cal_ics ? lv_textarea_get_text(ta_cal_ics) : NULL;
-    if (!raw || !raw[0]) return;
+    if (!raw || !raw[0]) {
+        if (lbl_cal_status)
+            lv_label_set_text(lbl_cal_status, tr("Voer eerst een .ics URL in", "Enter an .ics URL first"));
+        return;
+    }
     while (*raw == ' ' || *raw == '\t' || *raw == '\r' || *raw == '\n') raw++;
     char u[300];
     size_t len = strlen(raw);
@@ -2249,21 +2253,49 @@ static void on_cal_add_click(lv_event_t * e) {
     if (len >= sizeof(u)) len = sizeof(u) - 1;
     memcpy(u, raw, len);
     u[len] = 0;
-    if (!u[0]) return;
-    if (strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) {
+    if (!u[0]) {
         if (lbl_cal_status)
-            lv_label_set_text(lbl_cal_status, tr("Ongeldige URL (moet http:// of https:// zijn)", "Invalid URL (must start with http:// or https://)"));
+            lv_label_set_text(lbl_cal_status, tr("Voer eerst een .ics URL in", "Enter an .ics URL first"));
+        return;
+    }
+    if (strncmp(u, "webcal://", 9) == 0) {
+        char conv[320];
+        snprintf(conv, sizeof(conv), "https://%s", u + 9);
+        snprintf(u, sizeof(u), "%s", conv);
+    } else if (strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) {
+        if (strchr(u, '.') && !strchr(u, ' ')) {
+            char conv[320];
+            snprintf(conv, sizeof(conv), "https://%s", u);
+            snprintf(u, sizeof(u), "%s", conv);
+        } else {
+            if (lbl_cal_status)
+                lv_label_set_text(lbl_cal_status, tr("Ongeldige URL (moet http://, https:// of webcal:// zijn)", "Invalid URL (must start with http://, https:// or webcal://)"));
+            return;
+        }
+    }
+    if (strstr(settings.calendar_ics_url, u)) {
+        if (lbl_cal_status)
+            lv_label_set_text(lbl_cal_status, tr("Kalender staat al in de lijst", "Calendar already in list"));
         return;
     }
     if (settings.calendar_ics_url[0])
         strncat(settings.calendar_ics_url, "\n", sizeof settings.calendar_ics_url - strlen(settings.calendar_ics_url) - 1);
     strncat(settings.calendar_ics_url, u, sizeof settings.calendar_ics_url - strlen(settings.calendar_ics_url) - 1);
+    settings.calendar_enabled = 1;
+    if (sw_cal && !lv_obj_has_state(sw_cal, LV_STATE_CHECKED))
+        lv_obj_add_state(sw_cal, LV_STATE_CHECKED);
     settings_save();
     calendar_refresh_async();
     if (ta_cal_ics) lv_textarea_set_text(ta_cal_ics, "");
     cal_feeds_rebuild();
     if (lbl_cal_status)
         lv_label_set_text(lbl_cal_status, tr("Kalender toegevoegd! Bezig met laden...", "Calendar added! Fetching..."));
+}
+
+static void on_cal_ta_ready(lv_event_t * e) {
+    (void)e;
+    kb_hide();
+    on_cal_add_click(NULL);
 }
 
 static void on_cal_import_click(lv_event_t * e) {
@@ -2294,6 +2326,11 @@ static void on_cal_import_click(lv_event_t * e) {
                     if (ulen >= sizeof(u)) ulen = sizeof(u) - 1;
                     memcpy(u, p, ulen);
                     u[ulen] = 0;
+                    if (strncmp(u, "webcal://", 9) == 0) {
+                        char conv[300];
+                        snprintf(conv, sizeof conv, "https://%s", u + 9);
+                        memcpy(u, conv, sizeof u);
+                    }
                     if (strncmp(u, "http://", 7) == 0 || strncmp(u, "https://", 8) == 0) {
                         if (!strstr(settings.calendar_ics_url, u)) {
                             if (settings.calendar_ics_url[0])
@@ -2321,7 +2358,7 @@ static void on_cal_import_click(lv_event_t * e) {
 
 static void open_calendar_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open(tr("Agenda", "Calendar"), 560);
+    lv_obj_t * p = modal_open(tr("Agenda", "Calendar"), 640);
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
@@ -2366,11 +2403,13 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_align(ta_cal_ics, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_textarea_set_one_line(ta_cal_ics, true);
     lv_textarea_set_placeholder_text(ta_cal_ics, "https://... .ics");
+    lv_obj_add_event_cb(ta_cal_ics, on_cal_ta_ready, LV_EVENT_READY, NULL);
 
     lv_obj_t * addb = lv_btn_create(p);
     lv_obj_set_size(addb, SX(120), SY(44));
     lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(464), SY(y));
     lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_ext_click_area(addb, (DISP_VER < 600) ? 10 : 4);
     lv_obj_add_event_cb(addb, on_cal_add_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, tr("Toevoegen", "Add")); lv_obj_center(al);
 
@@ -2378,6 +2417,7 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_set_size(impb, SX(150), SY(44));
     lv_obj_align(impb, LV_ALIGN_TOP_LEFT, SX(594), SY(y));
     lv_obj_set_style_bg_color(impb, lv_color_hex(0x224466), 0);
+    lv_obj_set_ext_click_area(impb, (DISP_VER < 600) ? 10 : 4);
     lv_obj_add_event_cb(impb, on_cal_import_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * il = lv_label_create(impb); lv_label_set_text(il, tr("Toon import", "Toon import")); lv_obj_center(il);
     y += 52;
@@ -2385,9 +2425,11 @@ static void open_calendar_modal(lv_event_t * e) {
     lbl_cal_status = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_cal_status, lv_color_hex(0x9fc4e6), 0);
     lv_obj_set_style_text_font(lbl_cal_status, SF(16), 0);
+    lv_obj_set_width(lbl_cal_status, SX(740));
+    lv_label_set_long_mode(lbl_cal_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_cal_status, "");
     lv_obj_align(lbl_cal_status, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    y += 28;
+    y += 32;
 
     /* Notifications */
     lv_obj_t * rn = panel_row(p, y, tr("Meldingen", "Notifications"), NULL);

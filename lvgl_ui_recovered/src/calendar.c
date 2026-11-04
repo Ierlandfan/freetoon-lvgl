@@ -771,10 +771,17 @@ void calendar_refresh_now(void) {
             while (*u == ' ' || *u == '\t') u++;
             size_t ulen = strlen(u);
             while (ulen > 0 && (u[ulen - 1] == ' ' || u[ulen - 1] == '\t')) u[--ulen] = 0;
-            if (strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) continue;
+            char fetch_url[350];
+            const char * target_url = u;
+            if (strncmp(u, "webcal://", 9) == 0) {
+                snprintf(fetch_url, sizeof fetch_url, "https://%s", u + 9);
+                target_url = fetch_url;
+            } else if (strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) {
+                continue;
+            }
 
             buf[0] = 0;
-            if (http_fetch_to(u, buf, CAL_SCRATCH, 20) == 0 && strstr(buf, "VEVENT")) {
+            if (http_fetch_to(target_url, buf, CAL_SCRATCH, 20) == 0 && strstr(buf, "VEVENT")) {
                 /* RFC 5545: unfold lines broken with CRLF/LF followed by space or tab */
                 char * r = buf, * w = buf;
                 while (*r) {
