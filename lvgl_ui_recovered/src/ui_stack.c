@@ -13,6 +13,7 @@
 #include "backlight.h"
 #include "boxtalk.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #ifdef SIM
 #include "layout.h"
@@ -34,11 +35,23 @@ void ui_request_restart(void) {
     fflush(stderr);
     _exit(42);
 }
+void ui_request_reboot(void) {
+    fprintf(stderr, "[sim] device reboot requested — exiting\n");
+    fflush(stderr);
+    _exit(0);
+}
 #else
 void ui_request_restart(void) {
     FILE * f = fopen(UI_RESTART_MARKER, "w");
     if (f) fclose(f);
     fflush(NULL);
+    _exit(0);
+}
+void ui_request_reboot(void) {
+    fprintf(stderr, "[system] device reboot requested — syncing and rebooting\n");
+    fflush(NULL);
+    sync();
+    system("/sbin/reboot 2>/dev/null || reboot");
     _exit(0);
 }
 #endif

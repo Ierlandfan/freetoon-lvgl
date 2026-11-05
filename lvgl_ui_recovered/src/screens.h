@@ -15,6 +15,7 @@ void ui_apply_home_theme(void);
 void ui_refresh_home(void);
 void ui_refresh_theme(void);
 void ui_request_restart(void);   /* clean _exit(0) restart; drops the launcher crash-guard marker */
+void ui_request_reboot(void);    /* full device reboot (sync + /sbin/reboot) */
 
 /* Start a gentle ~1.1s opacity pulse on a clock-colon overlay label so the ":"
  * blinks like a real clock. Call once after creating the colon label. */

@@ -285,3 +285,8 @@
   - **UI-Modus Venster Polish (`screen_settings.c`)**:
     - Tekst aangepast naar "... Eneco-UI neemt het daarna over."
     - Actieknoppen ("Annuleren" en "Naar qt-gui") worden direct verborgen na het indrukken om duidelijke visuele feedback te geven dat de overgang naar qt-gui gestart is.
+  - **UI Herstarten & Toon Reboot Keuze (`screen_settings.c`, `screens.h`, `ui_stack.c`)**:
+    - Dialoog uitgebreid met een tweede optie om het Toon-apparaat volledig te herstarten (`sync` + `/sbin/reboot`).
+    - Drie knoppen: Annuleren, UI herstarten en Toon herstarten.
+    - Direct verbergen van de knoppen en tonen van statusmelding met geforceerde render (`lv_refr_now`) bij indrukken.
+    - Vergroot touch target op Toon 1 en tegel-subtitel aangepast naar "UI of Toon herstarten".

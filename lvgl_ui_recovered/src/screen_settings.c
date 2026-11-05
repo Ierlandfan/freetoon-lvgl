@@ -1577,18 +1577,59 @@ static void open_zwave(lv_event_t * e) {
 }
 
 /* Adapters tile-tap: push the meter/boiler adapter status + diagnostics screen. */
-/* Restart the freetoon UI from within the UI. _exit(0) → ui_launcher.sh
- * respawns toonui (re-reading toonui.cfg), so this also applies any settings
- * edits without an SSH round-trip. Confirm-gated to avoid an accidental tap. */
+/* Restart the freetoon UI from within the UI, or fully reboot the Toon device.
+ * UI restart: _exit(0) → ui_launcher.sh respawns toonui (re-reading toonui.cfg).
+ * Toon reboot: sync + /sbin/reboot. Confirm-gated to avoid an accidental tap. */
 static lv_obj_t * g_restart_modal = NULL;
-static void restart_dismiss(void) { if (g_restart_modal) { lv_obj_del(g_restart_modal); g_restart_modal = NULL; } }
+static lv_obj_t * g_restart_lbl = NULL;
+static lv_obj_t * g_restart_btn_cancel = NULL;
+static lv_obj_t * g_restart_btn_ui = NULL;
+static lv_obj_t * g_restart_btn_reboot = NULL;
+
+static void restart_dismiss(void) {
+    if (g_restart_modal) {
+        lv_obj_del(g_restart_modal);
+        g_restart_modal = NULL;
+        g_restart_lbl = NULL;
+        g_restart_btn_cancel = NULL;
+        g_restart_btn_ui = NULL;
+        g_restart_btn_reboot = NULL;
+    }
+}
 static void on_restart_no(lv_event_t * e)  { (void)e; restart_dismiss(); }
-static void on_restart_yes(lv_event_t * e) {
+
+static void on_restart_ui(lv_event_t * e) {
     (void)e;
+    if (g_restart_btn_cancel) lv_obj_add_flag(g_restart_btn_cancel, LV_OBJ_FLAG_HIDDEN);
+    if (g_restart_btn_ui)     lv_obj_add_flag(g_restart_btn_ui, LV_OBJ_FLAG_HIDDEN);
+    if (g_restart_btn_reboot) lv_obj_add_flag(g_restart_btn_reboot, LV_OBJ_FLAG_HIDDEN);
+    if (g_restart_lbl) {
+        lv_label_set_text(g_restart_lbl, tr("freetoon-UI wordt herstart...\n\nEven geduld.",
+                                            "Restarting freetoon UI...\nPlease wait."));
+        lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(0xffcc66), 0);
+    }
+    lv_refr_now(NULL);
     settings_save();
     fprintf(stderr, "[settings] user requested UI restart — exiting\n");
     ui_request_restart();
 }
+
+static void on_restart_reboot(lv_event_t * e) {
+    (void)e;
+    if (g_restart_btn_cancel) lv_obj_add_flag(g_restart_btn_cancel, LV_OBJ_FLAG_HIDDEN);
+    if (g_restart_btn_ui)     lv_obj_add_flag(g_restart_btn_ui, LV_OBJ_FLAG_HIDDEN);
+    if (g_restart_btn_reboot) lv_obj_add_flag(g_restart_btn_reboot, LV_OBJ_FLAG_HIDDEN);
+    if (g_restart_lbl) {
+        lv_label_set_text(g_restart_lbl, tr("Toon wordt herstart...\n\nHet apparaat start opnieuw op.",
+                                            "Rebooting Toon...\nThe device is restarting."));
+        lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(0xffcc66), 0);
+    }
+    lv_refr_now(NULL);
+    settings_save();
+    fprintf(stderr, "[settings] user requested device reboot — rebooting\n");
+    ui_request_reboot();
+}
+
 static void open_restart_confirm(lv_event_t * e) {
     (void)e;
     /* Parent to the TOP LAYER, not scr_root: scr_root is vertically
@@ -1605,34 +1646,64 @@ static void open_restart_confirm(lv_event_t * e) {
     lv_obj_clear_flag(g_restart_modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * card = lv_obj_create(g_restart_modal);
-    lv_obj_set_size(card, SX(620), SY(300));
+    lv_obj_set_size(card, SX(640), SY(320));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t * t = lv_label_create(card);
-    lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(t, SF(22), 0);
-    lv_obj_set_width(t, SX(560));
-    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(t, tr("freetoon-UI nu herstarten?\n\nDe instellingen worden opnieuw geladen uit toonui.cfg en komt binnen enkele seconden terug.", "Restart the freetoon UI now?\n\nIt reloads settings from toonui.cfg and comes back in a few seconds."));
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(14), SY(14));
+    g_restart_lbl = lv_label_create(card);
+    lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(g_restart_lbl, SF(20), 0);
+    lv_obj_set_width(g_restart_lbl, SX(600));
+    lv_label_set_long_mode(g_restart_lbl, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(g_restart_lbl, tr(
+        "Herstarten\n\n"
+        "• freetoon-UI herstarten: herlaadt instellingen uit toonui.cfg en start de interface opnieuw.\n"
+        "• Toon herstarten: herstart het Toon-apparaat volledig (reboot).",
+        "Restart\n\n"
+        "• Restart freetoon UI: reloads settings from toonui.cfg and restarts the interface.\n"
+        "• Reboot Toon: fully reboots the Toon device."
+    ));
+    lv_obj_align(g_restart_lbl, LV_ALIGN_TOP_LEFT, SX(16), SY(16));
 
-    lv_obj_t * yes = lv_btn_create(card);
-    lv_obj_set_size(yes, SX(180), SY(52));
-    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, SX(-14), SY(-14));
-    lv_obj_set_style_bg_color(yes, lv_color_hex(0x2e6e3a), 0);
-    lv_obj_add_event_cb(yes, on_restart_yes, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, tr("Herstart", "Restart")); lv_obj_center(yl);
+    /* Button 1: Cancel (left) */
+    g_restart_btn_cancel = lv_btn_create(card);
+    lv_obj_set_size(g_restart_btn_cancel, SX(180), SY(52));
+    lv_obj_align(g_restart_btn_cancel, LV_ALIGN_BOTTOM_LEFT, SX(16), SY(-16));
+    lv_obj_set_style_bg_color(g_restart_btn_cancel, lv_color_hex(0x3a4658), 0);
+    lv_obj_add_event_cb(g_restart_btn_cancel, on_restart_no, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * nl = lv_label_create(g_restart_btn_cancel);
+    lv_label_set_text(nl, tr("Annuleren", "Cancel"));
+    lv_obj_set_style_text_font(nl, SF(18), 0);
+    lv_obj_center(nl);
 
-    lv_obj_t * no = lv_btn_create(card);
-    lv_obj_set_size(no, SX(180), SY(52));
-    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, SX(14), SY(-14));
-    lv_obj_set_style_bg_color(no, lv_color_hex(0x3a4658), 0);
-    lv_obj_add_event_cb(no, on_restart_no, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, tr("Annuleren", "Cancel")); lv_obj_center(nl);
+    /* Button 2: Restart UI (middle) */
+    g_restart_btn_ui = lv_btn_create(card);
+    lv_obj_set_size(g_restart_btn_ui, SX(185), SY(52));
+    lv_obj_align(g_restart_btn_ui, LV_ALIGN_BOTTOM_MID, 0, SY(-16));
+    lv_obj_set_style_bg_color(g_restart_btn_ui, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(g_restart_btn_ui, on_restart_ui, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * yl = lv_label_create(g_restart_btn_ui);
+    lv_label_set_text(yl, tr("UI herstarten", "Restart UI"));
+    lv_obj_set_style_text_font(yl, SF(18), 0);
+    lv_obj_center(yl);
+
+    /* Button 3: Reboot Toon device (right) */
+    g_restart_btn_reboot = lv_btn_create(card);
+    lv_obj_set_size(g_restart_btn_reboot, SX(185), SY(52));
+    lv_obj_align(g_restart_btn_reboot, LV_ALIGN_BOTTOM_RIGHT, SX(-16), SY(-16));
+    lv_obj_set_style_bg_color(g_restart_btn_reboot, lv_color_hex(0x9e382b), 0);
+    lv_obj_add_event_cb(g_restart_btn_reboot, on_restart_reboot, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * rl = lv_label_create(g_restart_btn_reboot);
+    lv_label_set_text(rl, tr("Toon herstarten", "Reboot Toon"));
+    lv_obj_set_style_text_font(rl, SF(18), 0);
+    lv_obj_center(rl);
+
+    lv_obj_set_ext_click_area(g_restart_btn_cancel, (DISP_VER < 600) ? 8 : 4);
+    lv_obj_set_ext_click_area(g_restart_btn_ui, (DISP_VER < 600) ? 8 : 4);
+    lv_obj_set_ext_click_area(g_restart_btn_reboot, (DISP_VER < 600) ? 8 : 4);
 }
 
 static void open_adapters(lv_event_t * e) {
@@ -4893,7 +4964,7 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(GX(n), GY(n), &icon_chart, NULL, tr("Temperatuurlog", "Temperature log"),
               tr("24-uurs grafiek", "24-hour chart"), open_templogger); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),
-              tr("instellingen herladen", "reload settings"), open_restart_confirm); n++;
+              tr("UI of Toon herstarten", "restart UI or Toon"), open_restart_confirm); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, tr("UI-modus", "UI mode"),
               tr("freetoon vs qt-gui", "freetoon vs qt-gui"), open_uimode_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, tr("Update", "Update"),
