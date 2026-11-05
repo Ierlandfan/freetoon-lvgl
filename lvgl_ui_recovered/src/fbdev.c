@@ -154,7 +154,19 @@ void fbdev_init(void)
     vinfo.xoffset = 0;
     vinfo.yoffset = 0;
     vinfo.bits_per_pixel = 16;
-    vinfo.activate = FB_ACTIVATE_NOW;
+    vinfo.red.offset = 11;
+    vinfo.red.length = 5;
+    vinfo.red.msb_right = 0;
+    vinfo.green.offset = 5;
+    vinfo.green.length = 6;
+    vinfo.green.msb_right = 0;
+    vinfo.blue.offset = 0;
+    vinfo.blue.length = 5;
+    vinfo.blue.msb_right = 0;
+    vinfo.transp.offset = 0;
+    vinfo.transp.length = 0;
+    vinfo.transp.msb_right = 0;
+    vinfo.activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
     if(ioctl(fbfd, FBIOPUT_VSCREENINFO, &vinfo) == -1) {
         perror("ioctl(FBIOPUT_VSCREENINFO) 16bpp");
     }
@@ -180,24 +192,25 @@ void fbdev_init(void)
         return;
     }
 
-    // Don't initialise the memory to retain what's currently displayed / avoid clearing the screen.
-    // This is important for applications that only draw to a subsection of the full framebuffer.
+    /* Clear the entire framebuffer to black so previous bootsplash or
+     * unwritten lines don't linger in memory. */
+    if(fbp && screensize > 0) {
+        memset(fbp, 0, screensize);
+    }
 
     LV_LOG_INFO("The framebuffer device was mapped to memory successfully");
 }
 
 void fbdev_exit(void)
 {
-#if defined(TOON1)
-    if (fbfd != -1) {
-        vinfo.bits_per_pixel = 32;
-        vinfo.xoffset = 0;
-        vinfo.yoffset = 0;
-        vinfo.activate = FB_ACTIVATE_NOW;
-        ioctl(fbfd, FBIOPUT_VSCREENINFO, &vinfo);
+    if(fbp && screensize > 0) {
+        munmap(fbp, screensize);
+        fbp = 0;
     }
-#endif
-    close(fbfd);
+    if(fbfd != -1) {
+        close(fbfd);
+        fbfd = -1;
+    }
 }
 
 /* ---- Toon 1: rectangular cutout for live video on /dev/fb0 ------------
@@ -275,8 +288,10 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
     if(vinfo.bits_per_pixel == 32 || vinfo.bits_per_pixel == 24) {
         uint32_t * fbp32 = (uint32_t *)fbp;
         int32_t y;
+        uint32_t stride32 = finfo.line_length / 4;
+        if(stride32 < vinfo.xres) stride32 = vinfo.xres;
         for(y = act_y1; y <= act_y2; y++) {
-            location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length / 4;
+            location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * stride32;
 #if LV_COLOR_DEPTH == 16
             for(int32_t x = 0; x < w; x++) {
                 uint16_t c = color_p[x].full;
@@ -299,18 +314,20 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
     else if(vinfo.bits_per_pixel == 16) {
         uint16_t * fbp16 = (uint16_t *)fbp;
         int32_t y;
+        uint32_t stride16 = finfo.line_length / 2;
+        if(stride16 < vinfo.xres) stride16 = vinfo.xres;
         /* Fast path: a full-width area with no padding (line stride == width)
          * and no cutout overlapping these rows is one contiguous block in both
          * src and dst — copy it in a single memcpy instead of one per row.
          * This is the common scroll / full-refresh case. */
         if(act_x1 == 0 && act_x2 == (int32_t)vinfo.xres - 1 && vinfo.xoffset == 0 &&
-           finfo.line_length == vinfo.xres * 2u &&
+           stride16 == vinfo.xres &&
            (!g_fbcut.active || act_y2 < g_fbcut.y1 || act_y1 > g_fbcut.y2)) {
-            location = (act_y1 + vinfo.yoffset) * (finfo.line_length / 2);
+            location = (act_y1 + vinfo.yoffset) * stride16;
             memcpy(&fbp16[location], color_p, (size_t)w * (act_y2 - act_y1 + 1) * 2);
         } else {
             for(y = act_y1; y <= act_y2; y++) {
-                location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length / 2;
+                location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * stride16;
                 fbflush_row((uint8_t *)&fbp16[location], (const uint8_t *)color_p,
                             act_x1, act_x2 - act_x1 + 1, y, 2);
                 color_p += w;

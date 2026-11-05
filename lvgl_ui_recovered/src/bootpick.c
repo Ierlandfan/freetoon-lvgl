@@ -47,8 +47,14 @@
 
 /* Above this system uptime (seconds) we treat a bootpick invocation as a WARM
  * restart of toonui (update install, settings restart, crash respawn) rather
- * than a cold power-on. Warm = no chooser, just a "Restarting…" splash. */
+ * than a cold power-on. Warm = no chooser, just a "Restarting…" splash.
+ * Toon 1 boots considerably slower (~140-180s to reach inittab) due to slow
+ * NAND flash and single-core ARM9 CPU, so allow 300s there. */
+#ifdef TOON1
+#define BP_WARM_RESTART_S 300.0
+#else
 #define BP_WARM_RESTART_S 120.0
+#endif
 
 static double system_uptime(void) {
     FILE * f = fopen("/proc/uptime", "r");
@@ -305,12 +311,16 @@ int bootpick_run(void) {
     disp_drv.ver_res  = BP_VER;
     lv_disp_drv_register(&disp_drv);
 
-    /* WARM restart (box already up a while): toonui is respawning, not a cold
-     * boot — skip the chooser, show a brief "Restarting…" splash, then dispatch
-     * straight to the persisted UI. The picker only makes sense at power-on. */
-    if (system_uptime() > BP_WARM_RESTART_S) {
-        fprintf(stderr, "[bootpick] warm restart (uptime>%.0fs) — splash only, rc=%d\n",
-                BP_WARM_RESTART_S, bp_default_choice);
+    /* WARM restart (box already up a while or restart marker set): toonui is
+     * respawning, not a cold boot — skip the chooser, show a brief "Restarting…"
+     * splash, then dispatch straight to the persisted UI. The picker only makes
+     * sense at power-on. */
+    int is_warm = (getenv("TOONUI_WARM_RESTART") != NULL) ||
+                  (access("/var/volatile/tmp/toonui_restart", F_OK) == 0) ||
+                  (system_uptime() > BP_WARM_RESTART_S);
+    if (is_warm) {
+        fprintf(stderr, "[bootpick] warm restart — splash only, rc=%d\n",
+                bp_default_choice);
         lv_obj_t * scr = lv_scr_act();
         lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f1a2a), 0);
         lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);

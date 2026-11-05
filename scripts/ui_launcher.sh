@@ -15,6 +15,8 @@
 # modes only writes /mnt/data/ui_choice, init never gets touched.
 set -eu
 
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:$PATH"
+
 CHOICE_FILE=/mnt/data/ui_choice
 TOONUI=/mnt/data/toonui
 QTGUI=/qmf/sbin/qt-gui
@@ -128,8 +130,8 @@ toon1_video_prep() {
         log "reaped stale vpu_stream ($vpu_pids)"
     fi
     if command -v fbset >/dev/null 2>&1; then
-        fbset -fb /dev/fb0 -depth 16 2>/dev/null || true
-        [ -e /dev/fb1 ] && { fbset -fb /dev/fb1 -depth 16 2>/dev/null || true; }
+        fbset -fb /dev/fb0 -g 800 480 800 480 16 2>/dev/null || fbset -fb /dev/fb0 -depth 16 2>/dev/null || true
+        [ -e /dev/fb1 ] && { fbset -fb /dev/fb1 -g 800 480 800 480 16 2>/dev/null || fbset -fb /dev/fb1 -depth 16 2>/dev/null || true; }
     fi
     if [ ! -e /dev/mxc_vpu ]; then
         vpu_maj=$(awk '$2 == "mxc_vpu" { print $1 }' /proc/devices 2>/dev/null)
@@ -305,6 +307,7 @@ last=0; fails=0
 if [ -f "$RESTART_MARK" ]; then
     rm -f "$RESTART_MARK"
     fails=0
+    export TOONUI_WARM_RESTART=1
     log "intentional UI restart (marker) — crash counter reset"
 fi
 if [ "$fails" -ge "$FAIL_LIMIT" ] && have_qtgui && [ "$CHOICE" != "qt-gui" ]; then
