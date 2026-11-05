@@ -291,22 +291,16 @@
     - Direct verbergen van de knoppen en tonen van statusmelding met geforceerde render (`lv_refr_now`) bij indrukken.
     - Vergroot touch target op Toon 1 en tegel-subtitel aangepast naar "UI of Toon herstarten".
 
-### 25. Toon 1 Boot Distortion & Cold Reboot vs. Warm Restart Fix (`fbdev.c`, `bootpick.c`, `ui_launcher.sh`)
-- **Status**: Completed in Release 1.0.1.
-- **Root Cause Analysis**:
-  - Op Toon 1 (ARM9 454MHz met trage NAND flash) duurt een koude boot via alle SysV init scripts circa 140–180 seconden. Daardoor was `system_uptime()` bij het starten van de launcher al groter dan `BP_WARM_RESTART_S` (120 s). `bootpick` zag een koude herstart daardoor ten onrechte aan voor een warme herstart en toonde direct het "UI herstart" scherm.
-  - Daarnaast bleef de LCD controller hardware op Toon 1 na de Eneco bootsplash in 32bpp modus staan doordat `ioctl(FBIOPUT_VSCREENINFO)` in `fbdev.c` faalde (ontbrekende RGB565 bitfield offsets/lengtes en FB_ACTIVATE_FORCE).
-  - Doordat `finfo.line_length` (1600 bytes) gedeeld werd door 4 (400 pixels stride op 32bpp ipv 800), werd de inhoud van 480 regels in 240 fysieke regels getekend met 2 identieke helften horizontaal naast elkaar, terwijl de onderste helft van de 32bpp bootsplash (bankje) ongewijzigd bleef.
-- **Implemented Fixes**:
-  - **`fbdev.c`**:
-    - Correcte RGB565 bitfields (R 5/11, G 6/5, B 5/0, transp 0/0) en `FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE` toegevoegd bij 16bpp initialisatie op Toon 1.
-    - Framebuffer geheugen wordt bij start direct schoon met `memset(0)` gewist zodat oude bootsplash resten nooit kunnen doorschijnen.
-    - Verwijderd van het onnodig forceren van 32bpp in `fbdev_exit()`, zodat de overdracht tussen `bootpick` en `toonui` naadloos in 16bpp blijft.
-    - Stride beveiliging in `fbdev_flush()`: `stride32` en `stride16` worden altijd geclamped op minimaal `vinfo.xres` om halve-regel duplicatie uit te sluiten.
-  - **`bootpick.c`**:
-    - `BP_WARM_RESTART_S` verhoogd naar 300.0 s op Toon 1 (`#ifdef TOON1 300.0 #else 120.0 #endif`).
-    - Exclusieve herkenning van warme herstart via `TOONUI_WARM_RESTART` omgevingsvariabele en restart marker bestand.
-  - **`ui_launcher.sh`**:
-    - Volledige `PATH` export toegevoegd bovenaan het script (`/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:$PATH`).
-    - `fbset` commando uitgebreid met expliciete geometrie (`-g 800 480 800 480 16`).
-    - Exporteert `TOONUI_WARM_RESTART=1` bij een bewuste UI herstart.
+### 25. Release 1.0.2: Device Reboot Optie & Toon 1 Opstart-vervorming Fix
+- **Status**: Completed in Release 1.0.2.
+- **Implemented Features & Bugfixes**:
+  - **Volledige Toon Herstart (Device Reboot)**:
+    - Dialoog *Instellingen → UI herstarten* uitgebreid met een optie om het Toon-apparaat volledig te herstarten (`sync` + `/sbin/reboot`).
+    - Drie knoppen: *Annuleren*, *UI herstarten* en *Toon herstarten*.
+    - Direct verbergen van de knoppen en tonen van statusmelding met geforceerde render (`lv_refr_now`) bij indrukken.
+    - Vergroot touch target op Toon 1 en tegel-subtitel aangepast naar *"UI of Toon herstarten"*.
+  - **Toon 1 Boot-vervorming & Koude vs. Warme Herstart Fix (`fbdev.c`, `bootpick.c`, `ui_launcher.sh`)**:
+    - **Oorzaak**: Koude boot op Toon 1 duurt circa 140–180 seconden. Daardoor overschreed de uptime de `BP_WARM_RESTART_S` drempel (120 s) en toonde `bootpick` direct het *"UI herstart"* scherm. Daarnaast faalde `ioctl(FBIOPUT_VSCREENINFO)` door ontbrekende RGB565 bitfields, waardoor de LCD-controller in 32bpp bleef staan en de 1600-byte stride door 4 gedeeld werd (400 px), wat resulteerde in een dubbele horizontale weergave en een zichtbare onderste helft van de 32bpp bootsplash.
+    - **`fbdev.c`**: Correcte RGB565 bitfields (R 5/11, G 6/5, B 5/0, transp 0/0) en `FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE` toegevoegd. Framebuffer wordt bij start direct met `memset(0)` geschoond. Forceren van 32bpp in `fbdev_exit()` verwijderd. Stride in `fbdev_flush()` geclamped op minimaal `vinfo.xres`.
+    - **`bootpick.c`**: `BP_WARM_RESTART_S` verhoogd naar 300.0 s op Toon 1 (`#ifdef TOON1 300.0 #else 120.0 #endif`). Warme herstart wordt nu exclusief herkend via `TOONUI_WARM_RESTART` of de restart marker file.
+    - **`ui_launcher.sh`**: Volledige `PATH` export toegevoegd bovenaan het script, `fbset` uitgebreid met expliciete geometrie (`-g 800 480 800 480 16`), en `TOONUI_WARM_RESTART=1` export bij bewuste UI herstart.
