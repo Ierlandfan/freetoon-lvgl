@@ -304,3 +304,16 @@
     - **`fbdev.c`**: Correcte RGB565 bitfields (R 5/11, G 6/5, B 5/0, transp 0/0) en `FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE` toegevoegd. Framebuffer wordt bij start direct met `memset(0)` geschoond. Forceren van 32bpp in `fbdev_exit()` verwijderd. Stride in `fbdev_flush()` geclamped op minimaal `vinfo.xres`.
     - **`bootpick.c`**: `BP_WARM_RESTART_S` verhoogd naar 300.0 s op Toon 1 (`#ifdef TOON1 300.0 #else 120.0 #endif`). Warme herstart wordt nu exclusief herkend via `TOONUI_WARM_RESTART` of de restart marker file.
     - **`ui_launcher.sh`**: Volledige `PATH` export toegevoegd bovenaan het script, `fbset` uitgebreid met expliciete geometrie (`-g 800 480 800 480 16`), en `TOONUI_WARM_RESTART=1` export bij bewuste UI herstart.
+
+### 26. Release 1.0.3: Toon 1 Inittab Beveiliging, Oude BusyBox Compatibiliteit & Aandelen Marktplaats App
+- **Status**: Completed in Release 1.0.3.
+- **Implemented Features & Bugfixes**:
+  - **Inittab Beveiliging & Zero-Day Boot Hang Fix**:
+    - **Oorzaak**: Op zeer oude Toon 1 apparaten (BusyBox < 1.27) faalden `sed -i -E` commando's met een syntax error. Door het ontbreken van inhoudsvalidatie bij tijdelijke bestanden (`> inittab.new && mv inittab.new inittab`) kon `/etc/inittab` leeg raken, waardoor init tijdens het opstarten geen enkel proces startte en de Toon bleef hangen op de kernel splash.
+    - **POSIX Regex**: Alle scripts (`install.sh`, `scripts/switch_to_freetoon.sh`, `scripts/ot_mode_switch.sh`, `scripts/ui_launcher.sh`, `scripts/integrations-install.sh`, `toonvnc.sh`, `screen_settings.c`) herschreven naar pure POSIX basic regular expressions zonder `-E`.
+    - **Validerende Inittab Backup**: Ieder script maakt nu automatisch een backup (`/etc/inittab.bak`) en verifieert vóór overschrijving dat het nieuwe bestand niet-leeg is en minimaal 5 regels telt (`[ -s /etc/inittab.new ] && [ $(wc -l < /etc/inittab.new) -ge 5 ]`).
+    - **Runlevel 2345**: Runlevels voor alle UI en VNC regels uniform ingesteld op `2345` (oudere Toon 1 firmwares starten standaard in runlevel `2`).
+    - **Oude Stock Qt Fallback**: `ui_launcher.sh` ondersteunt nu ook oudere Qt-installatiepaden (`/qmf/bin/startqt`, `/qmf/sbin/startqt`, `/qmf/bin/qt-gui` met `-platform linuxfb -plugin Tslib`).
+  - **Aandelen Marktplaats App & Dynamische Tegel Titels**:
+    - Aandelen / AEX koers app toegevoegd aan de ingebouwde marktplaatscatalogus (`stocks` met fallback manifest).
+    - Ondersteuning voor dynamische tegeltitels (`title` property) in de UI zodat tegels de actuele naam van het aandeel of de feed kunnen tonen.
