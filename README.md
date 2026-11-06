@@ -1,3 +1,10 @@
+> [!CAUTION]
+> ### ⚠️ Important Warning: Reports of bricking very old Toon 1 devices
+> *Although this script has been repeatedly successfully tested on different Toon 1 and Toon 2 thermostats on multiple firmware versions.*
+> *there is a report of a bricked Toon after installing Freetoon. Please refrain from installing on a Toon 1 until resolved.*
+>
+
+
 # freetoon-lvgl
 
 A from-scratch UI and integration stack for the **Eneco Toon 1 / Toon 2** smart
