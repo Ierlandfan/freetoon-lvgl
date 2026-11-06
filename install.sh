@@ -269,8 +269,8 @@ else
     }
 fi
 
-TOON_ROW="toon:345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
-VNCS_ROW="vncs:345:respawn:/mnt/data/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
+TOON_ROW="toon:2345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
+VNCS_ROW="vncs:2345:respawn:/mnt/data/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
 
 require() {
     if [ "$IS_LOCAL" = 1 ]; then return 0; fi
@@ -280,24 +280,46 @@ require() {
 upsert_row() {
     _row="$1"
     _id="${1%%:*}"
-    remote "grep -v '^${_id}:' /etc/inittab > /etc/inittab.new && echo '${_row}' >> /etc/inittab.new && mv -f /etc/inittab.new /etc/inittab"
+    remote "cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
+        grep -v '^${_id}:' /etc/inittab > /etc/inittab.new 2>/dev/null || true; \
+        echo '${_row}' >> /etc/inittab.new; \
+        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 5 ]; then \
+            mv -f /etc/inittab.new /etc/inittab; \
+        else \
+            rm -f /etc/inittab.new 2>/dev/null || true; \
+        fi"
 }
 
 drop_row() {
-    remote "grep -v '^${1}:' /etc/inittab > /etc/inittab.new && mv -f /etc/inittab.new /etc/inittab"
+    remote "cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
+        grep -v '^${1}:' /etc/inittab > /etc/inittab.new 2>/dev/null || true; \
+        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 5 ]; then \
+            mv -f /etc/inittab.new /etc/inittab; \
+        else \
+            rm -f /etc/inittab.new 2>/dev/null || true; \
+        fi"
 }
 
 disable_stock_qt() {
-    # Comment out any stock Qt inittab rows (qtqt:, gui:, etc. running startqt or qt-gui)
-    # so they do not fight FreeToon for the framebuffer.
-    remote "sed -i -E 's~^([^#].*(startqt|qt-gui).*)~#FREETOON#\1~' /etc/inittab 2>/dev/null || true"
+    # Comment out any stock Qt inittab rows (qtqt:, toon:, gui:, etc. running startqt or qt-gui)
+    # using basic regex without -E for compatibility with older BusyBox builds.
+    remote "sed -i 's~^[^#].*startqt~#FREETOON#&~' /etc/inittab 2>/dev/null || true; \
+            sed -i 's~^[^#].*qt-gui~#FREETOON#&~' /etc/inittab 2>/dev/null || true"
 }
 
 restore_stock_qt() {
     # Restore stock Qt inittab rows upon uninstalling FreeToon
     remote "sed -i 's~^#FREETOON#~~' /etc/inittab 2>/dev/null || true"
-    remote "if ! grep -qE '^[^#].*(startqt|qt-gui)' /etc/inittab 2>/dev/null; then sed -i -E 's~^#+[ \t]*(qtqt:.*)~\1~' /etc/inittab 2>/dev/null || true; fi"
-    remote "if ! grep -qE '^[^#].*(startqt|qt-gui)' /etc/inittab 2>/dev/null; then echo 'qtqt:245:respawn:/usr/bin/startqt >/var/log/qt 2>&1' >> /etc/inittab; fi"
+    remote "if ! grep -q 'startqt' /etc/inittab 2>/dev/null && ! grep -q 'qt-gui' /etc/inittab 2>/dev/null; then \
+        sed -i 's~^#*[ \t]*\(qtqt:.*\)~\1~' /etc/inittab 2>/dev/null || true; \
+    fi"
+    remote "if ! grep -q 'startqt' /etc/inittab 2>/dev/null && ! grep -q 'qt-gui' /etc/inittab 2>/dev/null; then \
+        if [ -x /usr/bin/startqt ]; then \
+            echo 'qtqt:2345:respawn:/usr/bin/startqt >/dev/null 2>&1' >> /etc/inittab; \
+        elif [ -x /qmf/sbin/qt-gui ]; then \
+            echo 'qtqt:2345:respawn:/qmf/sbin/qt-gui -platform linuxfb -plugin Tslib >/dev/null 2>&1' >> /etc/inittab; \
+        fi; \
+    fi"
 }
 
 check_artefacts() {

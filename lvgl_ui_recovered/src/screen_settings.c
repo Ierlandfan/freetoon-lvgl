@@ -1435,7 +1435,11 @@ static void on_uimode_confirm_yes(lv_event_t * e) {
     if (access("/mnt/data/ot_mode_switch.sh", X_OK) == 0) {
         system("/mnt/data/ot_mode_switch.sh off >> /tmp/ot_mode_switch.log 2>&1");
     } else {
-        system("grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null && mv -f /etc/inittab.new /etc/inittab && kill -HUP 1 2>/dev/null || true");
+        system("cp -p /etc/inittab /etc/inittab.bak 2>/dev/null; "
+               "grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null || true; "
+               "if [ -s /etc/inittab.new ] && [ $(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 5 ]; then "
+               "  mv -f /etc/inittab.new /etc/inittab && (kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true); "
+               "else rm -f /etc/inittab.new 2>/dev/null; fi");
         system("pkill -9 -x quby_bridge 2>/dev/null || true");
         system("umount -l /dev/ttymxc0 2>/dev/null || true");
     }

@@ -81,8 +81,14 @@ exec_qtgui() {
         if [ -x /mnt/data/ot_mode_switch.sh ]; then
             /mnt/data/ot_mode_switch.sh off >> /tmp/ot_mode_switch.log 2>&1 || true
         else
-            grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null && mv -f /etc/inittab.new /etc/inittab || true
-            kill -HUP 1 2>/dev/null || true
+            cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+            grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
+            if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
+                mv -f /etc/inittab.new /etc/inittab
+                kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+            else
+                rm -f /etc/inittab.new 2>/dev/null || true
+            fi
             pkill -9 -x quby_bridge 2>/dev/null || true
             umount -l /dev/ttymxc0 2>/dev/null || true
         fi
@@ -91,17 +97,41 @@ exec_qtgui() {
         umount -l /dev/ttymxc0 2>/dev/null || true
     fi
 
-    # qt-gui renders 32bpp, but the Toon 1 video prep forces fb0 to 16bpp for
-    # the LVGL UI/picker. Restore 32bpp before handing off so qt-gui isn't
-    # stuck at the wrong depth. No-op on Toon 2 (prep never ran).
+    # Framebuffer depth on Toon 1: i.MX27 LCDC hardware is 16bpp (RGB565).
+    # Ensure it is at 16bpp for both LVGL and stock qt-gui LinuxFB.
     if is_toon1 && command -v fbset >/dev/null 2>&1; then
-        fbset -fb /dev/fb0 -depth 32 2>/dev/null || true
+        fbset -fb /dev/fb0 -depth 16 2>/dev/null || true
     fi
-    if [ -x "$STARTQT" ]; then
-        log "exec startqt${QTLOG:+ (logging to $QTLOG)}"
-        [ -n "$QTLOG" ] && exec "$STARTQT" >"$QTLOG" 2>&1
-        exec "$STARTQT"
+
+    # Check for startqt in multiple standard locations
+    ACTUAL_STARTQT=""
+    for cand in "$STARTQT" /qmf/bin/startqt /qmf/sbin/startqt /usr/bin/inittabwrap; do
+        if [ -x "$cand" ]; then
+            ACTUAL_STARTQT="$cand"
+            break
+        fi
+    done
+
+    if [ -n "$ACTUAL_STARTQT" ]; then
+        if [ "$ACTUAL_STARTQT" = "/usr/bin/inittabwrap" ]; then
+            log "exec inittabwrap qt-gui${QTLOG:+ (logging to $QTLOG)}"
+            [ -n "$QTLOG" ] && exec "$ACTUAL_STARTQT" qt-gui >"$QTLOG" 2>&1
+            exec "$ACTUAL_STARTQT" qt-gui
+        else
+            log "exec $ACTUAL_STARTQT${QTLOG:+ (logging to $QTLOG)}"
+            [ -n "$QTLOG" ] && exec "$ACTUAL_STARTQT" >"$QTLOG" 2>&1
+            exec "$ACTUAL_STARTQT"
+        fi
     fi
+
+    if is_toon1; then
+        # Direct fallback on Toon 1 when startqt wrapper is missing:
+        # Pass explicit platform and touch plugins so qt-gui does not crash or show blank screen
+        log "exec $QTGUI -platform linuxfb -plugin Tslib${QTLOG:+ (logging to $QTLOG)}"
+        [ -n "$QTLOG" ] && exec "$QTGUI" -platform linuxfb -plugin Tslib >"$QTLOG" 2>&1
+        exec "$QTGUI" -platform linuxfb -plugin Tslib
+    fi
+
     [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
     log "exec qt-gui${QTLOG:+ (logging to $QTLOG)}"
     [ -n "$QTLOG" ] && exec "$QTGUI" >"$QTLOG" 2>&1

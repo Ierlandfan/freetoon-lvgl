@@ -135,9 +135,15 @@ LOG_PATH="/var/volatile/tmp/integration-$ID.log"
 ROW="$ROW_ID:2345:respawn:$INTEGRATIONS_DIR/$ID/$BIN >> $LOG_PATH 2>&1"
 
 log "wiring inittab row '$ROW_ID' -> $BIN"
+cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
 grep -v "^${ROW_ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
 echo "$ROW" >> /etc/inittab.new
-mv -f /etc/inittab.new /etc/inittab
+if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
+    mv -f /etc/inittab.new /etc/inittab
+else
+    rm -f /etc/inittab.new 2>/dev/null || true
+    log "ERROR: /etc/inittab.new verification failed! Original inittab preserved."
+fi
 
 pkill -9 -f "$INTEGRATIONS_DIR/$ID/$BIN" 2>/dev/null || true
 kill -HUP 1

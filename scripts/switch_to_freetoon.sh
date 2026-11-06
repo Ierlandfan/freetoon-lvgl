@@ -122,15 +122,23 @@ else
 fi
 
 # 3. Ensure inittab is properly wired and start FreeToon
-TOON_ROW="toon:345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
-if grep -qE '^([^#].*(startqt|qt-gui).*)' "$INITTAB" 2>/dev/null; then
-    log "Disabling stock qt-gui in $INITTAB..."
-    sed -i -E 's~^([^#].*(startqt|qt-gui).*)~#FREETOON#\1~' "$INITTAB" 2>/dev/null || true
-fi
+TOON_ROW="toon:2345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
+cp -p "$INITTAB" "$INITTAB.bak" 2>/dev/null || true
+
+# Disable stock Qt rows using basic POSIX regex without -E (compatible with all BusyBox builds)
+log "Disabling stock qt-gui in $INITTAB..."
+sed -i 's~^[^#].*startqt~#FREETOON#&~' "$INITTAB" 2>/dev/null || true
+sed -i 's~^[^#].*qt-gui~#FREETOON#&~' "$INITTAB" 2>/dev/null || true
 
 if ! grep -q '^toon:' "$INITTAB" 2>/dev/null; then
     log "Adding FreeToon launcher to $INITTAB..."
     echo "$TOON_ROW" >> "$INITTAB"
+fi
+
+# Sanity check: ensure inittab is valid and non-empty
+if [ ! -s "$INITTAB" ] || [ "$(wc -l < "$INITTAB" 2>/dev/null || echo 0)" -lt 5 ]; then
+    log "WARNING: $INITTAB verification failed! Restoring from backup..."
+    cp -f "$INITTAB.bak" "$INITTAB" 2>/dev/null || true
 fi
 
 # Switch OT bridge mode if proxy is enabled in toonui.cfg
