@@ -1950,11 +1950,14 @@ static int handle_v1_app_state_post(int fd, const char * app_id, const char * bo
     char val[INTEG_VALUE_MAX] = "";
     char sub[INTEG_VALUE_MAX] = "";
     char alert[INTEG_VALUE_MAX] = "";
+    char title[INTEG_NAME_MAX] = "";
     extract_str(body, "value", val, sizeof(val));
     extract_str(body, "subtitle", sub, sizeof(sub));
     extract_str(body, "alert", alert, sizeof(alert));
+    extract_str(body, "title", title, sizeof(title));
 
     tile_slots_set_value(app_id, val[0] ? val : NULL, sub[0] ? sub : NULL, alert[0] ? alert : NULL);
+    if (title[0]) tile_slots_set_title(app_id, title);
     return send_json_response(fd, 200, "{\"ok\":true}");
 }
 

@@ -148,6 +148,7 @@ void tile_slots_set_from_remote(int n, const integration_meta_t * src);
 
 /* Update an integration's live values directly (e.g. from REST API) */
 void tile_slots_set_value(const char * integration_id, const char * val, const char * sub, const char * alert);
+void tile_slots_set_title(const char * integration_id, const char * title);
 
 /* Issue a BoxTalk subscribe for every registered integration's serviceId.
  * Called by boxtalk.c right after the handshake completes — also on every

@@ -348,6 +348,17 @@ void tile_slots_set_value(const char * integration_id, const char * val, const c
     }
 }
 
+void tile_slots_set_title(const char * integration_id, const char * title) {
+    if (!integration_id || !integration_id[0] || !title || !title[0]) return;
+    const char * bare_id = (strncmp(integration_id, "local:", 6) == 0) ? integration_id + 6 : integration_id;
+    for (int i = 0; i < g_integ_count; i++) {
+        if (strcmp(g_integ[i].id, integration_id) == 0 || strcmp(g_integ[i].id, bare_id) == 0) {
+            snprintf(g_integ[i].tile_title, sizeof(g_integ[i].tile_title), "%s", title);
+            return;
+        }
+    }
+}
+
 void tile_slots_on_notify(const char * service_id, const char * xml) {
     integration_meta_t * m = tile_slots_integration_by_service(service_id);
     if (!m) return;
