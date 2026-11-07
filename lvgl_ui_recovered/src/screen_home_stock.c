@@ -27,6 +27,7 @@
 #include "ventilation.h"
 #include "calendar.h"
 #include "domoticz.h"
+#include "hue.h"
 #include "tile_slots.h"
 #include "templogger.h"
 #include "wastecollection.h"
@@ -220,8 +221,9 @@ static lv_obj_t * s_lights_handle     = NULL;
 static lv_obj_t * s_lights_handle_lbl = NULL;
 
 static void open_lights_backend(void) {
-    if (settings.enable_domoticz) ui_push(screen_domoticz_create());
-    else                          ui_push(screen_lights_create());
+    if (settings.enable_domoticz)              ui_push(screen_domoticz_create());
+    else if (settings.hue_enabled || hue_state.count > 0) ui_push(screen_hue_create());
+    else                                       ui_push(screen_lights_create());
 }
 static void s_lights_handle_set(bool open) {
     if (!s_lights_handle) return;

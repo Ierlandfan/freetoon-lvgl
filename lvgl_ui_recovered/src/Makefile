@@ -134,11 +134,11 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  screen_heater_advanced.c \
                  screen_vent_remote.c screen_vent_advanced.c \
                  screen_lights.c screen_marketplace.c screen_zwave.c screen_wifi.c \
-                 screen_adapters.c screen_domoticz.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
+                 screen_adapters.c screen_domoticz.c screen_hue.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
                  screen_dim_layout_editor.c screen_dim_grid.c \
                  screen_crypto_picker.c screen_crypto.c screen_ha_picker.c screen_ha_devices.c \
                  screen_chart_24h.c screen_waste.c plugin_loader.c \
-                 stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c weather.c buienradar_rain.c otgw.c http.c inbox.c rrd_push.c templogger.c \
+                 stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c hue.c weather.c buienradar_rain.c otgw.c http.c inbox.c rrd_push.c templogger.c \
                  wastecollection.c ventilation.c homeassistant.c ha_mqtt.c efanlamp.c monocypher.c sha2.c \
                  notify.c healthcheck.c pwa_server.c canonical_state.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \

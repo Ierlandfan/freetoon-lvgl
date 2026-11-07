@@ -20,6 +20,7 @@
 #include "theme.h"
 #include "i18n.h"
 #include "domoticz.h"
+#include "hue.h"
 #include "homeassistant.h"
 #include "calendar.h"
 #include "weather.h"
@@ -1837,6 +1838,165 @@ static void open_domoticz(lv_event_t * e) {
     lv_label_set_long_mode(lbl_domoticz_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_domoticz_result, tr("Stel de Domoticz-host in en kies Opslaan + verbinden.", "Set the Domoticz host, then Save + connect."));
+}
+
+/* Philips Hue config & pairing modal */
+static lv_obj_t * ta_hue_host = NULL;
+static lv_obj_t * lbl_hue_token = NULL;
+static lv_obj_t * lbl_hue_result = NULL;
+
+static void on_hue_enabled_change(lv_event_t * e) {
+    settings.hue_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+    if (settings.hue_enabled) {
+        extern int hue_start(void);
+        hue_start();
+    } else {
+        extern void hue_stop(void);
+        hue_stop();
+    }
+}
+
+static void on_hue_view_click(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_hue_create());
+}
+
+static void on_hue_test_click(lv_event_t * e) {
+    (void)e;
+    const char * h = ta_hue_host ? lv_textarea_get_text(ta_hue_host) : settings.hue_host;
+    snprintf(settings.hue_host, sizeof(settings.hue_host), "%s", h ? h : "");
+    settings_save();
+
+    if (!lbl_hue_result) return;
+    if (!settings.hue_host[0]) {
+        lv_label_set_text(lbl_hue_result, tr("Vul eerst het IP-adres in.", "Enter IP address first."));
+        return;
+    }
+    if (!settings.hue_user[0]) {
+        lv_label_set_text(lbl_hue_result, tr("Nog niet gekoppeld. Druk op Koppelen.", "Not paired yet. Press Pair."));
+        return;
+    }
+
+    lv_label_set_text(lbl_hue_result, tr("Bezig met testen...", "Testing..."));
+    lv_refr_now(NULL);
+    extern int hue_probe(const char * host, const char * user);
+    int rc = hue_probe(settings.hue_host, settings.hue_user);
+    if (rc >= 0) {
+        lv_label_set_text_fmt(lbl_hue_result, tr("Verbonden - %d lampen gevonden", "Connected - %d lights found"), rc);
+        extern int hue_start(void);
+        hue_start();
+    } else if (rc == -1) {
+        lv_label_set_text(lbl_hue_result, tr("Fout: ongeldige token. Koppel opnieuw.", "Error: invalid token. Pair again."));
+    } else {
+        lv_label_set_text(lbl_hue_result, tr("Fout: bridge niet bereikbaar op dit IP.", "Error: bridge unreachable at this IP."));
+    }
+    lv_obj_scroll_to_view(lbl_hue_result, LV_ANIM_ON);
+}
+
+static void on_hue_pair_click(lv_event_t * e) {
+    (void)e;
+    const char * h = ta_hue_host ? lv_textarea_get_text(ta_hue_host) : settings.hue_host;
+    snprintf(settings.hue_host, sizeof(settings.hue_host), "%s", h ? h : "");
+
+    if (!settings.hue_host[0]) {
+        if (lbl_hue_result) lv_label_set_text(lbl_hue_result, tr("Vul eerst het IP-adres in.", "Enter IP address first."));
+        return;
+    }
+
+    if (lbl_hue_result) {
+        lv_label_set_text(lbl_hue_result, tr("Bezig met koppelen...", "Pairing..."));
+        lv_refr_now(NULL);
+    }
+
+    char token[64] = "";
+    char err[128] = "";
+    extern int hue_pair(const char * host, char * out_user, size_t out_sz, char * err_msg, size_t err_sz);
+    int rc = hue_pair(settings.hue_host, token, sizeof(token), err, sizeof(err));
+    if (rc == 0 && token[0]) {
+        snprintf(settings.hue_user, sizeof(settings.hue_user), "%s", token);
+        settings.hue_enabled = 1;
+        settings_save();
+        if (lbl_hue_token) {
+            char trunc_u[20];
+            snprintf(trunc_u, sizeof(trunc_u), "%.12s...", token);
+            lv_label_set_text_fmt(lbl_hue_token, tr("Gekoppelde token: %s", "Paired token: %s"), trunc_u);
+        }
+        if (lbl_hue_result) lv_label_set_text(lbl_hue_result, tr("Succesvol gekoppeld met Hue Bridge!", "Successfully paired with Hue Bridge!"));
+        extern int hue_start(void);
+        hue_start();
+    } else if (rc == 1) {
+        if (lbl_hue_result) lv_label_set_text(lbl_hue_result, tr("Druk binnen 30 sec op de Hue bridge-knop en klik nogmaals!", "Press Hue bridge button within 30s and click again!"));
+    } else {
+        if (lbl_hue_result) lv_label_set_text_fmt(lbl_hue_result, tr("Koppelen mislukt: %s", "Pairing failed: %s"), err[0] ? err : "geen verbinding");
+    }
+    if (lbl_hue_result) lv_obj_scroll_to_view(lbl_hue_result, LV_ANIM_ON);
+}
+
+static void open_hue(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Philips Hue", 560);
+    int is_t1 = (DISP_VER < 600);
+    int y = is_t1 ? 60 : 70;
+
+    lv_obj_t * r_en = panel_row(p, y, tr("Philips Hue inschakelen", "Philips Hue enabled"), NULL);
+    row_switch(r_en, settings.hue_enabled, on_hue_enabled_change);
+    y += is_t1 ? 72 : 88;
+
+    lv_obj_t * lh = lv_label_create(p);
+    lv_obj_set_style_text_color(lh, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lh, SF(22), 0);
+    lv_label_set_text(lh, tr("Bridge IP-adres:", "Bridge IP address:"));
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y + (is_t1 ? 2 : 4));
+    ta_hue_host = lv_textarea_create(p); ta_make_numeric(ta_hue_host);
+    lv_obj_set_size(ta_hue_host, SX(420), SY(44));
+    lv_obj_align(ta_hue_host, LV_ALIGN_TOP_LEFT, SX(260), y);
+    lv_textarea_set_one_line(ta_hue_host, true);
+    lv_textarea_set_placeholder_text(ta_hue_host, "192.168.1.50");
+    lv_textarea_set_text(ta_hue_host, settings.hue_host);
+    y += is_t1 ? 50 : 60;
+
+    lbl_hue_token = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_hue_token, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_hue_token, SF(16), 0);
+    if (settings.hue_user[0]) {
+        char trunc_u[20];
+        snprintf(trunc_u, sizeof(trunc_u), "%.12s...", settings.hue_user);
+        lv_label_set_text_fmt(lbl_hue_token, tr("Gekoppelde token: %s", "Paired token: %s"), trunc_u);
+    } else {
+        lv_label_set_text(lbl_hue_token, tr("Nog niet gekoppeld (geen API-token).", "Not paired yet (no API token)."));
+    }
+    lv_obj_align(lbl_hue_token, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += is_t1 ? 40 : 50;
+
+    /* Buttons: Koppelen, Testen, Bekijk lampen */
+    lv_obj_t * b_pair = lv_btn_create(p);
+    lv_obj_set_size(b_pair, SX(210), SY(48));
+    lv_obj_align(b_pair, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(b_pair, lv_color_hex(0xc06030), 0);
+    lv_obj_add_event_cb(b_pair, on_hue_pair_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lp = lv_label_create(b_pair); lv_label_set_text(lp, tr("Koppelen met Bridge", "Pair with Bridge")); lv_obj_center(lp);
+
+    lv_obj_t * b_test = lv_btn_create(p);
+    lv_obj_set_size(b_test, SX(180), SY(48));
+    lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, SX(222), y);
+    lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(b_test, on_hue_test_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lt = lv_label_create(b_test); lv_label_set_text(lt, tr("Test verbinding", "Test connection")); lv_obj_center(lt);
+
+    lv_obj_t * b_view = lv_btn_create(p);
+    lv_obj_set_size(b_view, SX(180), SY(48));
+    lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(410), y);
+    lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
+    lv_obj_add_event_cb(b_view, on_hue_view_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, tr("Bekijk lampen", "View lights")); lv_obj_center(lv);
+    y += is_t1 ? 58 : 68;
+
+    lbl_hue_result = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_hue_result, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_hue_result, SF(16), 0);
+    lv_label_set_text(lbl_hue_result, "");
+    lv_obj_align(lbl_hue_result, LV_ALIGN_TOP_LEFT, SX(4), y);
 }
 
 /* Client mode: this Toon mirrors a master Toon over its PWA API. */
@@ -4972,6 +5132,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("RSS-koppenticker", "RSS headlines ticker"), open_news_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
               tr("uit / proxy / draadloos", "off / proxy / wireless"), open_otbridge_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, "Philips Hue",
+              tr("bridge koppelen & lampen", "bridge pairing & lights"), open_hue); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, tr("Pincode", "PIN code"),
               tr("wijzigingen vergrendelen", "lock changes"), open_pin_settings_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Programma", "Schedule"),

@@ -80,6 +80,7 @@ lv_obj_t * screen_zwave_create(void);
 lv_obj_t * screen_wifi_create(void);
 lv_obj_t * screen_adapters_create(void);
 lv_obj_t * screen_domoticz_create(void);
+lv_obj_t * screen_hue_create(void);
 lv_obj_t * screen_efanlamp_create(void);  /* BLE ceiling fan+light control */
 struct integration_meta_s;
 lv_obj_t * screen_chart_24h_create(const struct integration_meta_s * meta);

@@ -34,6 +34,7 @@
 #include "update_modal.h"
 #include "efanlamp.h"
 #include "domoticz.h"
+#include "hue.h"
 #include "templogger.h"
 #include "screen_chart_24h.h"
 #include "plugin_loader.h"
@@ -3139,6 +3140,8 @@ static void refresh_cb(lv_timer_t * t) {
 static void open_lights_backend(void) {
     if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0))
         ui_push(screen_domoticz_create());
+    else if (settings.hue_enabled || hue_state.count > 0)
+        ui_push(screen_hue_create());
     else
         ui_push(screen_lights_create());
 }

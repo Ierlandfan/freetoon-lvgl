@@ -112,6 +112,11 @@ typedef struct {
     int  domoticz_tile_idx2;   /* device idx pinned to tile switch 2 (-1 = none) */
     int  clock_moon_phase;     /* 0 = off (clean clock), 1 = show moon phase icon at night */
 
+    /* Philips Hue Bridge (REST API on LAN, port 80) */
+    int  hue_enabled;
+    char hue_host[64];
+    char hue_user[64];
+
     /* Sonos HTTP API integration (node-sonos-http-api) */
     int  sonos_enabled;
     char sonos_host[64];

@@ -91,6 +91,9 @@ settings_t settings = {
     .domoticz_tile_idx1  = -1,
     .domoticz_tile_idx2  = -1,
     .clock_moon_phase    = 0,
+    .hue_enabled         = 0,
+    .hue_host            = "",
+    .hue_user            = "",
     .sonos_enabled       = 0,
     .sonos_host          = "",
     .sonos_port          = 1400,
@@ -205,7 +208,7 @@ void settings_load(void) {
      * step below — keeps existing installs from suddenly losing pollers
      * after the upgrade. */
     int seen_p1_elec = 0, seen_p1_water = 0, seen_vent = 0, seen_ha = 0;
-    int seen_domoticz = 0, seen_sonos = 0;
+    int seen_domoticz = 0, seen_sonos = 0, seen_hue = 0;
     int cfg_existed = 0;
 
     FILE * f = fopen(cfg_path(), "r");
@@ -321,6 +324,9 @@ void settings_load(void) {
         else if (strcmp(k, "domoticz_tile_idx1") == 0) settings.domoticz_tile_idx1 = iv;
         else if (strcmp(k, "domoticz_tile_idx2") == 0) settings.domoticz_tile_idx2 = iv;
         else if (strcmp(k, "clock_moon_phase") == 0) settings.clock_moon_phase = iv;
+        else if (strcmp(k, "hue_enabled")     == 0) { settings.hue_enabled = iv; seen_hue = 1; }
+        else if (strcmp(k, "hue_host")        == 0) snprintf(settings.hue_host, sizeof settings.hue_host, "%s", v);
+        else if (strcmp(k, "hue_user")        == 0) snprintf(settings.hue_user, sizeof settings.hue_user, "%s", v);
         else if (strcmp(k, "sonos_enabled")   == 0) { settings.sonos_enabled = iv; seen_sonos = 1; }
         else if (strcmp(k, "sonos_host")      == 0) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", v);
         else if (strcmp(k, "sonos_port")      == 0) settings.sonos_port = iv;
@@ -504,6 +510,8 @@ autodetect:
         settings.enable_ha       = legacy ? 1 : file_has_content("/mnt/data/ha.cfg");
     if (!seen_domoticz)
         settings.enable_domoticz = (settings.domoticz_host[0] != 0);
+    if (!seen_hue)
+        settings.hue_enabled     = (settings.hue_host[0] != 0);
     if (!seen_sonos)
         settings.sonos_enabled   = (settings.sonos_host[0] != 0);
     }
@@ -595,6 +603,53 @@ autodetect:
                     }
                 }
                 if (settings.sonos_host[0]) settings.sonos_enabled = 1;
+            }
+        }
+    }
+
+    /* Auto-seed Philips Hue from legacy Eneco QMF config if present and not yet configured */
+    if (!settings.hue_host[0]) {
+        const char * hpaths[] = {
+            "/mnt/data/qmf/config/config_hdrv_hue.xml",
+            "/qmf/config/config_hdrv_hue.xml",
+            NULL
+        };
+        for (int i = 0; hpaths[i]; i++) {
+            FILE * hf = fopen(hpaths[i], "r");
+            if (hf) {
+                char xbuf[2048];
+                size_t xn = fread(xbuf, 1, sizeof(xbuf) - 1, hf);
+                fclose(hf);
+                if (xn > 0) {
+                    xbuf[xn] = 0;
+                    char * ip_s = strstr(xbuf, "<ipAddress>");
+                    if (!ip_s) ip_s = strstr(xbuf, "<ip>");
+                    char * ip_e = ip_s ? (strstr(ip_s, "</ipAddress>") ? strstr(ip_s, "</ipAddress>") : strstr(ip_s, "</ip>")) : NULL;
+                    char * u_s = strstr(xbuf, "<userName>");
+                    if (!u_s) u_s = strstr(xbuf, "<username>");
+                    char * u_e = u_s ? (strstr(u_s, "</userName>") ? strstr(u_s, "</userName>") : strstr(u_s, "</username>")) : NULL;
+
+                    if (ip_s && ip_e) {
+                        ip_s = strchr(ip_s, '>') + 1;
+                        size_t len = ip_e - ip_s;
+                        if (len >= sizeof(settings.hue_host)) len = sizeof(settings.hue_host) - 1;
+                        memcpy(settings.hue_host, ip_s, len);
+                        settings.hue_host[len] = 0;
+                    }
+                    if (u_s && u_e) {
+                        u_s = strchr(u_s, '>') + 1;
+                        size_t len = u_e - u_s;
+                        if (len >= sizeof(settings.hue_user)) len = sizeof(settings.hue_user) - 1;
+                        memcpy(settings.hue_user, u_s, len);
+                        settings.hue_user[len] = 0;
+                    }
+                    if (settings.hue_host[0]) {
+                        settings.hue_enabled = 1;
+                        fprintf(stderr, "[settings] auto-seeded Hue config from %s: host=%s user=%s\n",
+                                hpaths[i], settings.hue_host, settings.hue_user);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -896,6 +951,9 @@ void settings_save(void) {
     fprintf(f, "domoticz_tile_idx1=%d\n", settings.domoticz_tile_idx1);
     fprintf(f, "domoticz_tile_idx2=%d\n", settings.domoticz_tile_idx2);
     fprintf(f, "clock_moon_phase=%d\n", settings.clock_moon_phase);
+    fprintf(f, "hue_enabled=%d\n",     settings.hue_enabled);
+    fprintf(f, "hue_host=%s\n",        settings.hue_host);
+    fprintf(f, "hue_user=%s\n",        settings.hue_user);
     fprintf(f, "sonos_enabled=%d\n",   settings.sonos_enabled);
     fprintf(f, "sonos_host=%s\n",      settings.sonos_host);
     fprintf(f, "sonos_port=%d\n",      settings.sonos_port);
