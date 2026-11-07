@@ -711,6 +711,9 @@ autodetect:
      * persisted values reflect the right post-detect defaults. */
     if (settings.rate_elec_kwh <= 0.0001f) settings.rate_elec_kwh = 0.30f;
     if (settings.rate_gas_m3 <= 0.0001f)   settings.rate_gas_m3   = 1.35f;
+    if (!settings.waste_plugin[0]) {
+        snprintf(settings.waste_plugin, sizeof(settings.waste_plugin), "33");
+    }
     if (!cfg_existed) {
         settings_save();
     }

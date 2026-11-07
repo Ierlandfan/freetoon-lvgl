@@ -84,10 +84,31 @@ static char g_otgw_host[128] = "192.168.99.21";
 #define UUID_BOILER     "e7b8a710-0042-4f6f-9fd2-5cac18fc0a02"
 
 /* ===================================================================== */
-/* logging                                                               */
+/* logging & rotation                                                    */
 /* ===================================================================== */
+#define MAX_LOG_SIZE (256 * 1024)  /* Cap logfile at 256KB to preserve RAM disk */
 static FILE *g_log = NULL;
+static int g_verbose = 0;
+
+static void check_log_rotation(void) {
+    if (!g_log) return;
+    long sz = ftell(g_log);
+    if (sz >= MAX_LOG_SIZE) {
+        fclose(g_log);
+        char old_log[sizeof(LOGFILE) + 8];
+        snprintf(old_log, sizeof(old_log), "%s.old", LOGFILE);
+        unlink(old_log);
+        rename(LOGFILE, old_log);
+        g_log = fopen(LOGFILE, "w");
+        if (g_log) {
+            fprintf(g_log, "[bridge] log rotated (max %d KB reached)\n", MAX_LOG_SIZE / 1024);
+            fflush(g_log);
+        }
+    }
+}
+
 static void logmsg(const char *fmt, ...) {
+    check_log_rotation();
     char ts[24]; time_t t = time(NULL); struct tm tm; localtime_r(&t, &tm);
     strftime(ts, sizeof(ts), "%H:%M:%S", &tm);
     fprintf(stderr, "[bridge %s] ", ts);
@@ -97,6 +118,8 @@ static void logmsg(const char *fmt, ...) {
     va_end(a);
     fputc('\n', stderr); if (g_log) { fputc('\n', g_log); fflush(g_log); }
 }
+
+#define dbgmsg(...) do { if (g_verbose) logmsg(__VA_ARGS__); } while (0)
 
 /* ===================================================================== */
 /* CRC-8 Quby — poly=0x21, init=0xff (solved 2026-05-15 from 27 samples) */
@@ -566,7 +589,7 @@ static void publish_to_boxtalk(void) {
         uint16_t v1=0, v17=0, v25=0, v28=0;
         int h1 = cache_get(1,&v1), h17 = cache_get(17,&v17),
             h25 = cache_get(25,&v25), h28 = cache_get(28,&v28);
-        logmsg("publish tick: DID1=%s%04x DID17=%s%04x DID25=%s%04x DID28=%s%04x slave=%02x",
+        dbgmsg("publish tick: DID1=%s%04x DID17=%s%04x DID25=%s%04x DID28=%s%04x slave=%02x",
                h1?"":"(none ",v1, h17?"":"(none ",v17,
                h25?"":"(none ",v25, h28?"":"(none ",v28, g_slave_status);
     }
@@ -665,7 +688,7 @@ static void poll_otgw(void) {
     }
     static long n = 0;
     if ((n++ % 30) == 0) {
-        logmsg("otgw poll: %d DIDs cached", updated);
+        dbgmsg("otgw poll: %d DIDs cached", updated);
         /* every 30th poll, dump cache contents — useful for verification */
         char dump[512]; int o = 0;
         for (size_t i = 0; i < sizeof(known_dids); i++) {
@@ -674,7 +697,7 @@ static void poll_otgw(void) {
                 o += snprintf(dump + o, sizeof(dump) - o,
                               " DID%d=0x%04x", known_dids[i], v);
         }
-        logmsg("cache:%s", dump);
+        dbgmsg("cache:%s", dump);
     }
 
     /* Push the freshly-cached DIDs out on the BoxTalk bus so toonui /
@@ -1196,7 +1219,8 @@ static void usage(const char *p) {
         "            ThermostatInfo notifies to BoxTalk Hub. Heat keeps\n"
         "            working since we never fake replies.\n"
         "Options:\n"
-        "  -o <host> OTGW host/IP (default: $OTGW_HOST or %s)\n",
+        "  -o <host> OTGW host/IP (default: $OTGW_HOST or %s)\n"
+        "  -v        verbose / debug logging (frame dumps & publish ticks)\n",
         p, g_otgw_host);
 }
 
@@ -1249,13 +1273,15 @@ int main(int argc, char **argv) {
         snprintf(g_otgw_host, sizeof(g_otgw_host), "%s", env_host);
     }
     int opt;
-    while ((opt = getopt(argc, argv, "m:o:h")) != -1) {
+    while ((opt = getopt(argc, argv, "m:o:vh")) != -1) {
         switch (opt) {
         case 'm': mode = optarg; break;
         case 'o': snprintf(g_otgw_host, sizeof(g_otgw_host), "%s", optarg); break;
+        case 'v': g_verbose = 1; break;
         case 'h': default: usage(argv[0]); return 1;
         }
     }
+    if (getenv("QUBY_VERBOSE")) g_verbose = 1;
     if (!strcmp(mode, "passive"))      { reply = 0; do_bind = 0; }
     else if (!strcmp(mode, "bench"))   { reply = 1; do_bind = 0; }
     else if (!strcmp(mode, "active"))  { reply = 1; do_bind = 1; }
@@ -1271,7 +1297,7 @@ int main(int argc, char **argv) {
      * with QUBY_DBG_RAW=1 in the env. Default off — too chatty for
      * steady-state operation. */
     if (getenv("QUBY_DBG_RAW") && atoi(getenv("QUBY_DBG_RAW"))) g_dbg_raw = 1;
-    logmsg("starting in %s mode pid=%d  dbg_raw=%d", mode, getpid(), g_dbg_raw);
+    logmsg("starting in %s mode pid=%d  verbose=%d  dbg_raw=%d", mode, getpid(), g_verbose, g_dbg_raw);
 
     g_pty_master = open_pty();
     if (g_pty_master < 0) return 2;
@@ -1403,7 +1429,7 @@ int main(int argc, char **argv) {
                         while (plen >= 7 && is_quby_header(pbuf[0])) {
                             if (crc8_quby(pbuf, 6) == pbuf[6]) {
                                 sniff_frame(pbuf);
-                                logmsg("p>u: %02x %02x %02x %02x %02x %02x %02x",
+                                dbgmsg("p>u: %02x %02x %02x %02x %02x %02x %02x",
                                        pbuf[0], pbuf[1], pbuf[2], pbuf[3],
                                        pbuf[4], pbuf[5], pbuf[6]);
                                 frames_p++;
@@ -1442,7 +1468,7 @@ int main(int argc, char **argv) {
                         while (ulen >= 7 && is_quby_header(ubuf[0])) {
                             if (crc8_quby(ubuf, 6) == ubuf[6]) {
                                 sniff_frame(ubuf);
-                                logmsg("u>p: %02x %02x %02x %02x %02x %02x %02x",
+                                dbgmsg("u>p: %02x %02x %02x %02x %02x %02x %02x",
                                        ubuf[0], ubuf[1], ubuf[2], ubuf[3],
                                        ubuf[4], ubuf[5], ubuf[6]);
                                 frames_u++;
@@ -1465,7 +1491,7 @@ int main(int argc, char **argv) {
                 next_publish = now + 2;
             }
             if (now >= next_stats) {
-                logmsg("proxy stats: p>u %lu B / %lu fr   u>p %lu B / %lu fr",
+                dbgmsg("proxy stats: p>u %lu B / %lu fr   u>p %lu B / %lu fr",
                        bytes_p2u, frames_p, bytes_u2p, frames_u);
                 /* Bind-loss watchdog. Bytes flowing but zero valid Quby
                  * frames after a full 10 s stats window means happ_thermstat
@@ -1533,14 +1559,14 @@ int main(int argc, char **argv) {
                         memmove(rbuf, rbuf + 1, --rlen);
                         continue;
                     }
-                    logmsg("rx: %02x %02x %02x %02x %02x %02x %02x",
+                    dbgmsg("rx: %02x %02x %02x %02x %02x %02x %02x",
                            rbuf[0], rbuf[1], rbuf[2], rbuf[3],
                            rbuf[4], rbuf[5], rbuf[6]);
                     if (reply) {
                         uint8_t resp[7];
                         if (handle_frame(rbuf, resp)) {
                             write(g_pty_master, resp, 7);
-                            logmsg("tx: %02x %02x %02x %02x %02x %02x %02x",
+                            dbgmsg("tx: %02x %02x %02x %02x %02x %02x %02x",
                                    resp[0], resp[1], resp[2], resp[3],
                                    resp[4], resp[5], resp[6]);
                         }

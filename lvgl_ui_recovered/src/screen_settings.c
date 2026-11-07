@@ -1176,8 +1176,25 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_align(dd_waste_prov, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 30));
     if (g_prov_count) {
         lv_dropdown_set_options(dd_waste_prov, g_prov_opts);
-        for (int i = 0; i < g_prov_count; i++)
-            if (strcmp(g_prov_ids[i], settings.waste_plugin) == 0) { lv_dropdown_set_selected(dd_waste_prov, i); break; }
+        if (!settings.waste_plugin[0] || strcmp(settings.waste_plugin, "0") == 0) {
+            snprintf(settings.waste_plugin, sizeof settings.waste_plugin, "33");
+            settings_save();
+        }
+        int sel = -1;
+        for (int i = 0; i < g_prov_count; i++) {
+            if (strcmp(g_prov_ids[i], settings.waste_plugin) == 0) { sel = i; break; }
+        }
+        if (sel < 0) {
+            for (int i = 0; i < g_prov_count; i++) {
+                if (strcmp(g_prov_ids[i], "33") == 0) {
+                    sel = i;
+                    snprintf(settings.waste_plugin, sizeof settings.waste_plugin, "33");
+                    settings_save();
+                    break;
+                }
+            }
+        }
+        if (sel >= 0) lv_dropdown_set_selected(dd_waste_prov, sel);
     } else {
         lv_dropdown_set_options(dd_waste_prov, tr("(providerlijst niet beschikbaar - controleer internet)", "(provider list unavailable - check internet)"));
     }
