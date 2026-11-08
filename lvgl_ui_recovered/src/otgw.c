@@ -47,15 +47,15 @@ static void poll_otgw(void) {
 
     char v[32];
     /* Boiler flow (supply) water temp — OT ID 25. happ doesn't surface this in
-     * off mode; OTGW does. (boxtalk.h maps boiler_in_temp = flowwatertemperature) */
+     * off mode; OTGW does. (boxtalk.h: boiler_out_temp = flow, boiler_in_temp = return) */
     if (otmon_val(body, "boilertemperature", v, sizeof v)) {
         float f = (float)atof(v);
-        if (f > 0) toon_state.boiler_in_temp = f;
+        if (f > 0) toon_state.boiler_out_temp = f;
     }
     /* Return water temp — OT ID 28 (often 0: many boilers don't report it). */
     if (otmon_val(body, "returnwatertemperature", v, sizeof v)) {
         float f = (float)atof(v);
-        if (f > 0) toon_state.boiler_out_temp = f;
+        if (f > 0) toon_state.boiler_in_temp = f;
     }
     /* Modulation + flame come from the boiler too. */
     if (otmon_val(body, "relmodlevel", v, sizeof v)) {
