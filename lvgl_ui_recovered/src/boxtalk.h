@@ -11,8 +11,8 @@ typedef struct {
     volatile int    connected;       /* 0/1 */
     volatile float  indoor_temp;     /* °C, ambient sensor */
     volatile float  boiler_temp;     /* °C, boiler return temp */
-    volatile float  boiler_in_temp;  /* °C, BoilerInfo.flowwatertemperature */
-    volatile float  boiler_out_temp; /* °C, BoilerInfo.returnwatertemperature */
+    volatile float  boiler_in_temp;  /* °C, CH return (retour) water temperature */
+    volatile float  boiler_out_temp; /* °C, CH flow (aanvoer) water temperature */
     volatile float  water_pressure;  /* bar, central heating water pressure */
     volatile float  modulation_level;/* %, boiler modulation level (DID 17 / otCurrentModulationLevel) */
     volatile int    ot_comm_error;   /* 0/1, OT communication error flag */
