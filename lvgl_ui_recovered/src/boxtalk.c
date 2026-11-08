@@ -1155,6 +1155,35 @@ static int http_get_local(const char* path, char* out_body, size_t out_max) {
     return 0;
 }
 
+static int http_get_thermstat_full(const char* path_with_query, char* out_body, size_t out_max) {
+    char path[512];
+    snprintf(path, sizeof(path), "/happ_thermstat?%s", path_with_query);
+    return http_get_local(path, out_body, out_max);
+}
+
+/* Most recent sample of an hcb_rrd logger, e.g. thermstat_boilerTemp.
+   Response shape: { "1794149040": 23.15}. Same source the stock
+   boilerstatus app reads. Returns 0 and fills *out on success. */
+static int rrd_last_value(const char* logger, float* out) {
+    char path[192], body[256];
+    snprintf(path, sizeof(path),
+             "/hcb_rrd?action=getRrdData&loggerName=%s&rra=30days&samples=1", logger);
+    if (http_get_local(path, body, sizeof(body)) != 0) return -1;
+    if (strstr(body, "\"error\"")) return -1;
+    const char* k1 = strchr(body, '"');
+    const char* k2 = k1 ? strchr(k1 + 1, '"') : NULL;
+    const char* col = k2 ? strchr(k2 + 1, ':') : NULL;
+    if (!col) return -1;
+    col++;
+    while (*col == ' ' || *col == '\t' || *col == '"') col++;
+    if (!strncmp(col, "NaN", 3) || !strncmp(col, "nan", 3) || !strncmp(col, "null", 4)) return -1;
+    char* end = NULL;
+    float v = strtof(col, &end);
+    if (end == col) return -1;
+    *out = v;
+    return 0;
+}
+
 static int http_get_thermstat(const char* path_with_query) {
     return http_get_thermstat_full(path_with_query, NULL, 0);
 }
@@ -1248,6 +1277,24 @@ static void* http_poll_thread(void* arg) {
             }
         }
 
+        /* Boiler flow/return temps. The BoxTalk boilerTemps/boilerRetTemps
+         * queries are only sent at handshake and from the adapters test
+         * button, and on some Toons are never answered -> 0.0 forever.
+         * hcb_rrd logs both every minute, so read them from there like the
+         * stock boilerstatus app does: every ~60 s, or every ~15 s while a
+         * value is still missing. */
+        static int boiler_poll_cnt = 0;
+        int boiler_missing = toon_state.boiler_out_temp <= 0.0f ||
+                             toon_state.boiler_in_temp  <= 0.0f;
+        if (++boiler_poll_cnt >= (boiler_missing ? 5 : 20)) {
+            boiler_poll_cnt = 0;
+            float f;
+            if (rrd_last_value("thermstat_boilerTemp", &f) == 0 && f > 0.0f && f < 110.0f)
+                toon_state.boiler_out_temp = f;     /* flow / aanvoer */
+            if (rrd_last_value("thermstat_boilerRetTemp", &f) == 0 && f > 0.0f && f < 110.0f)
+                toon_state.boiler_in_temp = f;      /* return / retour */
+        }
+      
         /* 3 s — used to be 15 s, but that was the source of "the flame icon
          * lights up half a minute after the boiler kicks in" complaints.
          * burner_on / dhw_on / active_state / setpoint all ride this poll;
