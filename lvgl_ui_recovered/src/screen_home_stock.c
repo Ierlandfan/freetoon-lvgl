@@ -423,8 +423,10 @@ static void refresh_slot(slot_t * s) {
     case TT_INDOOR:  snprintf(b, sizeof b, "%.1f°", display_indoor_temp(toon_state.indoor_temp)); comma(b); lv_label_set_text(s->val, b); break;
     case TT_CO2:     snprintf(b, sizeof b, "%d ppm", toon_state.eco2);                     lv_label_set_text(s->val, b); break;
     case TT_TVOC:    snprintf(b, sizeof b, "%d ppb", toon_state.tvoc);                     lv_label_set_text(s->val, b); break;
-    case TT_BOILIN:  snprintf(b, sizeof b, "%.1f°", toon_state.boiler_in_temp);  comma(b); lv_label_set_text(s->val, b); break;
-    case TT_BOILOUT: snprintf(b, sizeof b, "%.1f°", toon_state.boiler_out_temp); comma(b); lv_label_set_text(s->val, b); break;
+    /* Tile ids "boilin"/"boilout" are persisted config keys labelled
+     * "Ketel aanvoer"/"Ketel retour"; aanvoer (flow) is boiler_out_temp. */
+    case TT_BOILIN:  snprintf(b, sizeof b, "%.1f°", toon_state.boiler_out_temp); comma(b); lv_label_set_text(s->val, b); break;
+    case TT_BOILOUT: snprintf(b, sizeof b, "%.1f°", toon_state.boiler_in_temp);  comma(b); lv_label_set_text(s->val, b); break;
     case TT_GAS: {
         float g = energy_gas_today_m3();
         if (g >= 0) {
