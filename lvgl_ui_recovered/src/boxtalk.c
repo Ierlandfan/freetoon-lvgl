@@ -1127,8 +1127,8 @@ static int http_get_local(const char* path, char* out_body, size_t out_max) {
     if (connect(s, (struct sockaddr*)&a, sizeof(a)) != 0) { close(s); return -1; }
     char req[512];
     int n = snprintf(req, sizeof(req),
-        "GET /happ_thermstat?%s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        path_with_query);
+        "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        path);
     if (send(s, req, n, 0) != n) { close(s); return -1; }
 
     /* Drain full response. If out_body requested, accumulate up to out_max-1 bytes
