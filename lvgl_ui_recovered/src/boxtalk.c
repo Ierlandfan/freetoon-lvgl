@@ -1117,7 +1117,7 @@ void boxtalk_request_boiler_refresh(void) {
    HTTP/1.0 GET. No libcurl dependency.
    If out_body != NULL, writes up to out_max-1 bytes of the HTTP body
    (after the blank line) and NUL-terminates. */
-static int http_get_thermstat_full(const char* path_with_query, char* out_body, size_t out_max) {
+static int http_get_local(const char* path, char* out_body, size_t out_max) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) return -1;
     struct sockaddr_in a = {0};
