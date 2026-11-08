@@ -43,8 +43,8 @@ typedef struct {
 typedef struct {
     int   protocol;          /* 0=OpenTherm, 1=On/Off */
     float modulation_pct;    /* Modulation percentage (0..100%) */
-    float in_temp;           /* Boiler flow water temperature (°C) */
-    float out_temp;          /* Boiler return water temperature (°C) */
+    float in_temp;           /* Boiler return (inlet) water temperature (°C) */
+    float out_temp;          /* Boiler flow (outlet) water temperature (°C) */
     float water_pressure;    /* Water pressure in bar */
     int   burner_on;         /* 1 if firing for CH */
     int   dhw_on;            /* 1 if firing for DHW */
