@@ -80,11 +80,15 @@ exec_qtgui() {
         log "disabling quby_bridge in inittab for qt-gui"
         if [ -x /mnt/data/ot_mode_switch.sh ]; then
             /mnt/data/ot_mode_switch.sh off >> /tmp/ot_mode_switch.log 2>&1 || true
+        elif [ -x /mnt/data/inittab_edit.sh ]; then
+            /mnt/data/inittab_edit.sh drop qbri 2>/dev/null || true
+            pkill -9 -x quby_bridge 2>/dev/null || true
+            umount -l /dev/ttymxc0 2>/dev/null || true
         else
             cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
             grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
-            if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
-                mv -f /etc/inittab.new /etc/inittab
+            if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+                sync; mv -f /etc/inittab.new /etc/inittab; sync
                 kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
             else
                 rm -f /etc/inittab.new 2>/dev/null || true

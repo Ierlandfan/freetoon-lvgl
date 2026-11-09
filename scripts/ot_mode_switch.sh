@@ -58,17 +58,26 @@ set_otgw_setting() {
 apply_mode_swap() {
     local new_line="$1"     # inittab line to set, "" to remove qbri
     [ -f /etc/inittab ] || return 0
-    cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-    grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
-    [ -n "$new_line" ] && echo "$new_line" >> /etc/inittab.new
-    if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
-        mv -f /etc/inittab.new /etc/inittab
+
+    if [ -x /mnt/data/inittab_edit.sh ]; then
+        if [ -n "$new_line" ]; then
+            /mnt/data/inittab_edit.sh upsert qbri "$new_line"
+        else
+            /mnt/data/inittab_edit.sh drop qbri
+        fi
     else
-        rm -f /etc/inittab.new 2>/dev/null || true
-        log "ERROR: /etc/inittab.new verification failed! Original inittab preserved."
-        return 1
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+        grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
+        [ -n "$new_line" ] && echo "$new_line" >> /etc/inittab.new
+        if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+            sync; mv -f /etc/inittab.new /etc/inittab; sync
+        else
+            rm -f /etc/inittab.new 2>/dev/null || true
+            log "ERROR: inittab verification failed! Original inittab preserved."
+            return 1
+        fi
+        kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
     fi
-    kill -HUP 1
     sleep 2                 # init re-reads inittab
     pkill -9 -x quby_bridge 2>/dev/null || true
     sleep 1

@@ -46,8 +46,17 @@ case "${1:-install}" in
     --uninstall)
         log "removing tailscale inittab row + binaries"
         if [ -f /etc/inittab ]; then
-            grep -v "^${INITTAB_ID}:" /etc/inittab > /etc/inittab.new
-            mv -f /etc/inittab.new /etc/inittab
+            if [ -x /mnt/data/inittab_edit.sh ]; then
+                /mnt/data/inittab_edit.sh drop "$INITTAB_ID"
+            else
+                cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+                grep -v "^${INITTAB_ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
+                if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+                    sync; mv -f /etc/inittab.new /etc/inittab; sync
+                else
+                    rm -f /etc/inittab.new 2>/dev/null || true
+                fi
+            fi
         fi
         pkill -x tailscaled 2>/dev/null || true
         rm -rf "$INSTALL_DIR"
@@ -98,9 +107,18 @@ TAILSCALED_FLAGS="--state=$STATE_DIR/tailscaled.state --socket=$SOCKET --tun=use
 # auto-recovers without the user dialing back in.
 LINE="${INITTAB_ID}:345:respawn:${TSD} ${TAILSCALED_FLAGS} >> /var/volatile/tmp/tailscaled.log 2>&1"
 log "wiring /etc/inittab row '${INITTAB_ID}'"
-grep -v "^${INITTAB_ID}:" /etc/inittab > /etc/inittab.new
-echo "$LINE" >> /etc/inittab.new
-mv -f /etc/inittab.new /etc/inittab
+if [ -x /mnt/data/inittab_edit.sh ]; then
+    /mnt/data/inittab_edit.sh upsert "$INITTAB_ID" "$LINE"
+else
+    cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+    grep -v "^${INITTAB_ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
+    echo "$LINE" >> /etc/inittab.new
+    if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+        sync; mv -f /etc/inittab.new /etc/inittab; sync
+    else
+        rm -f /etc/inittab.new 2>/dev/null || true
+    fi
+fi
 
 # Stop any prior tailscaled, then HUP init so the new row spawns.
 pkill -x tailscaled 2>/dev/null || true

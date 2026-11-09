@@ -37,16 +37,24 @@ fi
 # =====================================================================
 if [ "$ACTION" = "remove" ]; then
     log "uninstalling integration '$ID'..."
-    ROW_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
-    if [ -n "$ROW_ID" ] && [ -f /etc/inittab ]; then
-        log "removing inittab row '$ROW_ID'"
-        grep -v "^${ROW_ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
-        if [ -s /etc/inittab.new ]; then
-            mv -f /etc/inittab.new /etc/inittab
+    # Integration inittab ids always start with 'i' to prevent collisions with stock daemons
+    ROW_ID="i$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-3)"
+    LEGACY_ROW_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
+
+    if [ -x /mnt/data/inittab_edit.sh ]; then
+        /mnt/data/inittab_edit.sh drop "$ROW_ID"
+        [ "$LEGACY_ROW_ID" != "$ROW_ID" ] && /mnt/data/inittab_edit.sh drop "$LEGACY_ROW_ID" 2>/dev/null || true
+    else
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+        grep -v "^${ROW_ID}:" /etc/inittab | grep -v "^${LEGACY_ROW_ID}:" > /etc/inittab.new 2>/dev/null || true
+        if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+            sync; mv -f /etc/inittab.new /etc/inittab; sync
+        else
+            rm -f /etc/inittab.new 2>/dev/null || true
         fi
     fi
     pkill -9 -f "$INTEGRATIONS_DIR/$ID" 2>/dev/null || true
-    kill -HUP 1 2>/dev/null || true
+    kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
     rm -rf "$INTEGRATIONS_DIR/$ID"
     rm -f "/var/volatile/tmp/integration-$ID.log"
     log "uninstalled '$ID' successfully"
@@ -127,25 +135,30 @@ BIN=$(sed -n 's/.*"binary":[ ]*"\([^"]*\)".*/\1/p' "$INTEGRATIONS_DIR/$ID/manife
 [ -n "$BIN" ] || die "manifest missing binary field"
 [ -x "$INTEGRATIONS_DIR/$ID/$BIN" ] || die "binary '$BIN' missing or not executable"
 
-# 4-char inittab id from the integration id; safe to collide with existing
-# rows because upsert keys on this id and replaces.
-# Use 2345 (or blank in busybox) so it runs in all active runlevels (Toon often runs in runlevel 2 or 5).
-ROW_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
+# Integration inittab ids ALWAYS start with 'i' (e.g. itel, isto, ison)
+# to guarantee ZERO collision with stock Toon daemons (ther, comm, conf, pwru, etc.)
+ROW_ID="i$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-3)"
+LEGACY_ROW_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
 LOG_PATH="/var/volatile/tmp/integration-$ID.log"
 ROW="$ROW_ID:2345:respawn:$INTEGRATIONS_DIR/$ID/$BIN >> $LOG_PATH 2>&1"
 
 log "wiring inittab row '$ROW_ID' -> $BIN"
-cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-grep -v "^${ROW_ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
-echo "$ROW" >> /etc/inittab.new
-if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
-    mv -f /etc/inittab.new /etc/inittab
+if [ -x /mnt/data/inittab_edit.sh ]; then
+    [ "$LEGACY_ROW_ID" != "$ROW_ID" ] && /mnt/data/inittab_edit.sh drop "$LEGACY_ROW_ID" 2>/dev/null || true
+    /mnt/data/inittab_edit.sh upsert "$ROW_ID" "$ROW"
 else
-    rm -f /etc/inittab.new 2>/dev/null || true
-    log "ERROR: /etc/inittab.new verification failed! Original inittab preserved."
+    cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+    grep -v "^${ROW_ID}:" /etc/inittab | grep -v "^${LEGACY_ROW_ID}:" > /etc/inittab.new 2>/dev/null || true
+    echo "$ROW" >> /etc/inittab.new
+    if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+        sync; mv -f /etc/inittab.new /etc/inittab; sync
+    else
+        rm -f /etc/inittab.new 2>/dev/null || true
+        log "ERROR: inittab verification failed! Original inittab preserved."
+    fi
 fi
 
 pkill -9 -f "$INTEGRATIONS_DIR/$ID/$BIN" 2>/dev/null || true
-kill -HUP 1
+kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
 log "installed - integration logs at $LOG_PATH"
 log "toonui will pick up the new BoxTalk service on its next subscribe cycle."

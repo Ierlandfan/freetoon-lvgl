@@ -25,12 +25,15 @@ TOON_HOST="${TOON_HOST:-toon}"
 TOON_PASS="${TOON_PASS:-toon}"
 TOON_USER="${TOON_USER:-root}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-DL_DIR="/tmp/freetoon.$$"
+if [ -d /mnt/data ] && [ -w /mnt/data ]; then
+    DL_DIR="/mnt/data/.freetoon_dl.$$"
+else
+    DL_DIR="/tmp/freetoon.$$"
+fi
 FORCE_DOWNLOAD="${FORCE_DOWNLOAD:-0}"
 
 cleanup() {
-    rm -rf "$DL_DIR" /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true
-    rm -rf /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true
+    rm -rf "$DL_DIR" /mnt/data/.freetoon_dl.* /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -83,6 +86,7 @@ resolve_artefacts() {
         P1_BRIDGE_BIN="$(pick "${P1_BRIDGE_BIN:-}" "$DL_DIR/p1bridge" "$(find_cand p1bridge "$HERE/p1bridge" "$HERE/p1bridge/p1bridge")" "$HERE/p1bridge")"
     fi
     FBVNC_INPUT="$(pick "${FBVNC_INPUT:-}" "$DL_DIR/fbvnc_input" "$(find_cand fbvnc_input "$HERE/fbvnc_input" "$HERE/../qt_rebuild/fbvnc_input")")"
+    INITTAB_EDIT="$(pick "${INITTAB_EDIT:-}"       "$DL_DIR/inittab_edit.sh"       "$HERE/inittab_edit.sh"       "$HERE/scripts/inittab_edit.sh")"
     UI_LAUNCHER="$(pick "${UI_LAUNCHER:-}"         "$DL_DIR/ui_launcher.sh"         "$HERE/ui_launcher.sh"         "$HERE/scripts/ui_launcher.sh")"
     COMPANION_GATE="$(pick "${COMPANION_GATE:-}"   "$DL_DIR/companion_gate.sh"     "$HERE/companion_gate.sh"     "$HERE/scripts/companion_gate.sh")"
     INTEG_INSTALLER="$(pick "${INTEG_INSTALLER:-}" "$DL_DIR/integrations-install.sh" "$HERE/integrations-install.sh" "$HERE/scripts/integrations-install.sh")"
@@ -280,45 +284,53 @@ require() {
 upsert_row() {
     _row="$1"
     _id="${1%%:*}"
-    remote "cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
+    remote "if [ -x /mnt/data/inittab_edit.sh ]; then \
+        /mnt/data/inittab_edit.sh upsert '${_id}' '${_row}'; \
+    else \
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
         grep -v '^${_id}:' /etc/inittab > /etc/inittab.new 2>/dev/null || true; \
         echo '${_row}' >> /etc/inittab.new; \
-        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 5 ]; then \
-            mv -f /etc/inittab.new /etc/inittab; \
-        else \
-            rm -f /etc/inittab.new 2>/dev/null || true; \
-        fi"
+        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 15 ]; then \
+            sync; mv -f /etc/inittab.new /etc/inittab; sync; \
+        else rm -f /etc/inittab.new 2>/dev/null || true; fi; \
+    fi"
 }
 
 drop_row() {
-    remote "cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
+    remote "if [ -x /mnt/data/inittab_edit.sh ]; then \
+        /mnt/data/inittab_edit.sh drop '${1}'; \
+    else \
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
         grep -v '^${1}:' /etc/inittab > /etc/inittab.new 2>/dev/null || true; \
-        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 5 ]; then \
-            mv -f /etc/inittab.new /etc/inittab; \
-        else \
-            rm -f /etc/inittab.new 2>/dev/null || true; \
-        fi"
+        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 15 ]; then \
+            sync; mv -f /etc/inittab.new /etc/inittab; sync; \
+        else rm -f /etc/inittab.new 2>/dev/null || true; fi; \
+    fi"
 }
 
 disable_stock_qt() {
-    # Comment out any stock Qt inittab rows (qtqt:, toon:, gui:, etc. running startqt or qt-gui)
-    # using basic regex without -E for compatibility with older BusyBox builds.
-    remote "sed -i 's~^[^#].*startqt~#FREETOON#&~' /etc/inittab 2>/dev/null || true; \
-            sed -i 's~^[^#].*qt-gui~#FREETOON#&~' /etc/inittab 2>/dev/null || true"
+    # Safely comment out any stock Qt inittab rows via inittab_edit.sh (atomic lock, validation, sync)
+    remote "if [ -x /mnt/data/inittab_edit.sh ]; then \
+        /mnt/data/inittab_edit.sh comment_pattern 'startqt|qt-gui'; \
+    else \
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
+        awk '\$0 ~ /(startqt|qt-gui)/ && \$0 !~ /^#/ { print \"#FREETOON#\" \$0; next } { print \$0 }' /etc/inittab > /etc/inittab.new 2>/dev/null || true; \
+        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 15 ]; then \
+            sync; mv -f /etc/inittab.new /etc/inittab; sync; \
+        else rm -f /etc/inittab.new 2>/dev/null || true; fi; \
+    fi"
 }
 
 restore_stock_qt() {
-    # Restore stock Qt inittab rows upon uninstalling FreeToon
-    remote "sed -i 's~^#FREETOON#~~' /etc/inittab 2>/dev/null || true"
-    remote "if ! grep -q 'startqt' /etc/inittab 2>/dev/null && ! grep -q 'qt-gui' /etc/inittab 2>/dev/null; then \
-        sed -i 's~^#*[ \t]*\(qtqt:.*\)~\1~' /etc/inittab 2>/dev/null || true; \
-    fi"
-    remote "if ! grep -q 'startqt' /etc/inittab 2>/dev/null && ! grep -q 'qt-gui' /etc/inittab 2>/dev/null; then \
-        if [ -x /usr/bin/startqt ]; then \
-            echo 'qtqt:2345:respawn:/usr/bin/startqt >/dev/null 2>&1' >> /etc/inittab; \
-        elif [ -x /qmf/sbin/qt-gui ]; then \
-            echo 'qtqt:2345:respawn:/qmf/sbin/qt-gui -platform linuxfb -plugin Tslib >/dev/null 2>&1' >> /etc/inittab; \
-        fi; \
+    # Restore stock Qt inittab rows upon uninstalling FreeToon safely
+    remote "if [ -x /mnt/data/inittab_edit.sh ]; then \
+        /mnt/data/inittab_edit.sh restore_stock_qt; \
+    else \
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true; \
+        awk '/^#FREETOON#/ { sub(/^#FREETOON#/, \"\"); print \$0; next } { print \$0 }' /etc/inittab > /etc/inittab.new 2>/dev/null || true; \
+        if [ -s /etc/inittab.new ] && [ \$(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 15 ]; then \
+            sync; mv -f /etc/inittab.new /etc/inittab; sync; \
+        else rm -f /etc/inittab.new 2>/dev/null || true; fi; \
     fi"
 }
 
@@ -387,6 +399,7 @@ do_install() {
     if [ "$IS_LOCAL" = 1 ]; then target_desc="local Toon"; fi
     echo "@@STEP 5/6: Binary plaatsen"
     say "Installing binaries + scripts to $target_desc..."
+    [ -n "$INITTAB_EDIT" ] && [ -e "$INITTAB_EDIT" ] && push "$INITTAB_EDIT" /mnt/data/inittab_edit.sh
     push "$TOONUI_BIN"      /mnt/data/toonui
     [ -n "$UI_LAUNCHER" ] && [ -e "$UI_LAUNCHER" ] && push "$UI_LAUNCHER"     /mnt/data/ui_launcher.sh
     [ -n "$COMPANION_GATE" ] && [ -e "$COMPANION_GATE" ] && push "$COMPANION_GATE"  /mnt/data/companion_gate.sh
@@ -518,7 +531,7 @@ do_uninstall() {
     echo "[3/4] Stopping daemons..."
     remote "killall -9 toonui 2>/dev/null || true; pkill -9 -x toonui 2>/dev/null || true; for _p in \$(pidof toonui 2>/dev/null); do kill -9 \"\$_p\" 2>/dev/null || true; done; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x quby_bridge 2>/dev/null; pkill -9 -x p1bridge 2>/dev/null; true"
     echo "[4/4] Removing files..."
-    remote "rm -f /mnt/data/toonui /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
+    remote "rm -f /mnt/data/toonui /mnt/data/inittab_edit.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
     remote "rm -rf /mnt/data/pwa"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
     echo "Uninstalled. Stock qt-gui takes over on next launcher cycle."

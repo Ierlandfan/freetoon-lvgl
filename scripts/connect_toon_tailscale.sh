@@ -240,8 +240,17 @@ if [ "$DO_UNINSTALL" = "1" ]; then
 set -eu
 ID=tsd
 [ -f /etc/inittab ] && {
-    grep -v "^${ID}:" /etc/inittab > /etc/inittab.new
-    mv -f /etc/inittab.new /etc/inittab
+    if [ -x /mnt/data/inittab_edit.sh ]; then
+        /mnt/data/inittab_edit.sh drop "$ID"
+    else
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+        grep -v "^${ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
+        if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+            sync; mv -f /etc/inittab.new /etc/inittab; sync
+        else
+            rm -f /etc/inittab.new 2>/dev/null || true
+        fi
+    fi
 }
 pkill -x tailscaled 2>/dev/null || true
 rm -rf /mnt/data/tailscale
@@ -299,9 +308,18 @@ fi
 # Toon kernel has no tun.ko → userspace WireGuard.
 FLAGS="--state=$STATE_DIR/tailscaled.state --socket=$SOCKET --tun=userspace-networking"
 LINE="${ID}:345:respawn:${TSD} ${FLAGS} >> /var/volatile/tmp/tailscaled.log 2>&1"
-grep -v "^${ID}:" /etc/inittab > /etc/inittab.new
-echo "$LINE" >> /etc/inittab.new
-mv -f /etc/inittab.new /etc/inittab
+if [ -x /mnt/data/inittab_edit.sh ]; then
+    /mnt/data/inittab_edit.sh upsert "$ID" "$LINE"
+else
+    cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+    grep -v "^${ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
+    echo "$LINE" >> /etc/inittab.new
+    if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+        sync; mv -f /etc/inittab.new /etc/inittab; sync
+    else
+        rm -f /etc/inittab.new 2>/dev/null || true
+    fi
+fi
 
 pkill -x tailscaled 2>/dev/null || true
 sleep 1

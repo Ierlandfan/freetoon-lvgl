@@ -318,9 +318,19 @@
     - Aandelen / AEX koers app toegevoegd aan de ingebouwde marktplaatscatalogus (`stocks` met fallback manifest).
     - Ondersteuning voor dynamische tegeltitels (`title` property) in de UI zodat tegels de actuele naam van het aandeel of de feed kunnen tonen.
 
-### 27. Release 1.0.4: Toon 1 Stock UI Splash Herstel, Philips Hue Integratie & UI Verbeteringen
+### 27. Release 1.0.4: Toon 1 Stock UI Splash Herstel, Bulletproof Inittab Engine, Philips Hue Integratie & UI Verbeteringen
 - **Status**: Completed in Release 1.0.4.
 - **Implemented Features & Bugfixes**:
+  - **Bulletproof Inittab & Flash Filesystem Beveiliging (`scripts/inittab_edit.sh`)**:
+    - **Oorzaak & Risico's**: Analyse wees uit dat schrijfoperaties naar `/etc/inittab` kwetsbaar waren voor afkapping bij schijf-vol (BusyBox `grep -v > new && mv` gaf rc 0 ondanks lege buffer), race-conditions door gelijktijdig schrijven naar dezelfde `.new` file, ongevalideerde writes (`sed -i` en directe `>>`), en zero-byte risico op UBIFS door het ontbreken van expliciete `sync` voor en na `mv`. Bovendien konden 4-letterige integratie-IDs (`${id:0:4}`) botsen met essentiële stock Toon daemons (zoals `ther` voor `happ_thermstat` of `toon` voor de UI).
+    - **Centrale `inittab_edit.sh` Helper**: Alle inittab operaties in het hele ecosysteem (`install.sh`, `switch_to_freetoon.sh`, `integrations-install.sh`, `ot_mode_switch.sh`, `ui_launcher.sh`, `toonvnc.sh`, `screen_settings.c`, `toon_tailscale.sh`) lopen nu uitsluitend via een zwaarbeveiligde atomic helper.
+    - **Atomic Locking & Space Pre-flight**: Beveiligd met `mkdir /etc/inittab.lock` (spin-lock met time-out en automatische opruiming van stale locks). Schrijfoperaties weigeren direct als er minder dan 100 KB vrij is op `/etc`.
+    - **PID-geïsoleerde Temp Files**: Iedere operatie gebruikt een unieke `/etc/inittab.tmp.$$` file.
+    - **Strikte Multi-point Validatie**: Nieuwe configuratie wordt pas geaccepteerd als het bestand niet-leeg is, minimaal 15 regels telt, alle vitale sysvinit-ankers bevat (`:initdefault:`, `:sysinit:`, `rcS`, `/etc/init.d/rc`) én binnen een veilige line-delta valt ten opzichte van het origineel.
+    - **Permanente Fabrieksbackup & Fallback**: Eenmalige aanmaak van `/etc/inittab.orig` die **nooit** wordt overschreven. Bij validatiefout herstelt de helper direct automatisch de backup.
+    - **UBIFS Flash Veiligheid**: Verplichte `sync` vóór `mv` en direct na `mv` om write buffers op UBIFS/JFFS2 naar flash te forceren vóórdat init een SIGHUP ontvangt.
+    - **Gegarandeerde ID Isolatie**: Alle integratie-IDs worden voortaan geforceerd voorafgegaan door een `i`-prefix (`i<id:0:3>`, bijv. `itel`, `isto`, `ison`, `ithe`), waardoor botsing met de 4-letterige stock Toon daemons wiskundig uitgesloten is.
+    - **Veilig Downloadpad**: `DL_DIR` in `install.sh` verplaatst van `/tmp` naar `/mnt/data/.freetoon_dl.$$` om defecte symlinks of ramfs/tmpfs-tekorten op Toon 1 te omzeilen.
   - **Toon 1 Stock UI Switch & Opstartsplash Herstel (`scripts/ui_launcher.sh`)**:
     - **Oorzaak**: Op Toon 1 start `psplash` tijdens vroege boot (`rcS`). Wanneer `bootpick` opent, tekent het over de framebuffer. Bij het kiezen van Stock UI (`qt-gui`) controleerde `startqt` met `pidof psplash` of psplash al draaide; omdat het oude proces nog aanwezig was, werd psplash niet herstart en bleef de framebuffer circa 2-3 minuten bevroren op het keuzemenu totdat Qt klaar was met laden.
     - **Fix**: `ui_launcher.sh` herstart `psplash` nu direct vers bij de selectie van `qt-gui` zodat de officiële Toon laadbalk direct getoond wordt. Bij het opstarten van FreeToon wordt `psplash` juist netjes afgesloten om framebuffer- en geheugengebruik te voorkomen.

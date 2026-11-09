@@ -181,26 +181,34 @@ case "$CMD" in
     ;;
   enable)
     VNCS_ROW="vncs:2345:respawn:/mnt/data/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
-    cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-    grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
-    echo "$VNCS_ROW" >> /etc/inittab.new
-    if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
-      mv -f /etc/inittab.new /etc/inittab
+    if [ -x /mnt/data/inittab_edit.sh ]; then
+      /mnt/data/inittab_edit.sh upsert vncs "$VNCS_ROW"
     else
-      rm -f /etc/inittab.new 2>/dev/null || true
+      cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+      grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
+      echo "$VNCS_ROW" >> /etc/inittab.new
+      if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+        sync; mv -f /etc/inittab.new /etc/inittab; sync
+        kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+      else
+        rm -f /etc/inittab.new 2>/dev/null || true
+      fi
     fi
-    kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
     echo "x11vnc enabled in inittab"
     ;;
   disable)
-    cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-    grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
-    if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
-      mv -f /etc/inittab.new /etc/inittab
+    if [ -x /mnt/data/inittab_edit.sh ]; then
+      /mnt/data/inittab_edit.sh drop vncs
     else
-      rm -f /etc/inittab.new 2>/dev/null || true
+      cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+      grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
+      if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+        sync; mv -f /etc/inittab.new /etc/inittab; sync
+        kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+      else
+        rm -f /etc/inittab.new 2>/dev/null || true
+      fi
     fi
-    kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
     sleep 1
     pkill -9 -x x11vnc 2>/dev/null || true
     echo "x11vnc disabled and stopped"
@@ -209,27 +217,35 @@ case "$CMD" in
     # Check if VNC is explicitly enabled in toonui.cfg. If not, drop inittab row and exit cleanly.
     if [ -f /mnt/data/toonui.cfg ] && ! grep -q '^vnc_enabled=1' /mnt/data/toonui.cfg 2>/dev/null; then
       echo "toonvnc: vnc_enabled is not 1 in toonui.cfg; removing from inittab"
-      cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-      grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
-      if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
-        mv -f /etc/inittab.new /etc/inittab 2>/dev/null || true
+      if [ -x /mnt/data/inittab_edit.sh ]; then
+        /mnt/data/inittab_edit.sh drop vncs
       else
-        rm -f /etc/inittab.new 2>/dev/null || true
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+        grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
+        if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+          sync; mv -f /etc/inittab.new /etc/inittab 2>/dev/null || true; sync
+          kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+        else
+          rm -f /etc/inittab.new 2>/dev/null || true
+        fi
       fi
-      kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
       exit 0
     fi
     # If x11vnc binary is missing, remove inittab respawn to prevent tight loop
     if ! command -v "$X11VNC" >/dev/null 2>&1 && [ ! -x "$X11VNC" ]; then
       echo "toonvnc: x11vnc binary not found; removing from inittab"
-      cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-      grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
-      if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 5 ]; then
-        mv -f /etc/inittab.new /etc/inittab 2>/dev/null || true
+      if [ -x /mnt/data/inittab_edit.sh ]; then
+        /mnt/data/inittab_edit.sh drop vncs
       else
-        rm -f /etc/inittab.new 2>/dev/null || true
+        cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
+        grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || true
+        if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
+          sync; mv -f /etc/inittab.new /etc/inittab 2>/dev/null || true; sync
+          kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+        else
+          rm -f /etc/inittab.new 2>/dev/null || true
+        fi
       fi
-      kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
       exit 0
     fi
     # Foreground variant for inittab. Identical args to `start` minus the
