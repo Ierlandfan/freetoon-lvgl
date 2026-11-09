@@ -318,8 +318,8 @@
     - Aandelen / AEX koers app toegevoegd aan de ingebouwde marktplaatscatalogus (`stocks` met fallback manifest).
     - Ondersteuning voor dynamische tegeltitels (`title` property) in de UI zodat tegels de actuele naam van het aandeel of de feed kunnen tonen.
 
-### 27. Release 1.0.4: Toon 1 Stock UI Splash Herstel, Bulletproof Inittab Engine, Philips Hue Integratie & UI Verbeteringen
-- **Status**: Completed in Release 1.0.4.
+### 27. Release 1.0.5: Toon 1 Stock UI Splash Herstel, Bulletproof Inittab Engine, Philips Hue Integratie & UI Verbeteringen
+- **Status**: Completed in Release 1.0.5.
 - **Implemented Features & Bugfixes**:
   - **Bulletproof Inittab & Flash Filesystem Beveiliging (`scripts/inittab_edit.sh`)**:
     - **Oorzaak & Risico's**: Analyse wees uit dat schrijfoperaties naar `/etc/inittab` kwetsbaar waren voor afkapping bij schijf-vol (BusyBox `grep -v > new && mv` gaf rc 0 ondanks lege buffer), race-conditions door gelijktijdig schrijven naar dezelfde `.new` file, ongevalideerde writes (`sed -i` en directe `>>`), en zero-byte risico op UBIFS door het ontbreken van expliciete `sync` voor en na `mv`. Bovendien konden 4-letterige integratie-IDs (`${id:0:4}`) botsen met essentiële stock Toon daemons (zoals `ther` voor `happ_thermstat` of `toon` voor de UI).
