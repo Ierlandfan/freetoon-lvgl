@@ -317,3 +317,19 @@
   - **Aandelen Marktplaats App & Dynamische Tegel Titels**:
     - Aandelen / AEX koers app toegevoegd aan de ingebouwde marktplaatscatalogus (`stocks` met fallback manifest).
     - Ondersteuning voor dynamische tegeltitels (`title` property) in de UI zodat tegels de actuele naam van het aandeel of de feed kunnen tonen.
+
+### 27. Release 1.0.4: Toon 1 Stock UI Splash Herstel, Philips Hue Integratie & UI Verbeteringen
+- **Status**: Completed in Release 1.0.4.
+- **Implemented Features & Bugfixes**:
+  - **Toon 1 Stock UI Switch & Opstartsplash Herstel (`scripts/ui_launcher.sh`)**:
+    - **Oorzaak**: Op Toon 1 start `psplash` tijdens vroege boot (`rcS`). Wanneer `bootpick` opent, tekent het over de framebuffer. Bij het kiezen van Stock UI (`qt-gui`) controleerde `startqt` met `pidof psplash` of psplash al draaide; omdat het oude proces nog aanwezig was, werd psplash niet herstart en bleef de framebuffer circa 2-3 minuten bevroren op het keuzemenu totdat Qt klaar was met laden.
+    - **Fix**: `ui_launcher.sh` herstart `psplash` nu direct vers bij de selectie van `qt-gui` zodat de officiële Toon laadbalk direct getoond wordt. Bij het opstarten van FreeToon wordt `psplash` juist netjes afgesloten om framebuffer- en geheugengebruik te voorkomen.
+  - **Philips Hue Bridge Ondersteuning (`hue.c`, `hue.h`, `screen_hue.c`)**:
+    - Automatische detectie en migratie van gekoppelde Philips Hue bridges via bestaande Toon instellingen.
+    - Directe bediening van lampen, groepen en scènes met native UI-schermen en helderheidssliders.
+  - **Home Assistant Entity Picker & Instellingen Modal Fixes (`screen_ha_picker.c`, `screen_settings.c`)**:
+    - Top-layer (`lv_layer_top`) wordt nu correct verborgen tijdens het openen van de HA entity picker en hersteld bij terugkeren, zodat zoekresultaten en lijsten niet overlapt worden.
+    - Geheugenbeheer van `ha_browse_ctx`: context wordt pas vrijgegeven bij vernietiging van de knop (`on_browse_delete`) i.p.v. direct bij de eerste klik, wat crash-resistentie biedt bij herhaaldelijk klikken.
+  - **Quby Bridge & Afvalwijzer Optimalisaties**:
+    - Logging reductie en automatische rotatie voor `quby-bridge` om tmpfs opslagruimte te besparen.
+    - Standaard afvalwijzer provider ingesteld op *Overige gemeentes* voor verbeterde directe werking.
