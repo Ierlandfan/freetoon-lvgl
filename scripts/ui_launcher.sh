@@ -101,10 +101,19 @@ exec_qtgui() {
         umount -l /dev/ttymxc0 2>/dev/null || true
     fi
 
-    # Framebuffer depth on Toon 1: i.MX27 LCDC hardware is 16bpp (RGB565).
-    # Ensure it is at 16bpp for both LVGL and stock qt-gui LinuxFB.
-    if is_toon1 && command -v fbset >/dev/null 2>&1; then
-        fbset -fb /dev/fb0 -depth 16 2>/dev/null || true
+    # Framebuffer depth on Toon 1: toonui forces fb0 (and the video prep fb1) to
+    # 16bpp RGB565 and never restores it, but stock qt-gui runs at 32bpp on both
+    # planes (measured on a stock Toon 1: fb0/fb1 bits_per_pixel=32). Starting
+    # qt-gui on a 16bpp plane gives a garbled, blue-tinted UI. Restore 32bpp via
+    # sysfs (fbset and `command -v` are missing on some Toon 1 firmwares).
+    if is_toon1; then
+        for _fb in /sys/class/graphics/fb0 /sys/class/graphics/fb1; do
+            [ -w "$_fb/bits_per_pixel" ] || continue
+            if [ "$(cat "$_fb/bits_per_pixel" 2>/dev/null)" != "32" ]; then
+                log "restoring ${_fb##*/} to 32bpp for stock qt-gui"
+                echo 32 > "$_fb/bits_per_pixel" 2>/dev/null || true
+            fi
+        done
     fi
 
     # On Toon 1, starting stock qt-gui takes up to 2-3 minutes.
@@ -127,30 +136,31 @@ exec_qtgui() {
         fi
     done
 
+    # Where stock-UI output goes. Without an explicit redirect qt-gui would
+    # inherit the inittab row's `>> /var/volatile/tmp/toonui.log`, so "logging
+    # off" (no /mnt/data/qtlog) must send it to /dev/null explicitly.
+    QTOUT="${QTLOG:-/dev/null}"
+
     if [ -n "$ACTUAL_STARTQT" ]; then
         if [ "$ACTUAL_STARTQT" = "/usr/bin/inittabwrap" ]; then
-            log "exec inittabwrap qt-gui${QTLOG:+ (logging to $QTLOG)}"
-            [ -n "$QTLOG" ] && exec "$ACTUAL_STARTQT" qt-gui >"$QTLOG" 2>&1
-            exec "$ACTUAL_STARTQT" qt-gui
+            log "exec inittabwrap qt-gui (output to $QTOUT)"
+            exec "$ACTUAL_STARTQT" qt-gui >"$QTOUT" 2>&1
         else
-            log "exec $ACTUAL_STARTQT${QTLOG:+ (logging to $QTLOG)}"
-            [ -n "$QTLOG" ] && exec "$ACTUAL_STARTQT" >"$QTLOG" 2>&1
-            exec "$ACTUAL_STARTQT"
+            log "exec $ACTUAL_STARTQT (output to $QTOUT)"
+            exec "$ACTUAL_STARTQT" >"$QTOUT" 2>&1
         fi
     fi
 
     if is_toon1; then
         # Direct fallback on Toon 1 when startqt wrapper is missing:
         # Pass explicit platform and touch plugins so qt-gui does not crash or show blank screen
-        log "exec $QTGUI -platform linuxfb -plugin Tslib${QTLOG:+ (logging to $QTLOG)}"
-        [ -n "$QTLOG" ] && exec "$QTGUI" -platform linuxfb -plugin Tslib >"$QTLOG" 2>&1
-        exec "$QTGUI" -platform linuxfb -plugin Tslib
+        log "exec $QTGUI -platform linuxfb -plugin Tslib (output to $QTOUT)"
+        exec "$QTGUI" -platform linuxfb -plugin Tslib >"$QTOUT" 2>&1
     fi
 
     [ -r /etc/profile.d/qt-env.sh ] && . /etc/profile.d/qt-env.sh
-    log "exec qt-gui${QTLOG:+ (logging to $QTLOG)}"
-    [ -n "$QTLOG" ] && exec "$QTGUI" >"$QTLOG" 2>&1
-    exec "$QTGUI"
+    log "exec qt-gui (output to $QTOUT)"
+    exec "$QTGUI" >"$QTOUT" 2>&1
 }
 
 # Toon 1 hardware-video prep, run once before the UI starts. No-op on Toon 2
