@@ -520,17 +520,68 @@ CFG
     echo "  • Settings → Integrations: configure P1 / Itho / HA"
 }
 
+# Runs on the Toon (locally or via ssh). Removes every active inittab row that
+# runs from /mnt/data/integrations/ via inittab_edit.sh drop_safe (which only
+# drops rows really pointing there), stops the integrations, and deletes the
+# folder only when no such row is left (no respawn loop on a deleted binary).
+# Without an engine that knows drop_safe, integrations are kept.
+INTEG_CLEANUP='E=/mnt/data/inittab_edit.sh; D=/mnt/data/integrations/
+if [ -x "$E" ] && grep -q drop_safe "$E" 2>/dev/null; then
+    for id in $(grep -v "^#" /etc/inittab 2>/dev/null | grep -F "$D" | cut -d: -f1); do
+        [ -n "$id" ] && { echo "  removing integration row $id"; "$E" drop_safe "$id" "$D" || true; }
+    done
+fi
+# init stops processes whose rows were dropped; pkill is a bonus where it exists
+# (not on Toon 1). [/] keeps the pattern from matching this sh -c itself.
+pkill -9 -f "[/]mnt/data/integrations/" 2>/dev/null || true
+if grep -v "^#" /etc/inittab 2>/dev/null | grep -qF "$D"; then
+    echo "  WARNING: integration inittab rows left; keeping /mnt/data/integrations"
+elif [ -d /mnt/data/integrations ]; then
+    rm -rf /mnt/data/integrations /var/volatile/tmp/integration-*.log /var/volatile/tmp/integration_install.log /var/volatile/tmp/integ-install.log 2>/dev/null || true
+    echo "  removed /mnt/data/integrations"
+fi
+true'
+
+# Runs on the Toon. Makes sure FreeToon is completely off the screen BEFORE stock
+# qt-gui starts: two UIs on one framebuffer, or qt-gui on toonui's 16bpp planes
+# (Toon 1; stock runs 32bpp), leave the stock UI garbled. Uses killall + pidof
+# (pkill does not exist on Toon 1).
+STOP_FREETOON_UI='for n in toonui x11vnc quby_bridge p1bridge; do killall -9 "$n" 2>/dev/null || true; done
+w=0
+while pidof toonui >/dev/null 2>&1 && [ "$w" -lt 10 ]; do
+    for p in $(pidof toonui 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done
+    sleep 1; w=$((w + 1))
+done
+pidof toonui >/dev/null 2>&1 && echo "  WARNING: toonui still running after 10 s"
+if [ -f /etc/opkg/arch.conf ] && ! grep -q nxt /etc/opkg/arch.conf 2>/dev/null; then
+    for fb in /sys/class/graphics/fb0 /sys/class/graphics/fb1; do
+        [ -w "$fb/bits_per_pixel" ] || continue
+        if [ "$(cat "$fb/bits_per_pixel" 2>/dev/null)" != "32" ]; then
+            echo "  restoring ${fb##*/} to 32bpp for stock qt-gui"
+            echo 32 > "$fb/bits_per_pixel" 2>/dev/null || true
+        fi
+    done
+fi
+true'
+
 do_uninstall() {
-    echo "[1/4] Dropping inittab rows..."
+    echo "[1/5] Dropping inittab rows..."
     drop_row toon
     drop_row vncs
     drop_row p1br
     drop_row qbri
-    echo "[2/4] Restoring stock qt inittab row..."
-    restore_stock_qt
-    echo "[3/4] Stopping daemons..."
-    remote "killall -9 toonui 2>/dev/null || true; pkill -9 -x toonui 2>/dev/null || true; for _p in \$(pidof toonui 2>/dev/null); do kill -9 \"\$_p\" 2>/dev/null || true; done; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x quby_bridge 2>/dev/null; pkill -9 -x p1bridge 2>/dev/null; true"
-    echo "[4/4] Removing files..."
+    echo "[2/5] Removing marketplace integrations..."
+    remote "$INTEG_CLEANUP"
+    echo "[3/5] Stopping FreeToon..."
+    remote "$STOP_FREETOON_UI"
+    echo "[4/5] Restoring stock qt inittab row..."
+    if ! restore_stock_qt; then
+        echo "ERROR: could not restore stock qt-gui; re-enabling FreeToon so the Toon keeps a UI." >&2
+        upsert_row "$TOON_ROW" || true
+        remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
+        exit 1
+    fi
+    echo "[5/5] Removing files..."
     remote "rm -f /mnt/data/toonui /mnt/data/inittab_edit.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
     remote "rm -rf /mnt/data/pwa"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"

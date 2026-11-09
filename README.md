@@ -242,7 +242,7 @@ from **source** if you want to hack on the code. Both use the same
    weather location, dial brightness/idle timeout, etc.
 
 To uninstall: `./install.sh --uninstall` (drops inittab rows, kills
-processes, removes binaries + PWA + configs).
+processes, removes binaries + PWA + configs + marketplace integrations).
 
 ### Path B — Build from source
 
