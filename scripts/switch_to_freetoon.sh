@@ -163,10 +163,10 @@ sleep 1
 # Check if stock Qt processes are still lingering and terminate them
 if pidof qt-gui >/dev/null 2>&1 || pidof startqt >/dev/null 2>&1; then
     log "Stopping lingering stock qt-gui processes..."
-    killall -9 qt-gui 2>/dev/null || true
-    pkill -9 -x qt-gui 2>/dev/null || true
-    pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null || true
-    pkill -9 -x startqt 2>/dev/null || true
+    # killall (pkill does not exist on Toon 1); qt-gui's name matches its
+    # /qmf/sbin/qt-gui binary, so no path match is needed.
+    killall -9 qt-gui 2>/dev/null || pkill -9 -x qt-gui 2>/dev/null || true
+    killall -9 startqt 2>/dev/null || pkill -9 -x startqt 2>/dev/null || true
     kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
 fi
 

@@ -82,7 +82,7 @@ exec_qtgui() {
             /mnt/data/ot_mode_switch.sh off >> /tmp/ot_mode_switch.log 2>&1 || true
         elif [ -x /mnt/data/inittab_edit.sh ]; then
             /mnt/data/inittab_edit.sh drop qbri 2>/dev/null || true
-            pkill -9 -x quby_bridge 2>/dev/null || true
+            killall -9 quby_bridge 2>/dev/null || pkill -9 -x quby_bridge 2>/dev/null || true
             umount -l /dev/ttymxc0 2>/dev/null || true
         else
             cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
@@ -93,11 +93,11 @@ exec_qtgui() {
             else
                 rm -f /etc/inittab.new 2>/dev/null || true
             fi
-            pkill -9 -x quby_bridge 2>/dev/null || true
+            killall -9 quby_bridge 2>/dev/null || pkill -9 -x quby_bridge 2>/dev/null || true
             umount -l /dev/ttymxc0 2>/dev/null || true
         fi
     else
-        pkill -9 -x quby_bridge 2>/dev/null || true
+        killall -9 quby_bridge 2>/dev/null || pkill -9 -x quby_bridge 2>/dev/null || true
         umount -l /dev/ttymxc0 2>/dev/null || true
     fi
 

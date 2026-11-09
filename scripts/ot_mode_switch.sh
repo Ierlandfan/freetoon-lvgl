@@ -79,11 +79,12 @@ apply_mode_swap() {
         kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
     fi
     sleep 2                 # init re-reads inittab
-    pkill -9 -x quby_bridge 2>/dev/null || true
+    # killall first: pkill does not exist on Toon 1 (busybox there has killall only)
+    killall -9 quby_bridge 2>/dev/null || pkill -9 -x quby_bridge 2>/dev/null || true
     sleep 1
     umount -l /dev/ttymxc0 2>/dev/null || true
     sleep 1
-    pkill -9 happ_thermstat 2>/dev/null || true
+    killall -9 happ_thermstat 2>/dev/null || pkill -9 happ_thermstat 2>/dev/null || true
     sleep 1
     # Second SIGHUP after the kills so init definitely spawns any new
     # respawn entries (qbri was empirically not spawning when going

@@ -477,7 +477,8 @@ CFG
     drop_row qbri
     drop_row p1br
     disable_stock_qt
-    remote "pkill -x quby_bridge 2>/dev/null; pkill -x p1bridge 2>/dev/null; true"
+    # killall first: pkill does not exist on Toon 1
+    remote "killall quby_bridge 2>/dev/null || pkill -x quby_bridge 2>/dev/null; killall p1bridge 2>/dev/null || pkill -x p1bridge 2>/dev/null; true"
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
     upsert_row "$TOON_ROW"
     if [ "$IS_LOCAL" = 1 ]; then
@@ -485,14 +486,14 @@ CFG
             upsert_row "$VNCS_ROW"
         else
             drop_row vncs
-            pkill -9 -x x11vnc 2>/dev/null || true
+            killall -9 x11vnc 2>/dev/null || pkill -9 -x x11vnc 2>/dev/null || true
         fi
     else
         if remote "[ -f /mnt/data/toonui.cfg ] && grep -q '^vnc_enabled=1' /mnt/data/toonui.cfg 2>/dev/null"; then
             upsert_row "$VNCS_ROW"
         else
             drop_row vncs
-            remote "pkill -9 -x x11vnc 2>/dev/null || true"
+            remote "killall -9 x11vnc 2>/dev/null || pkill -9 -x x11vnc 2>/dev/null || true"
         fi
     fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
@@ -508,7 +509,10 @@ CFG
     fi
     echo "@@STEP 6/6: UI herstarten"
     say "Restarting UI..."
-    remote "killall -9 toonui 2>/dev/null || true; pkill -9 -x toonui 2>/dev/null || true; for _p in \$(pidof toonui 2>/dev/null); do kill -9 \"\$_p\" 2>/dev/null || true; done; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x qt-gui 2>/dev/null; pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null; pkill -9 -x startqt 2>/dev/null; true"
+    # Name-based kills only (killall; pkill as fallback - it is missing on Toon 1).
+    # Never `pkill -f <path>` inside a remote/sh -c string: the pattern also
+    # matches that shell's own command line and kills it (exit 137).
+    remote "for _n in toonui x11vnc qt-gui startqt; do killall -9 \"\$_n\" 2>/dev/null || pkill -9 -x \"\$_n\" 2>/dev/null || true; done; for _p in \$(pidof toonui 2>/dev/null); do kill -9 \"\$_p\" 2>/dev/null || true; done; true"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
 
     rm -rf "$DL_DIR" /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true

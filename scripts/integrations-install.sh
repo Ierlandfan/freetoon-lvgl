@@ -46,6 +46,17 @@ V105_ID="i$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-3)"
 LEGACY_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
 OWN_DIR="$INTEGRATIONS_DIR/$ID/"
 
+# Kill every process whose command line contains $1 (pkill -f replacement:
+# pkill does not exist on Toon 1). Skips this script's own process.
+kill_cmdline() {
+    for _d in /proc/[0-9]*; do
+        _p=${_d#/proc/}
+        [ "$_p" = "$$" ] && continue
+        _c=$( { tr '\0' ' ' < "$_d/cmdline"; } 2>/dev/null ) || continue
+        case "$_c" in *"$1"*) kill -9 "$_p" 2>/dev/null || true ;; esac
+    done
+}
+
 # Remove every row (current, 1.0.5-style, legacy) that runs a binary from OWN_DIR.
 drop_own_rows() {
     if [ -x /mnt/data/inittab_edit.sh ]; then
@@ -77,7 +88,7 @@ drop_own_rows() {
 if [ "$ACTION" = "remove" ]; then
     log "uninstalling integration '$ID'..."
     drop_own_rows || die "could not remove inittab rows for '$ID' - integration files left in place"
-    pkill -9 -f "$INTEGRATIONS_DIR/$ID" 2>/dev/null || true
+    kill_cmdline "$OWN_DIR"
     kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
     rm -rf "$INTEGRATIONS_DIR/$ID"
     rm -f "/var/volatile/tmp/integration-$ID.log"
@@ -184,7 +195,8 @@ else
     fi
 fi
 
-pkill -9 -f "$INTEGRATIONS_DIR/$ID/$BIN" 2>/dev/null || true
+# Stop the running instance so init respawns the freshly installed binary.
+kill_cmdline "$INTEGRATIONS_DIR/$ID/$BIN"
 kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
 log "installed - integration logs at $LOG_PATH"
 log "toonui will pick up the new BoxTalk service on its next subscribe cycle."

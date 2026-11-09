@@ -141,10 +141,11 @@ setup_pipeinput() {
 
 case "$CMD" in
   stop)
-    pkill -x x11vnc 2>/dev/null && echo "x11vnc stopped" || echo "x11vnc not running"
+    # killall first: pkill does not exist on Toon 1
+    { killall x11vnc 2>/dev/null || pkill -x x11vnc 2>/dev/null; } && echo "x11vnc stopped" || echo "x11vnc not running"
     ;;
   restart)
-    pkill -x x11vnc 2>/dev/null
+    killall x11vnc 2>/dev/null || pkill -x x11vnc 2>/dev/null || true
     sleep 1
     exec "$0" start
     ;;
@@ -210,7 +211,7 @@ case "$CMD" in
       fi
     fi
     sleep 1
-    pkill -9 -x x11vnc 2>/dev/null || true
+    killall -9 x11vnc 2>/dev/null || pkill -9 -x x11vnc 2>/dev/null || true
     echo "x11vnc disabled and stopped"
     ;;
   respawn)
