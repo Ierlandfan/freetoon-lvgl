@@ -173,8 +173,9 @@ case "$cmd" in
         ;;
 
     drop_safe)
-        # Usage: inittab_edit.sh drop_safe <row_id> <must_contain_pattern>
-        # Only drops row_id if the line ALSO contains must_contain_pattern (e.g. "/mnt/data/integrations/").
+        # Usage: inittab_edit.sh drop_safe <row_id> <must_contain_text>
+        # Only drops row_id if the line ALSO contains must_contain_text, matched as a
+        # literal substring (not a regex), e.g. "/mnt/data/integrations/<id>/".
         # Guarantees stock system daemons (ther:, comm:, conf:, etc.) are never accidentally deleted.
         row_id="$2"
         pattern="$3"
@@ -185,7 +186,7 @@ case "$cmd" in
         check_disk_space
 
         awk -v id="$row_id" -v pat="$pattern" '
-            $0 ~ ("^" id ":") && $0 ~ pat { next }
+            index($0, id ":") == 1 && index($0, pat) > 0 { next }
             { print $0 }
         ' "$INITTAB" > "$TMP_FILE"
 
