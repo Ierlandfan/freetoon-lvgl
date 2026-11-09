@@ -162,7 +162,7 @@ download_artefacts() {
     echo "@@STEP 4/6: Helpers + assets"
     # Helper scripts directly from user repository
     RAW_BASE="https://raw.githubusercontent.com/$REPO/main"
-    for s in ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
+    for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
         if [ "$FORCE_DOWNLOAD" = 1 ] || { [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; }; then
             say "Fetching $s from $REPO..."
             curl -fSL -4 --connect-timeout 8 --max-time 30 -o "$DL_DIR/$s" "$RAW_BASE/scripts/$s" 2>/dev/null \
