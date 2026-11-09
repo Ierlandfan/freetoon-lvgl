@@ -103,6 +103,17 @@ exec_qtgui() {
         fbset -fb /dev/fb0 -depth 16 2>/dev/null || true
     fi
 
+    # On Toon 1, starting stock qt-gui takes up to 2-3 minutes.
+    # At early boot, psplash starts before bootpick, so bootpick draws over it.
+    # startqt only starts psplash if `pidof psplash` is empty, so if psplash was already
+    # running, startqt skips it and leaves the screen frozen on bootpick's pixels.
+    # Restart psplash fresh so the official Toon boot/progress splash shows immediately.
+    if is_toon1 && [ -x /etc/init.d/psplash.sh ]; then
+        /etc/init.d/psplash.sh quit 2>/dev/null || killall -9 psplash 2>/dev/null || true
+        /etc/init.d/psplash.sh 2>/dev/null || true
+        /etc/init.d/psplash.sh progress 30 2>/dev/null || true
+    fi
+
     # Check for startqt in multiple standard locations
     ACTUAL_STARTQT=""
     for cand in "$STARTQT" /qmf/bin/startqt /qmf/sbin/startqt /usr/bin/inittabwrap; do
@@ -184,6 +195,11 @@ toon1_video_prep() {
 # 10 s screen already covers the gap, so skip the extra wait then. (The Toon 1
 # fb/VPU prep already ran earlier, before the picker.)
 launch_toonui() {
+    # If psplash was started during boot (rcS) on Toon 1, kill it so it doesn't linger in memory
+    # or contend for framebuffer / console resources.
+    if is_toon1 && [ -x /etc/init.d/psplash.sh ]; then
+        /etc/init.d/psplash.sh quit 2>/dev/null || killall -9 psplash 2>/dev/null || true
+    fi
     if [ "$(cfg_get boot_picker_enabled)" = "0" ]; then
         log "picker disabled — 5s backend settle before toonui"
         sleep 5

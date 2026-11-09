@@ -35,6 +35,7 @@ static void on_back(lv_event_t * e) {
     (void)e;
     g_target_ta = NULL;
     g_add_type  = -1;
+    lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
     ui_pop();
 }
 
@@ -49,6 +50,7 @@ static void on_pick(lv_event_t * e) {
     }
     g_target_ta = NULL;
     g_add_type  = -1;
+    lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
     ui_pop();
 }
 
@@ -111,10 +113,16 @@ static void on_refresh(lv_event_t * e) {
     load_entities();
 }
 
+static void on_scr_delete(lv_event_t * e) {
+    (void)e;
+    lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+}
+
 lv_obj_t * screen_ha_picker_create(void) {
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(scr_root, on_scr_delete, LV_EVENT_DELETE, NULL);
 
     /* Close "X" button */
     int x_w = (DISP_VER < 600) ? 60 : 70;
@@ -182,6 +190,7 @@ void screen_ha_picker_open(const char * domain, lv_obj_t * target_ta) {
     snprintf(g_domain, sizeof(g_domain), "%s", domain ? domain : "");
     g_target_ta = target_ta;
     g_add_type  = -1;
+    lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
     ui_push(screen_ha_picker_create());
 }
 
@@ -193,5 +202,6 @@ void screen_ha_picker_open_add(const char * domain, int dev_type) {
     snprintf(g_domain, sizeof(g_domain), "%s", domain ? domain : "");
     g_target_ta = NULL;
     g_add_type  = dev_type;
+    lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
     ui_push(screen_ha_picker_create());
 }

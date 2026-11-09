@@ -3162,21 +3162,30 @@ static lv_obj_t * ta_ha_power_entity    = NULL;
 static lv_obj_t * ta_ha_gas_entity      = NULL;
 static lv_obj_t * ta_ha_solar_entity    = NULL;
 
-/* Browse-button context — heap-allocated, freed in the callback. */
+/* Browse-button context — heap-allocated, freed when the button is deleted. */
 struct ha_browse_ctx {
     lv_obj_t * ta;
     char       domain[32];
 };
 
+static void on_browse_delete(lv_event_t * e) {
+    void * ctx = lv_event_get_user_data(e);
+    if (ctx) free(ctx);
+}
+
 static void on_ha_browse(lv_event_t * e) {
     struct ha_browse_ctx * ctx = lv_event_get_user_data(e);
+    if (!ctx) return;
+    kb_hide();
     screen_ha_picker_open(ctx->domain, ctx->ta);
-    free(ctx);
+    /* Note: do NOT free(ctx) here — the browse button can be clicked
+     * multiple times while the modal is open. ctx is freed when the button
+     * is deleted via on_browse_delete. */
 }
 
 /* Helper: add a labelled textarea row to the modal panel. Returns the
- * y position for the next row. If `domain` is non-NULL a small [🔍]
- * browse button is placed next to the textarea — tapping it opens the
+ * y position for the next row. If `domain` is non-NULL a small browse
+ * button is placed next to the textarea — tapping it opens the
  * HA entity picker filtered to that domain. */
 static int ha_field_row(lv_obj_t * p, int y, const char * label,
                         const char * value, const char * placeholder,
@@ -3203,14 +3212,16 @@ static int ha_field_row(lv_obj_t * p, int y, const char * label,
             ctx->ta = ta;
             snprintf(ctx->domain, sizeof(ctx->domain), "%s", domain);
             lv_obj_t * b = lv_btn_create(p);
-            lv_obj_set_size(b, SY(36), SY(36));
+            lv_obj_set_size(b, SX(46), SY(36));
             lv_obj_align(b, LV_ALIGN_TOP_LEFT,
                          SX(260) + width + SX(6), y);
             lv_obj_set_style_radius(b, 6, 0);
             lv_obj_t * bl = lv_label_create(b);
-            lv_label_set_text(bl, "...");
+            lv_label_set_text(bl, LV_SYMBOL_LIST);
+            lv_obj_set_style_text_font(bl, SF(18), 0);
             lv_obj_center(bl);
             lv_obj_add_event_cb(b, on_ha_browse, LV_EVENT_CLICKED, ctx);
+            lv_obj_add_event_cb(b, on_browse_delete, LV_EVENT_DELETE, ctx);
         }
     }
     return y + 44;
