@@ -22,17 +22,27 @@ LOCK_DIR="/etc/inittab.lock"
 ORIG_BACKUP="/etc/inittab.orig"
 BAK_BACKUP="/etc/inittab.bak"
 TMP_FILE="/etc/inittab.tmp.$$"
+LOCK_HELD=0
 
 acquire_lock() {
     # Spin-lock with timeout (10 seconds)
     for _i in $(seq 1 20); do
         if mkdir "$LOCK_DIR" 2>/dev/null; then
+            LOCK_HELD=1
+            echo $$ > "$LOCK_DIR/pid" 2>/dev/null || true
             return 0
         fi
-        # Clean up stale locks older than 60s
+        # Clean up stale locks if the owning process is dead or lock is older than 60s
         if [ -d "$LOCK_DIR" ]; then
+            _owner_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+            if [ -n "$_owner_pid" ] && ! kill -0 "$_owner_pid" 2>/dev/null; then
+                rm -f "$LOCK_DIR/pid" 2>/dev/null || true
+                rmdir "$LOCK_DIR" 2>/dev/null || true
+                continue
+            fi
             _lock_age=$(find "$LOCK_DIR" -maxdepth 0 -mmin +1 2>/dev/null || true)
             if [ -n "$_lock_age" ]; then
+                rm -f "$LOCK_DIR/pid" 2>/dev/null || true
                 rmdir "$LOCK_DIR" 2>/dev/null || true
             fi
         fi
@@ -44,7 +54,11 @@ acquire_lock() {
 
 release_lock() {
     rm -f "$TMP_FILE" 2>/dev/null || true
-    rmdir "$LOCK_DIR" 2>/dev/null || true
+    if [ "${LOCK_HELD:-0}" = "1" ]; then
+        rm -f "$LOCK_DIR/pid" 2>/dev/null || true
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+        LOCK_HELD=0
+    fi
 }
 
 trap release_lock EXIT INT TERM
@@ -154,6 +168,26 @@ case "$cmd" in
         check_disk_space
 
         grep -v "^${row_id}:" "$INITTAB" > "$TMP_FILE" 2>/dev/null || true
+
+        commit_inittab
+        ;;
+
+    drop_safe)
+        # Usage: inittab_edit.sh drop_safe <row_id> <must_contain_pattern>
+        # Only drops row_id if the line ALSO contains must_contain_pattern (e.g. "/mnt/data/integrations/").
+        # Guarantees stock system daemons (ther:, comm:, conf:, etc.) are never accidentally deleted.
+        row_id="$2"
+        pattern="$3"
+        [ -n "$row_id" ] || exit 1
+        [ -n "$pattern" ] || exit 1
+
+        acquire_lock
+        check_disk_space
+
+        awk -v id="$row_id" -v pat="$pattern" '
+            $0 ~ ("^" id ":") && $0 ~ pat { next }
+            { print $0 }
+        ' "$INITTAB" > "$TMP_FILE"
 
         commit_inittab
         ;;

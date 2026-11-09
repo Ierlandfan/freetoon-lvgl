@@ -37,16 +37,23 @@ fi
 # =====================================================================
 if [ "$ACTION" = "remove" ]; then
     log "uninstalling integration '$ID'..."
-    # Integration inittab ids always start with 'i' to prevent collisions with stock daemons
-    ROW_ID="i$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-3)"
+    # Integration inittab ids use 'i' + 3 hex chars from md5sum (4096 unique namespaces)
+    # to guarantee zero collision with stock daemons AND between similarly-named integrations.
+    HEX3=$(printf "%s" "$ID" | md5sum | tr -dc '0-9a-f' | cut -c1-3)
+    ROW_ID="i${HEX3}"
     LEGACY_ROW_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
 
     if [ -x /mnt/data/inittab_edit.sh ]; then
-        /mnt/data/inittab_edit.sh drop "$ROW_ID"
-        [ "$LEGACY_ROW_ID" != "$ROW_ID" ] && /mnt/data/inittab_edit.sh drop "$LEGACY_ROW_ID" 2>/dev/null || true
+        # CRITICAL SAFETY: Only drop rows whose command line points into /mnt/data/integrations/!
+        # This completely prevents accidental removal of stock daemons like ther:, comm:, conf:, watc:.
+        /mnt/data/inittab_edit.sh drop_safe "$ROW_ID" "/mnt/data/integrations/"
+        [ -n "$LEGACY_ROW_ID" ] && /mnt/data/inittab_edit.sh drop_safe "$LEGACY_ROW_ID" "/mnt/data/integrations/" 2>/dev/null || true
     else
         cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-        grep -v "^${ROW_ID}:" /etc/inittab | grep -v "^${LEGACY_ROW_ID}:" > /etc/inittab.new 2>/dev/null || true
+        awk -v id1="$ROW_ID" -v id2="$LEGACY_ROW_ID" '
+            ($0 ~ ("^" id1 ":") || $0 ~ ("^" id2 ":")) && $0 ~ /\/mnt\/data\/integrations\// { next }
+            { print $0 }
+        ' /etc/inittab > /etc/inittab.new 2>/dev/null || true
         if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
             sync; mv -f /etc/inittab.new /etc/inittab; sync
         else
@@ -135,20 +142,26 @@ BIN=$(sed -n 's/.*"binary":[ ]*"\([^"]*\)".*/\1/p' "$INTEGRATIONS_DIR/$ID/manife
 [ -n "$BIN" ] || die "manifest missing binary field"
 [ -x "$INTEGRATIONS_DIR/$ID/$BIN" ] || die "binary '$BIN' missing or not executable"
 
-# Integration inittab ids ALWAYS start with 'i' (e.g. itel, isto, ison)
-# to guarantee ZERO collision with stock Toon daemons (ther, comm, conf, pwru, etc.)
-ROW_ID="i$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-3)"
+# Integration inittab ids use 'i' + 3 hex chars from md5sum (4096 unique namespaces)
+# to guarantee zero collision with stock daemons AND between similarly-named integrations.
+HEX3=$(printf "%s" "$ID" | md5sum | tr -dc '0-9a-f' | cut -c1-3)
+ROW_ID="i${HEX3}"
 LEGACY_ROW_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
 LOG_PATH="/var/volatile/tmp/integration-$ID.log"
 ROW="$ROW_ID:2345:respawn:$INTEGRATIONS_DIR/$ID/$BIN >> $LOG_PATH 2>&1"
 
 log "wiring inittab row '$ROW_ID' -> $BIN"
 if [ -x /mnt/data/inittab_edit.sh ]; then
-    [ "$LEGACY_ROW_ID" != "$ROW_ID" ] && /mnt/data/inittab_edit.sh drop "$LEGACY_ROW_ID" 2>/dev/null || true
+    # Safely remove any existing/legacy row for this integration ONLY if pointing to /mnt/data/integrations/
+    [ -n "$LEGACY_ROW_ID" ] && /mnt/data/inittab_edit.sh drop_safe "$LEGACY_ROW_ID" "/mnt/data/integrations/" 2>/dev/null || true
+    /mnt/data/inittab_edit.sh drop_safe "$ROW_ID" "/mnt/data/integrations/" 2>/dev/null || true
     /mnt/data/inittab_edit.sh upsert "$ROW_ID" "$ROW"
 else
     cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-    grep -v "^${ROW_ID}:" /etc/inittab | grep -v "^${LEGACY_ROW_ID}:" > /etc/inittab.new 2>/dev/null || true
+    awk -v id1="$ROW_ID" -v id2="$LEGACY_ROW_ID" '
+        ($0 ~ ("^" id1 ":") || $0 ~ ("^" id2 ":")) && $0 ~ /\/mnt\/data\/integrations\// { next }
+        { print $0 }
+    ' /etc/inittab > /etc/inittab.new 2>/dev/null || true
     echo "$ROW" >> /etc/inittab.new
     if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
         sync; mv -f /etc/inittab.new /etc/inittab; sync
