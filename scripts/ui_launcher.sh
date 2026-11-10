@@ -17,6 +17,20 @@ set -eu
 
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:$PATH"
 
+# Time zone, the way the stock UI gets it: /etc/default/HCBv2 does
+# `export TZ=$(cat /etc/timezone)` for qt-gui. Started from inittab we don't
+# inherit that, and glibc falls back to /etc/localtime, which on many Toon 1
+# images is Europe/London -> the clock shows exactly 1 h behind all year.
+# Only accept a sane zone name that exists in zoneinfo; otherwise leave TZ
+# alone (localtime fallback, as before).
+if [ -z "${TZ:-}" ] && [ -r /etc/timezone ]; then
+    _tz=$(tr -d ' \t\r\n' < /etc/timezone 2>/dev/null || true)
+    case "$_tz" in
+        ""|*[!A-Za-z0-9/_+-]*|/*|*..*) ;;
+        *) if [ -f "/usr/share/zoneinfo/$_tz" ]; then export TZ="$_tz"; fi ;;
+    esac
+fi
+
 CHOICE_FILE=/mnt/data/ui_choice
 TOONUI=/mnt/data/toonui
 QTGUI=/qmf/sbin/qt-gui
