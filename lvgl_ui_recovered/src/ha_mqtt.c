@@ -246,7 +246,7 @@ static void publish_state(int fd) {
         "\"burner\":\"%s\",\"dhw\":\"%s\",\"ot_error\":\"%s\","
         "\"preset\":\"%s\",\"action\":\"%s\"}",
         t->indoor_temp, t->setpoint, t->ch_setpoint,
-        t->boiler_in_temp, t->boiler_out_temp, t->water_pressure,
+        t->boiler_out_temp, t->boiler_in_temp, t->water_pressure,   /* flow, return */
         t->modulation_level, t->humidity, t->eco2, t->tvoc,
         t->burner_on ? "ON" : "OFF", t->dhw_on ? "ON" : "OFF",
         t->ot_comm_error ? "ON" : "OFF", preset, action);
