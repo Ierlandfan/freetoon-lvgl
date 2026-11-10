@@ -165,6 +165,11 @@ fi
 
 [ -f "$INTEGRATIONS_DIR/$ID/manifest.json" ] || die "no manifest.json in package"
 chmod +x "$INTEGRATIONS_DIR/$ID"/* 2>/dev/null || true
+# Older packages were tarred from a Windows checkout as 0777 uid 1000, and
+# root's tar keeps that. These binaries are respawned by init as root, so
+# make them root-owned and not group/world-writable whatever the tarball says.
+chown -R 0:0 "$INTEGRATIONS_DIR/$ID" 2>/dev/null || true
+chmod -R go-w "$INTEGRATIONS_DIR/$ID" 2>/dev/null || true
 
 BIN=$(sed -n 's/.*"binary":[ ]*"\([^"]*\)".*/\1/p' "$INTEGRATIONS_DIR/$ID/manifest.json")
 [ -n "$BIN" ] || die "manifest missing binary field"
