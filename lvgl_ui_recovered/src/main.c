@@ -33,6 +33,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <signal.h>
 
 /* Wrap evdev_read so any PR event marks activity for the idle timer. */
 static void evdev_read_with_activity(lv_indev_drv_t * drv, lv_indev_data_t * data) {
@@ -101,6 +102,8 @@ static void init_display_and_input(void) {
     lv_indev_drv_register(&indev_drv);
 }
 
+static void on_sigpipe(int sig) { (void)sig; }
+
 int main(int argc, char** argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -121,6 +124,21 @@ int main(int argc, char** argv) {
      * Toon stays reachable on :10081 — as a master (serves its own state) or,
      * with client_mode set, as a slave re-serving another master. */
     int headless = (argc > 1 && strcmp(argv[1], "--headless") == 0);
+
+    /* A send()/write() on a socket or pipe whose peer is gone (hcb_comm
+     * restarting, a PWA tab closing mid-response) raises SIGPIPE, whose
+     * default action kills toonui outright. Install a no-op handler rather
+     * than SIG_IGN: a caught signal resets to default across exec, so the
+     * curl/sh children we popen() keep normal SIGPIPE behaviour, while every
+     * thread in this process just sees EPIPE and handles the error. */
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sa_handler = on_sigpipe;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        sigaction(SIGPIPE, &sa, NULL);
+    }
 
     fprintf(stderr, "[main] starting toonui%s\n",
             headless ? " (headless WASM-host)" : "");

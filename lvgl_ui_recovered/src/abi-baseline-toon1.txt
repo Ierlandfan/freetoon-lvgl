@@ -70,6 +70,7 @@ memmove@GLIBC_2.4
 memset@GLIBC_2.4
 mktime@GLIBC_2.4
 mmap@GLIBC_2.4
+munmap@GLIBC_2.4
 open@GLIBC_2.4
 opendir@GLIBC_2.4
 pause@GLIBC_2.4
@@ -100,6 +101,8 @@ send@GLIBC_2.4
 setpgid@GLIBC_2.4
 setsockopt@GLIBC_2.4
 setvbuf@GLIBC_2.4
+sigaction@GLIBC_2.4
+sigemptyset@GLIBC_2.4
 sin@GLIBC_2.4
 sincosf@GLIBC_2.4
 sinf@GLIBC_2.4
@@ -129,10 +132,12 @@ strtof@GLIBC_2.4
 strtok@GLIBC_2.4
 strtok_r@GLIBC_2.4
 strtol@GLIBC_2.4
+sync@GLIBC_2.4
 system@GLIBC_2.4
 tan@GLIBC_2.4
 time@GLIBC_2.4
 timegm@GLIBC_2.4
+umask@GLIBC_2.4
 uname@GLIBC_2.4
 unlink@GLIBC_2.4
 usleep@GLIBC_2.4

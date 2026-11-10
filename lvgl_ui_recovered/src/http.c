@@ -129,7 +129,7 @@ static int socket_http_fetch(const char * url, char * out, size_t out_max, int t
     return 0;
 }
 
-int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
+static int curl_fetch(const char * url, char * out, size_t out_max, int timeout_s, int verify_tls) {
     if (!url || !out || out_max < 16) return -1;
     if (timeout_s < 1) timeout_s = 8;
 
@@ -137,7 +137,7 @@ int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
      * expensive fork/popen(/usr/bin/curl) on Toon 1's 400MHz CPU.
      * Falls back to curl ONLY for redirects (3xx). If host lookup or connection
      * failed (-2), curl will also fail — return -1 immediately without forking. */
-    if (strncasecmp(url, "http://", 7) == 0) {
+    if (!verify_tls && strncasecmp(url, "http://", 7) == 0) {
         int s_rc = socket_http_fetch(url, out, out_max, timeout_s);
         if (s_rc == 0) return 0;
         if (s_rc == -2) return -1;
@@ -153,8 +153,8 @@ int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s -4 -k -L --compressed --max-time %d --connect-timeout 4 "
-        "-A 'toonui/1.0' '%s'", timeout_s, url);
+        "/usr/bin/curl -s -4 %s-L --compressed --max-time %d --connect-timeout 4 "
+        "-A 'toonui/1.0' '%s'", verify_tls ? "" : "-k ", timeout_s, url);
     FILE * fp = popen(cmd, "r");
     if (!fp) return -1;
     size_t got = 0;
@@ -172,6 +172,22 @@ int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
      * curl's exit code — otherwise a big payload silently fails the whole fetch. */
     if (got >= out_max - 1) return 0;
     return (rc == 0 && got > 0) ? 0 : -1;
+}
+
+/* Data feeds (weather, news, waste schedules, ...): certificate checks off.
+ * The Toon's CA store / OpenSSL can't be relied on to validate every feed's
+ * chain, and these responses are only ever displayed, never executed. The URL
+ * is still character-filtered above, so a response can't inject commands. */
+int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
+    return curl_fetch(url, out, out_max, timeout_s, 0);
+}
+
+/* Anything that decides what code gets installed or run (marketplace catalog,
+ * release metadata, downloaded plugin scripts) uses this: https only, TLS
+ * verified (no -k), no plain-http fast path. */
+int http_fetch_secure(const char * url, char * out, size_t out_max, int timeout_s) {
+    if (!url || strncasecmp(url, "https://", 8) != 0) return -1;
+    return curl_fetch(url, out, out_max, timeout_s, 1);
 }
 
 int http_fetch(const char * url, char * out, size_t out_max) {

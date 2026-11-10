@@ -4,6 +4,7 @@
  * existing TSC plugin config is reused without duplication.
  */
 #include "wastecollection.h"
+#include "shell_util.h"
 #include "http.h"
 #include "settings.h"
 #include <time.h>
@@ -632,13 +633,20 @@ static int fetch_plugin(void) {
         return -1;
     }
     unlink("/mnt/data/wastedates.ics");
-    char cmd[1280];
-    snprintf(cmd, sizeof cmd,
-        "/mnt/data/wastefetch '%s' '%s' '%s' '%s' '%s' '%s' '%s' "
-        "/mnt/data/wastedates.ics >/tmp/wastefetch.log 2>&1",
+    /* Every argument is shell-quoted: street/city legitimately contain a '
+     * ('s-Hertogenbosch, 's-Gravenhage) and all of them come from settings. */
+    const char * argv_src[7] = {
         settings.waste_plugin, settings.waste_postcode, settings.waste_housenr,
         settings.waste_icsid, settings.waste_street, settings.waste_city,
-        settings.waste_ics_url);
+        settings.waste_ics_url };
+    char q[7][300];
+    for (int i = 0; i < 7; i++)
+        if (!sh_quote(q[i], sizeof q[i], argv_src[i])) return -1;
+    char cmd[2400];
+    snprintf(cmd, sizeof cmd,
+        "/mnt/data/wastefetch %s %s %s %s %s %s %s "
+        "/mnt/data/wastedates.ics >/tmp/wastefetch.log 2>&1",
+        q[0], q[1], q[2], q[3], q[4], q[5], q[6]);
     int rc = system(cmd);
     /* Log the output so the one-shot fetch can be debugged on-device without recompiling */
     FILE * f = fopen("/tmp/wastefetch.log", "r");

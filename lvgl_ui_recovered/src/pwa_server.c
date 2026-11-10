@@ -267,10 +267,12 @@ static int render_state_json(char * body, size_t sz) {
     /* ---- news ticker (title + link + body + feed index)
      * Body is the RSS <description> (HTML-stripped, up to ~900 chars). Without
      * it the article-card view shows "geen samenvatting beschikbaar" on the
-     * WASM slave. Each item adds ~1 KB to the SSE frame; still well within the
-     * 32 KB body buffer with all 12 items. */
+     * WASM slave. Each item adds up to ~1.5 KB, and NEWS_MAX_ITEMS allows 96,
+     * which would overrun the 64 KB frame — so stop adding items while 16 KB
+     * is still free for the sections that follow. */
     if (p < end) p += snprintf(p, end-p, "\"news\":[");
     for (int i = 0, n = news_count(); i < n; i++) {
+        if (p >= end || (size_t)(end - p) < 16384) break;
         char title[NEWS_TITLE_MAX], link[NEWS_LINK_MAX], body[1024];
         char title_esc[NEWS_TITLE_MAX], link_esc[NEWS_LINK_MAX], body_esc[1024];
         if (news_item(i, title, sizeof title, link, sizeof link) != 0) continue;
@@ -385,10 +387,19 @@ static int render_state_json(char * body, size_t sz) {
     if (p < end) p += snprintf(p, end-p, "],\"dz_connected\":%d,",
         domoticz_state.connected);
 
+    /* snprintf returns the length it *wanted*, so after a truncated write p
+     * points past `end`. Then p[-1] and the returned length would both be out
+     * of bounds (the SSE path memcpy'd n+1 bytes into a buffer of sz) —
+     * report failure instead; callers skip the frame. */
+    if (p >= end - 1) {
+        fprintf(stderr, "[pwa] state JSON exceeded %zu bytes — frame dropped\n", sz);
+        body[0] = 0;
+        return -1;
+    }
     /* Replace the trailing comma with a closing brace. */
     if (p > body + 1 && p[-1] == ',') p[-1] = '}';
-    else if (p < end) *p++ = '}';
-    if (p < end) *p = 0;
+    else *p++ = '}';
+    *p = 0;
     return (int)(p - body);
 }
 
@@ -396,6 +407,7 @@ static int handle_state(int fd) {
     char * body = malloc(65536); /* full state incl. lights/schedule/inbox/calendar/news/dz arrays */
     if (!body) return -1;
     int n = render_state_json(body, 65536);
+    if (n < 0) { free(body); return send_status(fd, 500, "Server Error", "{\"err\":\"state too large\"}"); }
     char hdr[256];
     int hn = snprintf(hdr, sizeof(hdr),
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n"
@@ -477,11 +489,17 @@ static int handle_rrd_proxy(int fd, const char * query) {
     int n = snprintf(req, sizeof req,
         "GET /hcb_rrd?%s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         query ? query : "");
-    if (send(sock, req, n, 0) != n) { close(sock); return -1; }
-    static char buf[256 * 1024];
+    if (send(sock, req, n, MSG_NOSIGNAL) != n) { close(sock); return -1; }
+    /* Per-request buffer: this handler runs on every connection thread, and a
+     * shared static buffer let two parallel stats fetches corrupt each other
+     * (strstr could then find the *other* request's header end beyond `total`
+     * and body_len would wrap). */
+    const size_t cap = 256 * 1024;
+    char * buf = malloc(cap);
+    if (!buf) { close(sock); return send_status(fd, 503, "Busy", "{\"err\":\"oom\"}"); }
     size_t total = 0;
-    while (total < sizeof buf - 1) {
-        ssize_t k = recv(sock, buf + total, sizeof buf - 1 - total, 0);
+    while (total < cap - 1) {
+        ssize_t k = recv(sock, buf + total, cap - 1 - total, 0);
         if (k <= 0) break;
         total += (size_t)k;
     }
@@ -489,16 +507,18 @@ static int handle_rrd_proxy(int fd, const char * query) {
     buf[total] = 0;
     const char * body = strstr(buf, "\r\n\r\n");
     body = body ? body + 4 : buf;
-    size_t body_len = total - (size_t)(body - buf);
+    size_t body_len = (body <= buf + total) ? total - (size_t)(body - buf) : 0;
     char hdr[256];
     int hn = snprintf(hdr, sizeof hdr,
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n"
         "Cache-Control: no-cache\r\nConnection: close\r\n"
         "Access-Control-Allow-Origin: *\r\n\r\n",
         body_len);
-    if (sock_send_all(fd, hdr, hn) < 0) return -1;
-    if (body_len) sock_send_all(fd, body, body_len);
-    return 0;
+    int rc = 0;
+    if (sock_send_all(fd, hdr, hn) < 0) rc = -1;
+    else if (body_len) sock_send_all(fd, body, body_len);
+    free(buf);
+    return rc;
 }
 
 /* Serve the cached Buienradar radar GIF the weather thread writes to
@@ -940,10 +960,16 @@ static int handle_packages_post(int fd, const char * body) {
                 char merged[17000];
                 size_t pre = (size_t)(scan - cur);
                 size_t post_len = strlen(obj_end + 1);
+                size_t rb_len = strlen(rebuilt);
+                if (pre + rb_len + post_len >= sizeof(merged)) {
+                    /* Would overflow the stack buffer — refuse, keep the file. */
+                    pthread_mutex_unlock(&g_pkg_mtx);
+                    return send_status(fd, 413, "Payload Too Large", "{\"err\":\"packages store full\"}");
+                }
                 memcpy(merged, cur, pre);
-                memcpy(merged + pre, rebuilt, strlen(rebuilt));
-                memcpy(merged + pre + strlen(rebuilt), obj_end + 1, post_len);
-                merged[pre + strlen(rebuilt) + post_len] = 0;
+                memcpy(merged + pre, rebuilt, rb_len);
+                memcpy(merged + pre + rb_len, obj_end + 1, post_len);
+                merged[pre + rb_len + post_len] = 0;
                 pkg_write_all(merged);
                 pthread_mutex_unlock(&g_pkg_mtx);
                 /* Fire notify only on actual state advancement */
@@ -969,11 +995,18 @@ static int handle_packages_post(int fd, const char * body) {
         merchant, order_id, status, ts);
     size_t L = strlen(cur);
     while (L > 0 && (cur[L-1] == '\n' || cur[L-1] == ' ')) L--;
-    if (L < 2 || cur[L-1] != ']')      snprintf(merged, sizeof(merged), "[%s]", entry);
-    else if (L == 2)                   snprintf(merged, sizeof(merged), "[%s]", entry);
+    int mn;
+    if (L < 2 || cur[L-1] != ']')      mn = snprintf(merged, sizeof(merged), "[%s]", entry);
+    else if (L == 2)                   mn = snprintf(merged, sizeof(merged), "[%s]", entry);
     else {
         cur[L-1] = 0;
-        snprintf(merged, sizeof(merged), "%s,%s]", cur, entry);
+        mn = snprintf(merged, sizeof(merged), "%s,%s]", cur, entry);
+    }
+    if (mn < 0 || (size_t)mn >= sizeof(merged)) {
+        /* Truncated JSON would be unparseable, and the next append would then
+         * replace the whole file with [entry] — refuse instead. */
+        pthread_mutex_unlock(&g_pkg_mtx);
+        return send_status(fd, 413, "Payload Too Large", "{\"err\":\"packages store full\"}");
     }
     pkg_write_all(merged);
     pthread_mutex_unlock(&g_pkg_mtx);
@@ -1312,7 +1345,8 @@ static int handle_settings_post(int fd, const char * body) {
             settings.weather_location_id = iv;
         }
     }
-    if (extract_str(body, "ot_bridge_mode", sv, sizeof sv))
+    if (extract_str(body, "ot_bridge_mode", sv, sizeof sv) &&
+        (!strcmp(sv, "off") || !strcmp(sv, "proxy") || !strcmp(sv, "wireless")))
         snprintf(settings.ot_bridge_mode, sizeof settings.ot_bridge_mode, "%s", sv);
     if (extract_str(body, "otgw_host", sv, sizeof sv))
         snprintf(settings.otgw_host, sizeof settings.otgw_host, "%s", sv);
@@ -1599,7 +1633,10 @@ static int request_is_authed(const char * req) {
  * fetch alongside a login page). */
 static int path_is_public(const char * path) {
     if (!strcmp(path, "/login"))         return 1;
-    if (!strcmp(path, "/set-password"))  return 1;
+    /* Only public while no password exists (first-run setup). Once one is
+     * set, an unauthenticated /set-password would let any LAN host replace
+     * it and lock the owner out. */
+    if (!strcmp(path, "/set-password"))  return !settings.pwa_login_pass[0];
     if (!strcmp(path, "/logout"))        return 1;
     if (!strncmp(path, "/api/v1/marketplace/", 20)) return 1;
     return 0;
@@ -1654,10 +1691,27 @@ static const char * LOGIN_PAGE_FMT =
     "%s"
     "</form></body></html>";
 
+/* HTML-attribute escape (the stored username is echoed into value="..."). */
+static void html_attr_esc(char * dst, size_t dstsz, const char * s) {
+    size_t o = 0;
+    for (; s && *s && o + 7 < dstsz; s++) {
+        switch (*s) {
+        case '&':  memcpy(dst + o, "&amp;", 5);  o += 5; break;
+        case '<':  memcpy(dst + o, "&lt;", 4);   o += 4; break;
+        case '>':  memcpy(dst + o, "&gt;", 4);   o += 4; break;
+        case '"':  memcpy(dst + o, "&quot;", 6); o += 6; break;
+        case '\'': memcpy(dst + o, "&#39;", 5);  o += 5; break;
+        default:   dst[o++] = *s;
+        }
+    }
+    if (dstsz) dst[o < dstsz ? o : dstsz - 1] = 0;
+}
+
 static int handle_login_get(int fd, int wrong) {
-    char html[2048];
+    char html[2048], user_esc[200];
+    html_attr_esc(user_esc, sizeof user_esc, settings.pwa_login_user);
     snprintf(html, sizeof html, LOGIN_PAGE_FMT,
-             settings.pwa_login_user,
+             user_esc,
              wrong ? "<div class=err>Wrong username or password.</div>" : "");
     return send_html(fd, 200, "OK", html);
 }
@@ -1714,28 +1768,43 @@ static const char * SETPASS_PAGE_FMT =
     "<p>Web access is enabled but no password is set yet. Choose one now to "
     "continue. You can change it later in Settings &rarr; Web Access.</p>"
     "<label>Username</label><input name=user value=\"%s\">"
-    "<label>Password (min 4 chars)</label><input name=pass type=password autofocus>"
+    "<label>Password (min 8 chars)</label><input name=pass type=password autofocus>"
     "<label>Confirm</label><input name=pass2 type=password>"
     "<button type=submit>Save &amp; sign in</button>"
     "%s"
     "</form></body></html>";
 
 static int handle_setpass_get(int fd, const char * err) {
-    char html[2048];
+    char html[2048], user_esc[200];
+    html_attr_esc(user_esc, sizeof user_esc,
+                  settings.pwa_login_user[0] ? settings.pwa_login_user : "admin");
     snprintf(html, sizeof html, SETPASS_PAGE_FMT,
-             settings.pwa_login_user[0] ? settings.pwa_login_user : "admin",
+             user_esc,
              err ? err : "");
     return send_html(fd, 200, "OK", html);
 }
 
 static int handle_setpass_post(int fd, const char * body) {
+    /* First-run only. Changing an existing password goes through Settings
+     * (authenticated); this form must never overwrite one. */
+    if (settings.pwa_login_pass[0])
+        return send_status(fd, 403, "Forbidden",
+            "A password is already set. Change it in Settings -> Web Access.");
     char user[32] = "", pass[32] = "", pass2[32] = "";
     form_get(body, "user", user, sizeof user);
     form_get(body, "pass", pass, sizeof pass);
     form_get(body, "pass2", pass2, sizeof pass2);
     if (!user[0]) snprintf(user, sizeof user, "admin");
-    if (strlen(pass) < 4)
-        return handle_setpass_get(fd, "<div class=err>Password must be at least 4 characters.</div>");
+    /* The username is echoed back into the login page's HTML — keep it to
+     * characters that need no escaping. */
+    for (const char * p = user; *p; p++) {
+        char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+              c == '.' || c == '_' || c == '-' || c == '@'))
+            return handle_setpass_get(fd, "<div class=err>Username may only contain letters, digits and . _ - @</div>");
+    }
+    if (strlen(pass) < 8)
+        return handle_setpass_get(fd, "<div class=err>Password must be at least 8 characters.</div>");
     if (strcmp(pass, pass2) != 0)
         return handle_setpass_get(fd, "<div class=err>Passwords don't match.</div>");
     /* Persist + auto-login. */
