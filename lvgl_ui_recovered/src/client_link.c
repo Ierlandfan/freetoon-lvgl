@@ -13,6 +13,7 @@
  * character set before being interpolated into the curl command line.
  */
 #include "client_link.h"
+#include "shell_util.h"
 #include "settings.h"
 #include "boxtalk.h"
 #include "http.h"
@@ -742,11 +743,12 @@ static void * reader_thread(void * arg) {
 
 static int post_json(const char * path, const char * json) {
     if (!host_ok(settings.master_host)) return -1;
-    char cmd[512];
+    char cmd[1024], qjson[600];
+    if (!sh_quote(qjson, sizeof qjson, json)) return -1;
     snprintf(cmd, sizeof cmd,
         "curl -s -m 6 -X POST -H 'Content-Type: application/json' "
-        "--data '%s' 'http://%s:%d%s' >/dev/null 2>&1",
-        json, settings.master_host, MASTER_PORT, path);
+        "--data %s 'http://%s:%d%s' >/dev/null 2>&1",
+        qjson, settings.master_host, MASTER_PORT, path);
     return system(cmd) == 0 ? 0 : -1;
 }
 

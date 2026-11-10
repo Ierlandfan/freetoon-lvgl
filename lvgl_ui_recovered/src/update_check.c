@@ -161,7 +161,8 @@ void update_check_now(void) {
     body[0] = 0;
     const char * api = settings.update_channel == 0
                        ? RELEASES_API_STABLE : RELEASES_API_BETA;
-    int rc = http_fetch_to(api, body, sizeof body, 20);
+    /* TLS-verified: this decides which release auto-update installs. */
+    int rc = http_fetch_secure(api, body, sizeof body, 20);
     g_update_state.last_check_epoch = (long)time(NULL);
     /* http_fetch returns 0 on success (not byte count). Treat anything
      * non-zero as failure. body[] is also empty after a failure since

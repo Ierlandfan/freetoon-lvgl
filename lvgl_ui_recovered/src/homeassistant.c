@@ -12,6 +12,7 @@
 #include "http.h"
 #include "notify.h"
 #include "settings.h"
+#include "shell_util.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,7 +54,24 @@ static const char * ha_hostport(char * out, size_t outsz) {
     char * slash = strchr(out, '/');
     if (slash) *slash = 0;
     for (size_t n = strlen(out); n && (out[n-1] == ' ' || out[n-1] == '/'); n--) out[n-1] = 0;
+    /* The result is spliced into curl command lines inside '...'. Anything
+     * that isn't a host[:port] character (a ', ;, $, ` …) would break out of
+     * the quotes and run as root — return an empty host instead, so the call
+     * simply fails. */
+    if (!sh_is_hostport(out)) out[0] = 0;
     return out;
+}
+
+/* A HA long-lived token is a JWT: [A-Za-z0-9._-]. It is pasted into a curl
+ * -H argument, so refuse anything else rather than quote around it. */
+static int ha_token_safe(const char * t) {
+    if (!t || !t[0]) return 0;
+    for (const char * p = t; *p; p++) {
+        char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) return 0;
+    }
+    return 1;
 }
 #define HA_POLL_S 10
 #define HA_TOKEN_PATH "/mnt/data/ha.cfg"
@@ -95,8 +113,13 @@ static void load_token(void) {
     if (fgets(g_token, sizeof(g_token), f)) {
         char * nl = strchr(g_token, '\n'); if (nl) *nl = 0;
         char * cr = strchr(g_token, '\r'); if (cr) *cr = 0;
+        char * sp = strchr(g_token, ' ');  if (sp) *sp = 0;
     }
     fclose(f);
+    if (!ha_token_safe(g_token)) {
+        if (g_token[0]) fprintf(stderr, "[ha] token in %s has invalid characters — ignored\n", HA_TOKEN_PATH);
+        g_token[0] = 0;
+    }
 }
 
 /* On-device token config (Settings -> Integrations -> Configure HA entities).
@@ -108,10 +131,21 @@ void ha_get_token(char * out, size_t n) {
 }
 int ha_set_token(const char * tok) {
     if (!tok) return -1;
+    while (*tok == ' ' || *tok == '\t') tok++;
+    char clean[sizeof g_token];
+    snprintf(clean, sizeof clean, "%s", tok);
+    for (size_t n = strlen(clean); n && (clean[n-1] == ' ' || clean[n-1] == '\n' || clean[n-1] == '\r'); n--)
+        clean[n-1] = 0;
+    if (clean[0] && !ha_token_safe(clean)) return -1;   /* would be spliced into a shell command */
+    tok = clean;
+    /* Token file holds a credential: keep it private to root. */
+    mode_t old = umask(077);
     FILE * f = fopen(HA_TOKEN_PATH, "w");
+    umask(old);
     if (!f) return -1;
     fprintf(f, "%s\n", tok);
     fclose(f);
+    chmod(HA_TOKEN_PATH, 0600);
     snprintf(g_token, sizeof g_token, "%s", tok);   /* live, no restart needed */
     return 0;
 }
@@ -200,6 +234,9 @@ int ha_fetch_calendar(const char * entity, const char * start_iso,
                       const char * end_iso, char * out, size_t out_max) {
     if (!g_token[0]) load_token();
     if (!g_token[0] || !ha_id_safe(entity) || !HA_HOST[0]) return -1;
+    /* start/end are ISO timestamps built by calendar.c: [0-9T:+-Z.] only. */
+    for (const char * p = start_iso; p && *p; p++) if (!strchr("0123456789T:+-Z.", *p)) return -1;
+    for (const char * p = end_iso;   p && *p; p++) if (!strchr("0123456789T:+-Z.", *p)) return -1;
     char cmd[1024], hp[192];
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s %s--max-time 8 --connect-timeout 4 "
@@ -221,7 +258,11 @@ int ha_fetch_calendar(const char * entity, const char * start_iso,
  * plain entity-id-only calls. */
 static int ha_call_service(const char * domain, const char * service,
                            const char * entity_id, const char * extra_json) {
-    if (!g_token[0] || !ha_id_safe(entity_id)) return -1;
+    if (!g_token[0] || !ha_id_safe(entity_id) ||
+        !ha_id_safe(domain) || !ha_id_safe(service)) return -1;
+    /* extra_json is built internally from integers (",\"position\":%d"), but
+     * it is spliced inside '...' — refuse a stray quote all the same. */
+    if (extra_json && strchr(extra_json, '\'')) return -1;
     char cmd[1024], out[256], hp[192];
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s %s--max-time 6 --connect-timeout 3 "
@@ -812,11 +853,12 @@ static int fetch_doorbell_snapshot(void) {
             snprintf(h, sizeof(snap_url) - (h - snap_url), "/api/frame.jpeg?src=%s", rest);
         }
         if (strstr(snap_url, "frame.jpeg") || strstr(snap_url, ".jpg") || strstr(snap_url, ".jpeg")) {
-            char cmd[512], tmp[160];
+            char cmd[1024], tmp[160], qurl[720];
             snprintf(tmp, sizeof(tmp), "%s.tmp", DOORBELL_SNAP_PATH);
+            if (!sh_is_http_url(snap_url) || !sh_quote(qurl, sizeof qurl, snap_url)) return -1;
             snprintf(cmd, sizeof(cmd),
-                "/usr/bin/curl -s --max-time 4 --connect-timeout 2 -o '%s' '%s' 2>/dev/null",
-                tmp, snap_url);
+                "/usr/bin/curl -s --max-time 4 --connect-timeout 2 -o '%s' %s 2>/dev/null",
+                tmp, qurl);
             int rc = system(cmd);
             if (rc == 0) {
                 struct stat st;
@@ -828,7 +870,7 @@ static int fetch_doorbell_snapshot(void) {
             }
         }
     }
-    if (!g_token[0] || !settings.doorbell_camera[0]) return -1;
+    if (!g_token[0] || !ha_id_safe(settings.doorbell_camera)) return -1;
     char cmd[1024], hp[192], tmp[160];
     snprintf(tmp, sizeof(tmp), "%s.tmp", DOORBELL_SNAP_PATH);
     snprintf(cmd, sizeof(cmd),
@@ -855,10 +897,11 @@ static int fetch_doorbell_snapshot(void) {
  * stream) keeps the Toon's job to cheap JPEG decode. Runs in the poll thread;
  * returns when doorbell_live clears or the stream drops. */
 static void stream_doorbell_mjpeg(void) {
-    char cmd[512];
+    char cmd[1024], qurl[720];
+    if (!sh_is_http_url(settings.doorbell_stream_url) ||
+        !sh_quote(qurl, sizeof qurl, settings.doorbell_stream_url)) return;
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s --max-time 120 '%s' 2>/dev/null",
-        settings.doorbell_stream_url);
+        "/usr/bin/curl -s --max-time 120 %s 2>/dev/null", qurl);
     FILE * p = popen(cmd, "r");
     if (!p) return;
 

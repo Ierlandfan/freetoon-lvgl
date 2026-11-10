@@ -15,6 +15,7 @@
  * live boiler (see boxtalk.c).
  */
 #include "screens.h"
+#include "shell_util.h"
 #include "display.h"
 #include "settings.h"
 #include "theme.h"
@@ -3750,19 +3751,27 @@ static volatile int g_ket_pending   = 0;
  * link dep. */
 static int otgw_http_call(const char * method, const char * path,
                           const char * body, char * out, size_t outsz) {
-    char host[80], cmd[1024], auth[160] = "";
+    char host[80], cmd[1400], auth[320] = "";
     snprintf(host, sizeof(host), "%s", settings.otgw_host);
     if (!host[0]) return -1;   /* no OTGW host configured */
+    /* host, user and password come from settings (on-device or PWA) and are
+     * spliced into a shell command: validate the host, quote the rest. */
+    if (!sh_is_hostport(host)) return -1;
+    if (strchr(path, '\'') || strchr(method, '\'')) return -1;
     if (settings.otgw_user[0]) {
-        snprintf(auth, sizeof(auth), "-u %s:%s ",
-                 settings.otgw_user, settings.otgw_pass);
+        char up[200], qup[300];
+        snprintf(up, sizeof(up), "%s:%s", settings.otgw_user, settings.otgw_pass);
+        if (!sh_quote(qup, sizeof qup, up)) return -1;
+        snprintf(auth, sizeof(auth), "-u %s ", qup);
     }
     if (body) {
+        char qbody[700];
+        if (!sh_quote(qbody, sizeof qbody, body)) return -1;
         snprintf(cmd, sizeof(cmd),
             "/usr/bin/curl -s --max-time 5 --connect-timeout 3 %s"
             "-X %s -H 'Content-Type: application/json' "
-            "--data '%s' 'http://%s%s' 2>&1",
-            auth, method, body, host, path);
+            "--data %s 'http://%s%s' 2>&1",
+            auth, method, qbody, host, path);
     } else {
         snprintf(cmd, sizeof(cmd),
             "/usr/bin/curl -s --max-time 5 --connect-timeout 3 %s"
@@ -4023,10 +4032,13 @@ static void on_apply_click(lv_event_t * e) {
     /* Apply mode switch via shell. We shell out because rewriting inittab
      * + pkill + umount is messy to do via syscalls. The script lives at
      * /mnt/data/ot_mode_switch.sh and accepts off|proxy|wireless. */
+    /* ot_bridge_mode can also be set from the PWA: only the three modes the
+     * script knows are ever passed to the shell. */
+    const char * mode = settings.ot_bridge_mode;
+    if (strcmp(mode, "off") && strcmp(mode, "proxy") && strcmp(mode, "wireless")) mode = "off";
     char cmd[256];
     snprintf(cmd, sizeof(cmd),
-        "/mnt/data/ot_mode_switch.sh %s >> /tmp/ot_mode_switch.log 2>&1 &",
-        settings.ot_bridge_mode);
+        "/mnt/data/ot_mode_switch.sh %s >> /tmp/ot_mode_switch.log 2>&1 &", mode);
     system(cmd);
     lv_label_set_text(lbl_apply_warning,
         tr("Toegepast - bridge/thermstat herstart. "

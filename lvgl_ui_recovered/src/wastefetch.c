@@ -18,6 +18,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <time.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "shell_util.h"
+
+/* Re-download a cached provider script after this long, so upstream fixes
+ * arrive and a bad copy doesn't live forever. The cache stays as fallback. */
+#define PLUGIN_CACHE_MAX_AGE (7 * 24 * 3600)
 
 #define PLUGIN_BASE "https://raw.githubusercontent.com/ToonSoftwareCollective/wastecollection_plugins/main/"
 
@@ -25,14 +33,20 @@ static char g_dates[64 * 1024];   /* captured wasteDates.txt (date,code lines) *
 static char g_ics[128 * 1024];    /* captured wasteDates.ics (if the script makes one) */
 
 /* --- shell out to curl for HTTP(S) GET; returns malloc'd body or NULL --- */
-static char * http_get(const char * url) {
-    /* Only allow http/https; the script also does file:// PUTs (handled separately). */
-    if (strncmp(url, "http", 4) != 0) return NULL;
-    char cmd[2048];
-    /* -k: provider/CDN certs vary; -L: follow redirects; bounded time. */
+static char * http_get_ex(const char * url, int verify_tls) {
+    /* Only allow http/https; the script also does file:// PUTs (handled separately).
+     * The URL is built by the provider JS from API data, so it is quoted as a
+     * single shell word — never pasted between '...' by hand. */
+    if (!sh_is_http_url(url)) return NULL;
+    char qurl[2400];
+    if (!sh_quote(qurl, sizeof qurl, url)) return NULL;
+    char cmd[2600];
+    /* Provider API calls: -k, provider/CDN certs vary and the data is only
+     * parsed. The provider *script* itself is code, so it is fetched with
+     * verification (verify_tls=1). -L: follow redirects; bounded time. */
     snprintf(cmd, sizeof cmd,
-             "curl -s -k -L --max-time 25 --connect-timeout 8 "
-             "-A 'Mozilla/5.0' '%.1900s'", url);
+             "curl -s %s-L --max-time 25 --connect-timeout 8 "
+             "-A 'Mozilla/5.0' %s", verify_tls ? "" : "-k ", qurl);
     FILE * fp = popen(cmd, "r");
     if (!fp) return NULL;
     size_t cap = 65536, len = 0;
@@ -46,6 +60,22 @@ static char * http_get(const char * url) {
     buf[len] = 0;
     pclose(fp);
     return buf;
+}
+
+static char * http_get(const char * url) { return http_get_ex(url, 0); }
+
+/* Write `s` as the body of a JS double-quoted string literal. */
+static size_t js_escape(char * dst, size_t dstsz, const char * s) {
+    size_t o = 0;
+    if (!dstsz) return 0;
+    for (; s && *s && o + 7 < dstsz; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') { dst[o++] = '\\'; dst[o++] = (char)c; }
+        else if (c < 0x20 || c == 0x7f) o += (size_t)snprintf(dst + o, dstsz - o, "\\u%04x", c);
+        else dst[o++] = (char)c;
+    }
+    dst[o] = 0;
+    return o;
 }
 
 /* JS global: __http_get(url) -> string|null */
@@ -135,10 +165,36 @@ int main(int argc, char ** argv) {
 
     /* 1) load provider script: check local cache in /mnt/data/waste_plugins/ first,
        otherwise download from PLUGIN_BASE and cache locally. */
+    /* The provider id becomes a file name and part of a URL. */
+    if (!sh_is_ident(pid, 32)) {
+        fprintf(stderr, "[wastefetch] invalid provider id\n");
+        return 2;
+    }
     char local_path[256];
     snprintf(local_path, sizeof local_path, "/mnt/data/waste_plugins/wastecollectionProvider_%s.js", pid);
     char * script = NULL;
-    FILE * lf = fopen(local_path, "r");
+    /* Fresh download if the cache is missing or older than PLUGIN_CACHE_MAX_AGE;
+     * the cached copy is the fallback when the download fails (offline). */
+    struct stat cst;
+    int cache_fresh = (stat(local_path, &cst) == 0) &&
+                      (time(NULL) - cst.st_mtime) < PLUGIN_CACHE_MAX_AGE;
+    if (!cache_fresh) {
+        char url[512];
+        snprintf(url, sizeof url, "%swastecollectionProvider_%s.js", PLUGIN_BASE, pid);
+        script = http_get_ex(url, 1);
+        if (script && strlen(script) >= 50) {
+            mkdir("/mnt/data/waste_plugins", 0755);
+            char tmp_path[280];
+            snprintf(tmp_path, sizeof tmp_path, "%s.tmp", local_path);
+            FILE * wf = fopen(tmp_path, "w");
+            if (wf) {
+                int ok = fputs(script, wf) >= 0;
+                ok = (fclose(wf) == 0) && ok;
+                if (ok) rename(tmp_path, local_path); else unlink(tmp_path);
+            }
+        } else if (script) { free(script); script = NULL; }
+    }
+    FILE * lf = script ? NULL : fopen(local_path, "r");
     if (lf) {
         fseek(lf, 0, SEEK_END);
         long sz = ftell(lf);
@@ -151,21 +207,6 @@ int main(int argc, char ** argv) {
             }
         }
         fclose(lf);
-    }
-    if (!script || strlen(script) < 50) {
-        if (script) { free(script); script = NULL; }
-        char url[512];
-        snprintf(url, sizeof url, "%swastecollectionProvider_%s.js", PLUGIN_BASE, pid);
-        script = http_get(url);
-        if (script && strlen(script) >= 50) {
-            /* Cache locally for offline use and faster subsequent runs */
-            system("mkdir -p /mnt/data/waste_plugins 2>/dev/null");
-            FILE * wf = fopen(local_path, "w");
-            if (wf) {
-                fputs(script, wf);
-                fclose(wf);
-            }
-        }
     }
     if (!script || strlen(script) < 50) {
         fprintf(stderr, "[wastefetch] could not load provider script for id %s\n", pid);
@@ -186,10 +227,19 @@ int main(int argc, char ** argv) {
         /* 3) call readCalendar(zip, nr, [], true, ICSId, street, streetName, city, fullICSUrl) */
         /* readCalendar(zip, housenr, extraDates, enableCreateICS, ICSId,
            street, streetName, city, fullICSUrl) — args quoted as JS strings. */
-        char call[2048];
+        /* Settings values become JS string literals: escape them, or a " in a
+         * street name breaks (or rewrites) the call. */
+        char e_zip[128], e_nr[64], e_ics[256], e_street[384], e_city[256], e_full[1024];
+        js_escape(e_zip, sizeof e_zip, zip);
+        js_escape(e_nr, sizeof e_nr, nr);
+        js_escape(e_ics, sizeof e_ics, icsid);
+        js_escape(e_street, sizeof e_street, street);
+        js_escape(e_city, sizeof e_city, city);
+        js_escape(e_full, sizeof e_full, fullics);
+        char call[4096];
         snprintf(call, sizeof call,
             "readCalendar(\"%s\",\"%s\",[],true,\"%s\",\"%s\",\"%s\",\"%s\",\"%s\");",
-            zip, nr, icsid, street, street, city, fullics);
+            e_zip, e_nr, e_ics, e_street, e_street, e_city, e_full);
         if (eval_str(ctx, call, "<call>") == 0) {
             /* 4) prefer the captured ICS; else build one from date,code lines via
                   the script's own wasteTypeFriendlyName(). */

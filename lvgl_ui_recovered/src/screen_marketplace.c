@@ -13,6 +13,7 @@
  * "find next id/name/description/version/url" walks reliably.
  */
 #include "screens.h"
+#include "shell_util.h"
 #include "display.h"
 #include "i18n.h"
 #include "http.h"
@@ -160,6 +161,15 @@ static void parse_catalog(void) {
         memset(e, 0, sizeof *e);
         const char * after_id = find_json_str(next, "id", e->id, sizeof e->id);
         if (!after_id) break;
+        /* The id becomes a directory name and an argument to the install
+         * helper. Anything but [A-Za-z0-9_-] is a malformed or hostile
+         * catalog entry — skip it. */
+        if (!sh_is_ident(e->id, 32)) {
+            fprintf(stderr, "[marketplace] skipping catalog entry with invalid id\n");
+            memset(e, 0, sizeof *e);
+            scan = after_id;
+            continue;
+        }
         find_json_str(next, "name",        e->name,        sizeof e->name);
         find_json_str(next, "description", e->description, sizeof e->description);
         find_json_str(next, "version",     e->version,     sizeof e->version);
@@ -186,7 +196,8 @@ static void * fetch_thread(void * arg) {
     snprintf(url, sizeof url, "%s?t=%ld", CATALOG_URL, (long)time(NULL));
 
     /* Try to fetch online catalog */
-    int rc = http_fetch(url, catalog_buf, sizeof catalog_buf);
+    /* TLS-verified: the catalog decides what gets installed as root. */
+    int rc = http_fetch_secure(url, catalog_buf, sizeof catalog_buf, 10);
     catalog_len = (int)strlen(catalog_buf);
     if (rc == 0 && catalog_len > 0) {
         parse_catalog();
@@ -281,6 +292,7 @@ static void * install_thread(void * arg) {
     e->action_status = 0;
     return NULL;
 #else
+    if (!sh_is_ident(e->id, 32)) { e->action_status = 3; return NULL; }
     char cmd[256];
     snprintf(cmd, sizeof cmd, "%s %s", INSTALL_HELPER, e->id);
     int rc = system(cmd);
@@ -310,21 +322,17 @@ static void * uninstall_thread(void * arg) {
     e->action_status = 0;
     return NULL;
 #else
+    if (!sh_is_ident(e->id, 32)) { e->action_status = 3; return NULL; }
     char cmd[256];
     snprintf(cmd, sizeof cmd, "%s remove %s", INSTALL_HELPER, e->id);
     int rc = system(cmd);
+    /* No rm -rf fallback here: when the helper refuses, it is because the
+     * integration's inittab rows could not be dropped, and deleting the files
+     * anyway leaves init respawning a binary that no longer exists. */
 
-    /* Safety fallback: ensure integration dir is cleared */
-    char path[128];
-    snprintf(path, sizeof path, "/mnt/data/integrations/%s", e->id);
-    struct stat st;
-    if (stat(path, &st) == 0) {
-        snprintf(cmd, sizeof cmd, "rm -rf /mnt/data/integrations/%s", e->id);
-        system(cmd);
-    }
-
-    /* Unbind from any tile slot in settings if currently bound */
-    for (int s = 0; s < TILE_SLOT_COUNT; s++) {
+    /* Unbind from any tile slot in settings if currently bound (only when the
+     * helper actually removed it — otherwise the integration is still there) */
+    for (int s = 0; rc == 0 && s < TILE_SLOT_COUNT; s++) {
         const char * b = tile_slots_binding(s);
         if (b && (strcmp(b, e->id) == 0 || (strncmp(b, "local:", 6) == 0 && strcmp(b + 6, e->id) == 0))) {
             tile_slots_bind(s, "");

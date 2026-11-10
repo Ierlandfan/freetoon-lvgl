@@ -9,6 +9,7 @@
  * Open-Meteo's columnar arrays). Both feeds have stable shapes.
  */
 #include "weather.h"
+#include "shell_util.h"
 #include "http.h"
 #include "settings.h"
 #include <stdio.h>
@@ -565,13 +566,16 @@ static int parse_buienradar_extras(const char * body) {
    screen reads /tmp/toonui_radar.gif via LVGL's stdio FS driver + lv_gif. */
 static int fetch_radar_image(void) {
     if (!weather_state.radar_url[0]) return -1;
-    /* Quote-safe by construction: the URL came from buienradar's JSON
-       which uses only safe chars. */
-    char cmd[512];
+    /* The URL comes from Buienradar's JSON (fetched without certificate
+       checks), and js_str decodes \' — so it is NOT quote-safe. Require an
+       http(s) URL and shell-quote it. */
+    char cmd[1024], qurl[700];
+    if (!sh_is_http_url(weather_state.radar_url) ||
+        !sh_quote(qurl, sizeof qurl, weather_state.radar_url)) return -1;
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s -k -L --max-time 10 -A 'toonui/1.0' "
-        "-o /tmp/toonui_radar.gif.tmp '%s' && mv /tmp/toonui_radar.gif.tmp /tmp/toonui_radar.gif",
-        weather_state.radar_url);
+        "-o /tmp/toonui_radar.gif.tmp %s && mv /tmp/toonui_radar.gif.tmp /tmp/toonui_radar.gif",
+        qurl);
     int rc = system(cmd);
     return (rc == 0) ? 0 : -1;
 }
